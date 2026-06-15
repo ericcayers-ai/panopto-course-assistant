@@ -1,0 +1,5 @@
+# Core web app — works without a GPU / transcription stack.
+fastapi>=0.110
+uvicorn[standard]>=0.27
+requests>=2.31
+python-multipart>=0.0.9

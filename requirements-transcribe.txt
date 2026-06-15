@@ -1,0 +1,12 @@
+# Optional heavy extras for actual transcription + PDF conversion.
+# Install these in addition to requirements.txt when you want to transcribe.
+#
+#   pip install -r requirements-transcribe.txt
+#
+# faster-whisper is the recommended engine (fast, CPU-friendly with int8).
+faster-whisper>=1.0
+yt-dlp>=2024.1
+markitdown>=0.0.1a2
+
+# Alternative engine (larger install, pulls in torch):
+# openai-whisper>=20231117

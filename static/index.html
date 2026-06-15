@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Panopto Course Assistant</title>
+  <link rel="stylesheet" href="/static/style.css" />
+</head>
+<body>
+  <header>
+    <h1>Panopto Course Assistant</h1>
+    <div id="status-bar" class="status-bar">checking environment…</div>
+  </header>
+
+  <nav class="tabs">
+    <button class="tab active" data-tab="lectures">Lectures</button>
+    <button class="tab" data-tab="transcripts">Transcripts</button>
+    <button class="tab" data-tab="search">Search</button>
+    <button class="tab" data-tab="pdf">PDF → Markdown</button>
+    <button class="tab" data-tab="jobs">Jobs</button>
+    <button class="tab" data-tab="materials">Materials</button>
+  </nav>
+
+  <main>
+    <!-- LECTURES -->
+    <section id="lectures" class="panel active">
+      <h2>Load lectures from an RSS feed</h2>
+      <div class="row">
+        <input type="text" id="feed-source" placeholder="RSS feed URL or local .xml path" />
+        <button id="feed-load">Load feed</button>
+      </div>
+      <div class="row">
+        <label>…or upload an RSS XML file:</label>
+        <input type="file" id="feed-file" accept=".xml" />
+      </div>
+      <p class="hint">Tip: an example feed ships in <code>../vibecodeapp/ExampleRssFeed.txt</code> (rename to .xml).</p>
+
+      <div id="transcribe-defaults" class="card hidden">
+        <h3>Transcription settings (applied when you click “Transcribe”)</h3>
+        <div class="grid">
+          <label>Engine
+            <select id="t-engine"></select>
+          </label>
+          <label>Model
+            <select id="t-model">
+              <option>tiny</option><option>base</option>
+              <option selected>small</option><option>medium</option>
+              <option>large-v3</option>
+            </select>
+          </label>
+          <label>Language <input type="text" id="t-language" value="en" /></label>
+          <label>Device
+            <select id="t-device"><option>auto</option><option>cuda</option><option>cpu</option></select>
+          </label>
+          <label>Organize by
+            <select id="t-organize"><option>week</option><option>date</option><option>topic</option><option>none</option></select>
+          </label>
+          <label>Keep media <input type="checkbox" id="t-keep" /></label>
+        </div>
+      </div>
+
+      <div id="lectures-list"></div>
+    </section>
+
+    <!-- TRANSCRIPTS -->
+    <section id="transcripts" class="panel">
+      <h2>Transcript library <button id="transcripts-refresh" class="small">refresh</button></h2>
+      <div class="split">
+        <div id="transcripts-list" class="list"></div>
+        <pre id="transcript-view" class="viewer">Select a transcript to view it here.</pre>
+      </div>
+    </section>
+
+    <!-- SEARCH -->
+    <section id="search" class="panel">
+      <h2>Search across all transcripts</h2>
+      <div class="row">
+        <input type="text" id="search-q" placeholder="e.g. TCP handshake" />
+        <button id="search-go">Search</button>
+      </div>
+      <div id="search-results"></div>
+    </section>
+
+    <!-- PDF -->
+    <section id="pdf" class="panel">
+      <h2>Convert a folder of PDFs to Markdown</h2>
+      <div class="row">
+        <input type="text" id="pdf-path" placeholder="Folder path (e.g. C:\Users\…\Slides-20260615)" />
+        <button id="pdf-go">Convert</button>
+      </div>
+      <label><input type="checkbox" id="pdf-recursive" checked /> include subfolders</label>
+      <label><input type="checkbox" id="pdf-overwrite" /> overwrite existing</label>
+      <div id="pdf-results"></div>
+    </section>
+
+    <!-- JOBS -->
+    <section id="jobs" class="panel">
+      <h2>Transcription jobs <button id="jobs-refresh" class="small">refresh</button></h2>
+      <div id="jobs-list"></div>
+    </section>
+
+    <!-- MATERIALS -->
+    <section id="materials" class="panel">
+      <h2>Browse course materials</h2>
+      <div class="row">
+        <input type="text" id="materials-path" placeholder="Folder path to browse" />
+        <button id="materials-go">List</button>
+      </div>
+      <div id="materials-results"></div>
+    </section>
+  </main>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>
