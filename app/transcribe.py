@@ -72,11 +72,18 @@ def download_media(
     dest: Path,
     cookies: str = "",
     progress: Optional[Callable[[float], None]] = None,
+    audio_only: bool = False,
 ) -> Path:
-    """Direct HTTP download with a yt-dlp fallback."""
+    """Direct HTTP download with a yt-dlp fallback.
+
+    When ``audio_only`` is set, yt-dlp extracts an MP3 (smaller download, needs
+    ffmpeg + yt-dlp). If yt-dlp is unavailable it falls back to a full download.
+    """
     import requests
 
     ensure_dir(dest.parent)
+    if audio_only and _have("yt_dlp"):
+        return _download_audio(url, dest, cookies)
     try:
         with requests.get(url, stream=True, timeout=60) as r:
             r.raise_for_status()
@@ -112,6 +119,25 @@ def download_media(
     with yt_dlp.YoutubeDL(opts) as ydl:
         ydl.download([url])
     return dest
+
+
+def _download_audio(url: str, dest: Path, cookies: str = "") -> Path:
+    """Extract audio only (MP3) via yt-dlp to save bandwidth."""
+    import yt_dlp
+
+    target = dest.with_suffix(".mp3")
+    opts: Dict[str, Any] = {
+        "outtmpl": str(dest.with_suffix("")),  # yt-dlp appends the codec ext
+        "quiet": True,
+        "no_warnings": True,
+        "format": "bestaudio/best",
+        "postprocessors": [{"key": "FFmpegExtractAudio", "preferredcodec": "mp3"}],
+    }
+    if cookies:
+        opts["cookiefile"] = cookies
+    with yt_dlp.YoutubeDL(opts) as ydl:
+        ydl.download([url])
+    return target if target.exists() else dest
 
 
 # ---------------------------------------------------------------------------
@@ -189,10 +215,14 @@ def transcribe_lecture(
     beam_size: int = 5,
     vad_filter: bool = True,
     keep_media: bool = False,
+    audio_only: bool = False,
+    skip_existing: bool = True,
+    force: bool = False,
     cookies: str = "",
+    course: str = "",
     progress: Optional[Callable[[str, float], None]] = None,
 ) -> Dict[str, Any]:
-    outputs = outputs or ["txt", "srt", "md", "json"]
+    outputs = [o for o in (outputs or ["txt", "srt", "md", "json"]) if o in core.OUTPUT_CHOICES] or ["txt"]
     device = resolve_device(device)
 
     def report(stage: str, frac: float) -> None:
@@ -201,10 +231,26 @@ def transcribe_lecture(
 
     out_dir = core.output_dir_for(output_root, item, organize)
     ensure_dir(out_dir)
-    media = out_dir / f"{item.safe_title}.mp4"
+    stem = item.safe_title
 
+    # Skip if every requested output already exists (unless forced).
+    def output_path(fmt: str) -> Path:
+        if fmt == "notebooklm":
+            return out_dir / f"{stem}.notebooklm.md"
+        if fmt == "summary":
+            return out_dir / f"{stem}.summary.md"
+        return out_dir / f"{stem}.{fmt}"
+
+    if skip_existing and not force and all(output_path(o).exists() for o in outputs):
+        report("done", 1.0)
+        return {"status": "skipped", "reason": "outputs already exist", "output_dir": str(out_dir)}
+
+    media = out_dir / f"{stem}.mp4"
     report("downloading", 0.0)
-    download_media(item.url, media, cookies=cookies, progress=lambda f: report("downloading", f * 0.4))
+    media = download_media(
+        item.url, media, cookies=cookies,
+        progress=lambda f: report("downloading", f * 0.4), audio_only=audio_only,
+    )
 
     report("transcribing", 0.45)
     t0 = time.time()
@@ -223,6 +269,7 @@ def transcribe_lecture(
         "device": device,
         "runtime_s": round(runtime, 1),
         "source_video": str(media),
+        "course": course,
     }
     written = core.write_outputs(
         item, res["segments"], res["text"], out_dir, outputs, interval, meta

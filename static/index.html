@@ -8,79 +8,130 @@
 </head>
 <body>
   <header>
-    <h1>Panopto Course Assistant</h1>
+    <div class="header-row">
+      <h1>🎓 Panopto Course Assistant</h1>
+      <span id="course-name" class="course-name"></span>
+    </div>
     <div id="status-bar" class="status-bar">checking environment…</div>
   </header>
 
   <nav class="tabs">
-    <button class="tab active" data-tab="lectures">Lectures</button>
-    <button class="tab" data-tab="transcripts">Transcripts</button>
-    <button class="tab" data-tab="search">Search</button>
-    <button class="tab" data-tab="pdf">PDF → Markdown</button>
-    <button class="tab" data-tab="jobs">Jobs</button>
-    <button class="tab" data-tab="materials">Materials</button>
+    <button class="tab active" data-tab="lectures">📡 Lectures</button>
+    <button class="tab" data-tab="transcripts">📄 Transcripts</button>
+    <button class="tab" data-tab="search">🔎 Search</button>
+    <button class="tab" data-tab="pdf">📑 PDF → Markdown</button>
+    <button class="tab" data-tab="jobs">⚙️ Jobs <span id="jobs-badge" class="count-badge hidden">0</span></button>
+    <button class="tab" data-tab="materials">📂 Materials</button>
   </nav>
 
   <main>
     <!-- LECTURES -->
     <section id="lectures" class="panel active">
-      <h2>Load lectures from an RSS feed</h2>
-      <div class="row">
-        <input type="text" id="feed-source" placeholder="RSS feed URL or local .xml path" />
-        <button id="feed-load">Load feed</button>
+      <h2>1 · Load lectures from an RSS feed</h2>
+      <div class="card">
+        <div class="row">
+          <input type="text" id="feed-source" placeholder="Panopto RSS feed URL or local .xml path" />
+          <button id="feed-load">Load feed</button>
+        </div>
+        <div class="row">
+          <span class="muted">or upload an RSS XML file:</span>
+          <input type="file" id="feed-file" accept=".xml,.rss,.txt" />
+        </div>
+        <p class="hint">Example feed: <code>../vibecodeapp/ExampleRssFeed.txt</code> — paste its path above and click Load.</p>
       </div>
-      <div class="row">
-        <label>…or upload an RSS XML file:</label>
-        <input type="file" id="feed-file" accept=".xml" />
-      </div>
-      <p class="hint">Tip: an example feed ships in <code>../vibecodeapp/ExampleRssFeed.txt</code> (rename to .xml).</p>
 
-      <div id="transcribe-defaults" class="card hidden">
-        <h3>Transcription settings (applied when you click “Transcribe”)</h3>
+      <h2 id="settings-heading" class="hidden">2 · Transcription settings</h2>
+      <details id="settings" class="card hidden" open>
+        <summary>Transcription settings <span class="muted">(click to collapse)</span></summary>
+        <div id="engine-warning" class="banner warn hidden"></div>
         <div class="grid">
-          <label>Engine
-            <select id="t-engine"></select>
+          <label>Course name
+            <input type="text" id="opt-course" placeholder="e.g. COMPX234 – Systems and Networks" />
           </label>
+          <label>Engine <select id="opt-engine"></select></label>
           <label>Model
-            <select id="t-model">
+            <select id="opt-model">
               <option>tiny</option><option>base</option>
               <option selected>small</option><option>medium</option>
               <option>large-v3</option>
             </select>
           </label>
-          <label>Language <input type="text" id="t-language" value="en" /></label>
+          <label>Language <input type="text" id="opt-language" value="en" /></label>
           <label>Device
-            <select id="t-device"><option>auto</option><option>cuda</option><option>cpu</option></select>
+            <select id="opt-device"><option>auto</option><option>cuda</option><option>cpu</option></select>
           </label>
           <label>Organize by
-            <select id="t-organize"><option>week</option><option>date</option><option>topic</option><option>none</option></select>
+            <select id="opt-organize">
+              <option value="week" selected>week</option>
+              <option value="date">date</option>
+              <option value="topic">topic</option>
+              <option value="none">none</option>
+            </select>
           </label>
-          <label>Keep media <input type="checkbox" id="t-keep" /></label>
+          <label>TXT timestamp interval (s)
+            <input type="number" id="opt-interval" value="30" min="1" max="600" />
+          </label>
         </div>
-      </div>
+        <div class="outputs-row">
+          <span class="muted">Output formats:</span>
+          <span id="opt-outputs" class="checks"></span>
+        </div>
+        <div class="toggles">
+          <label class="toggle"><input type="checkbox" id="opt-audio" /> audio-only download <span class="muted">(saves bandwidth, needs yt-dlp+ffmpeg)</span></label>
+          <label class="toggle"><input type="checkbox" id="opt-keep" /> keep media file</label>
+          <label class="toggle"><input type="checkbox" id="opt-skip" checked /> skip already-transcribed</label>
+          <label class="toggle"><input type="checkbox" id="opt-force" /> force re-transcribe</label>
+        </div>
+        <div class="row">
+          <input type="text" id="opt-cookies" placeholder="cookies.txt path (optional, for auth-gated feeds)" />
+        </div>
+      </details>
 
+      <h2 id="lectures-heading" class="hidden">3 · Choose lectures</h2>
+      <div id="lectures-toolbar" class="toolbar hidden">
+        <button id="sel-all" class="ghost">Select all</button>
+        <button id="sel-none" class="ghost">Clear</button>
+        <button id="transcribe-selected">Transcribe selected</button>
+        <button id="transcribe-pending" class="ghost">Transcribe all pending</button>
+        <span id="lectures-summary" class="muted"></span>
+      </div>
       <div id="lectures-list"></div>
     </section>
 
     <!-- TRANSCRIPTS -->
     <section id="transcripts" class="panel">
-      <h2>Transcript library <button id="transcripts-refresh" class="small">refresh</button></h2>
+      <h2>Transcript library <button id="transcripts-refresh" class="small ghost">↻ refresh</button></h2>
 
       <div class="card">
-        <h3>Export for NotebookLM</h3>
-        <p class="hint">Produces clean, de-timestamped Markdown (one file per lecture) under
-          <code>_notebooklm/</code> in the output folder — ready to upload to NotebookLM as sources.</p>
+        <h3>📤 Export for NotebookLM</h3>
+        <p class="hint">Clean, de-timestamped Markdown (one file per lecture) under
+          <code>_notebooklm/</code> — ready to upload to NotebookLM as sources.</p>
         <div class="row">
-          <input type="text" id="nlm-course" placeholder="Course name (optional, e.g. COMPX234 – Systems and Networks)" />
-          <label><input type="checkbox" id="nlm-combined" /> also make one combined <code>course_pack.md</code></label>
-          <button id="nlm-export">Export all transcripts</button>
+          <input type="text" id="nlm-course" placeholder="Course name (optional)" />
+          <label class="toggle"><input type="checkbox" id="nlm-combined" /> also one combined <code>course_pack.md</code></label>
+          <button id="nlm-export">Export all</button>
         </div>
-        <div id="nlm-results"></div>
+        <div id="nlm-results" class="results"></div>
+      </div>
+
+      <div class="card">
+        <h3>🗂️ Reorganize files</h3>
+        <p class="hint">Move existing transcripts into folders by week / date / topic.</p>
+        <div class="row">
+          <select id="org-by">
+            <option value="week" selected>week</option>
+            <option value="date">date</option>
+            <option value="topic">topic</option>
+            <option value="none">none (flat)</option>
+          </select>
+          <button id="org-go" class="ghost">Reorganize</button>
+          <span id="org-results" class="muted"></span>
+        </div>
       </div>
 
       <div class="split">
         <div id="transcripts-list" class="list"></div>
-        <pre id="transcript-view" class="viewer">Select a transcript to view it here.</pre>
+        <pre id="transcript-view" class="viewer">Select a transcript on the left to view it here.</pre>
       </div>
     </section>
 
@@ -88,41 +139,48 @@
     <section id="search" class="panel">
       <h2>Search across all transcripts</h2>
       <div class="row">
-        <input type="text" id="search-q" placeholder="e.g. TCP handshake" />
+        <input type="text" id="search-q" placeholder="e.g. three-way handshake" />
         <button id="search-go">Search</button>
       </div>
-      <div id="search-results"></div>
+      <div id="search-results" class="results"></div>
     </section>
 
     <!-- PDF -->
     <section id="pdf" class="panel">
       <h2>Convert a folder of PDFs to Markdown</h2>
-      <div class="row">
-        <input type="text" id="pdf-path" placeholder="Folder path (e.g. C:\Users\…\Slides-20260615)" />
-        <button id="pdf-go">Convert</button>
+      <div class="card">
+        <div class="row">
+          <input type="text" id="pdf-path" placeholder="Folder path (e.g. C:\Users\…\Slides-20260615)" />
+          <button id="pdf-go">Convert</button>
+        </div>
+        <div class="toggles">
+          <label class="toggle"><input type="checkbox" id="pdf-recursive" checked /> include subfolders</label>
+          <label class="toggle"><input type="checkbox" id="pdf-overwrite" /> overwrite existing</label>
+        </div>
+        <p class="hint">Mirrors the folder structure into a sibling <code>*_copy</code> folder. Needs <code>markitdown</code>.</p>
       </div>
-      <label><input type="checkbox" id="pdf-recursive" checked /> include subfolders</label>
-      <label><input type="checkbox" id="pdf-overwrite" /> overwrite existing</label>
-      <div id="pdf-results"></div>
+      <div id="pdf-results" class="results"></div>
     </section>
 
     <!-- JOBS -->
     <section id="jobs" class="panel">
-      <h2>Transcription jobs <button id="jobs-refresh" class="small">refresh</button></h2>
-      <div id="jobs-list"></div>
+      <h2>Transcription jobs <button id="jobs-refresh" class="small ghost">↻ refresh</button></h2>
+      <div id="jobs-list" class="results"></div>
     </section>
 
     <!-- MATERIALS -->
     <section id="materials" class="panel">
       <h2>Browse course materials</h2>
       <div class="row">
-        <input type="text" id="materials-path" placeholder="Folder path to browse" />
+        <input type="text" id="materials-path" placeholder="Folder path to browse (e.g. ..\Slides-20260615)" />
         <button id="materials-go">List</button>
+        <button id="materials-up" class="ghost" title="Parent folder">↑ up</button>
       </div>
-      <div id="materials-results"></div>
+      <div id="materials-results" class="results"></div>
     </section>
   </main>
 
+  <div id="toast" class="toast hidden"></div>
   <script src="/static/app.js"></script>
 </body>
 </html>

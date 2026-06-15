@@ -69,7 +69,7 @@ class LectureItem:
 
 
 ORG_CHOICES = ["none", "date", "week", "topic"]
-OUTPUT_CHOICES = ["txt", "srt", "vtt", "md", "json", "notebooklm"]
+OUTPUT_CHOICES = ["txt", "srt", "vtt", "md", "json", "notebooklm", "summary"]
 
 
 # ---------------------------------------------------------------------------
@@ -480,6 +480,10 @@ def write_outputs(
         p = out_dir / f"{stem}.notebooklm.md"
         p.write_text(render_notebooklm(item, segments, meta.get("course", "")), encoding="utf-8")
         written["notebooklm"] = str(p)
+    if "summary" in outputs:
+        p = out_dir / f"{stem}.summary.md"
+        p.write_text(render_summary(item, segments, text), encoding="utf-8")
+        written["summary"] = str(p)
     if "json" in outputs:
         p = out_dir / f"{stem}.json"
         payload = {
@@ -507,25 +511,41 @@ def _is_internal(f: Path, output_dir: Path) -> bool:
     return any(part.startswith("_") for part in rel.parts)
 
 
+def _split_stem_format(name: str) -> Tuple[str, str]:
+    """Return (stem, format_key), folding compound suffixes like
+    ``Lecture.notebooklm.md`` -> ("Lecture", "notebooklm")."""
+    lower = name.lower()
+    for compound, key in ((".notebooklm.md", "notebooklm"), (".summary.md", "summary")):
+        if lower.endswith(compound):
+            return name[: -len(compound)], key
+    dot = name.rfind(".")
+    return (name[:dot], name[dot + 1:].lower()) if dot > 0 else (name, "")
+
+
 def list_transcripts(output_dir: Path) -> List[Dict[str, Any]]:
-    """Group transcript files under output_dir by their stem (one entry per lecture)."""
+    """Group transcript files under output_dir by their stem (one entry per lecture).
+
+    Compound outputs (``*.summary.md``, ``*.notebooklm.md``) are folded into the
+    parent lecture as extra formats rather than shown as separate entries.
+    """
     if not output_dir.exists():
         return []
     groups: Dict[str, Dict[str, Any]] = {}
     for f in sorted(output_dir.rglob("*")):
         if not f.is_file() or f.suffix.lower() not in TEXT_EXTS:
             continue
-        if _is_internal(f, output_dir):
+        if _is_internal(f, output_dir):  # skips _notebooklm/, manifests, logs
             continue
-        if f.name.endswith(".notebooklm.md"):  # export, listed separately
+        stem, fmt = _split_stem_format(f.name)
+        if not fmt:
             continue
         rel_parent = f.parent.relative_to(output_dir).as_posix()
-        key = f"{rel_parent}/{f.stem}"
+        key = f"{rel_parent}/{stem}"
         g = groups.setdefault(
             key,
-            {"stem": f.stem, "folder": rel_parent if rel_parent != "." else "", "formats": {}},
+            {"stem": stem, "folder": rel_parent if rel_parent != "." else "", "formats": {}},
         )
-        g["formats"][f.suffix.lstrip(".").lower()] = f.relative_to(output_dir).as_posix()
+        g["formats"][fmt] = f.relative_to(output_dir).as_posix()
     return sorted(groups.values(), key=lambda g: (g["folder"], g["stem"]))
 
 
@@ -539,23 +559,40 @@ def read_transcript_file(output_dir: Path, rel_path: str) -> str:
     return target.read_text(encoding="utf-8", errors="replace")
 
 
+def _text_for_search(output_dir: Path, group: Dict[str, Any]) -> Tuple[str, str]:
+    """Pick the best readable text for a lecture group: txt -> md -> json text.
+    Returns (rel_path_used, content)."""
+    fmts = group["formats"]
+    for key in ("txt", "md"):
+        if key in fmts:
+            rel = fmts[key]
+            try:
+                return rel, (output_dir / rel).read_text(encoding="utf-8", errors="replace")
+            except Exception:
+                continue
+    if "json" in fmts:
+        rel = fmts["json"]
+        try:
+            data = json.loads((output_dir / rel).read_text(encoding="utf-8", errors="replace"))
+            return rel, data.get("text", "") or ""
+        except Exception:
+            pass
+    return "", ""
+
+
 def search_transcripts(output_dir: Path, query: str, context: int = 60) -> List[Dict[str, Any]]:
-    """Case-insensitive full-text search across .txt/.md files; returns snippets."""
+    """Case-insensitive full-text search, one result per lecture, with snippets."""
     results: List[Dict[str, Any]] = []
+    query = (query or "").strip()
     if not query or not output_dir.exists():
         return results
     needle = query.lower()
-    for f in sorted(output_dir.rglob("*")):
-        if not f.is_file() or f.suffix.lower() not in {".txt", ".md"}:
-            continue
-        if _is_internal(f, output_dir) or f.name.endswith(".notebooklm.md"):
-            continue
-        try:
-            content = f.read_text(encoding="utf-8", errors="replace")
-        except Exception:
+    for group in list_transcripts(output_dir):
+        rel, content = _text_for_search(output_dir, group)
+        if not content:
             continue
         lower = content.lower()
-        hits = []
+        hits: List[str] = []
         start = 0
         while len(hits) < 5:
             i = lower.find(needle, start)
@@ -563,13 +600,19 @@ def search_transcripts(output_dir: Path, query: str, context: int = 60) -> List[
                 break
             a = max(0, i - context)
             b = min(len(content), i + len(query) + context)
-            snippet = content[a:b].replace("\n", " ").strip()
+            snippet = " ".join(content[a:b].split())
+            if a > 0:
+                snippet = "… " + snippet
+            if b < len(content):
+                snippet = snippet + " …"
             hits.append(snippet)
             start = i + len(query)
         if hits:
             results.append(
                 {
-                    "file": f.relative_to(output_dir).as_posix(),
+                    "file": rel,
+                    "lecture": group["stem"],
+                    "folder": group["folder"],
                     "count": lower.count(needle),
                     "snippets": hits,
                 }
@@ -726,3 +769,120 @@ def export_notebooklm(
         "files": written,
         "combined": combined_path,
     }
+
+
+# ---------------------------------------------------------------------------
+# Extractive summary (no LLM required)
+# ---------------------------------------------------------------------------
+
+_STOPWORDS = set(
+    """a an the and or but if then else for to of in on at by with from as is are was were be been
+    being this that these those it its it's we you they i he she them his her our your their not no
+    do does did so than too very can will just into out up down over under again about above below
+    one two also each which who whom what when where why how all any both few more most other some
+    such only own same here there because while during before after between against""".split()
+)
+
+_SENT_SPLIT = re.compile(r"(?<=[.!?])\s+")
+
+
+def summarize_text(text: str, max_sentences: int = 8) -> List[str]:
+    """Frequency-based extractive summary: returns the most salient sentences
+    in their original order. Deterministic and dependency-free."""
+    text = (text or "").strip()
+    if not text:
+        return []
+    sentences = [s.strip() for s in _SENT_SPLIT.split(text) if s.strip()]
+    if len(sentences) <= max_sentences:
+        return sentences
+
+    freq: Dict[str, int] = {}
+    for word in re.findall(r"[a-zA-Z][a-zA-Z'-]+", text.lower()):
+        if word in _STOPWORDS or len(word) < 3:
+            continue
+        freq[word] = freq.get(word, 0) + 1
+    if not freq:
+        return sentences[:max_sentences]
+    peak = max(freq.values())
+
+    scored = []
+    for idx, sent in enumerate(sentences):
+        words = re.findall(r"[a-zA-Z][a-zA-Z'-]+", sent.lower())
+        if not words:
+            continue
+        score = sum(freq.get(w, 0) for w in words) / (len(words) ** 0.5)
+        # gentle bonus for early sentences (intros tend to frame the lecture)
+        if idx < 3:
+            score *= 1.1
+        scored.append((idx, score, sent))
+
+    top = sorted(scored, key=lambda x: x[1], reverse=True)[:max_sentences]
+    return [sent for idx, _, sent in sorted(top, key=lambda x: x[0])]
+
+
+def render_summary(item: LectureItem, segments: List[Dict[str, Any]], text: str = "") -> str:
+    """A short Markdown study summary for a lecture."""
+    if not text:
+        text = " ".join((s.get("text") or "").strip() for s in segments).strip()
+    points = summarize_text(text, max_sentences=8)
+    lines = [f"# Summary — {item.title}", ""]
+    if item.week is not None:
+        lines.append(f"*Week {item.week}*")
+        lines.append("")
+    lines.append("## Key points")
+    lines.append("")
+    if points:
+        lines += [f"- {p}" for p in points]
+    else:
+        lines.append("- (Transcript too short to summarise.)")
+    words = len(re.findall(r"\w+", text))
+    lines += ["", f"*Generated from a {words:,}-word transcript.*"]
+    return "\n".join(lines).rstrip() + "\n"
+
+
+# ---------------------------------------------------------------------------
+# Reorganize existing outputs into Week/Date/Topic folders
+# ---------------------------------------------------------------------------
+
+
+def _item_from_path(output_dir: Path, stem: str, folder: str) -> LectureItem:
+    """Recover a LectureItem from a sibling .json if present, else from the stem."""
+    base = output_dir / folder if folder else output_dir
+    jpath = base / f"{stem}.json"
+    if jpath.exists():
+        try:
+            data = json.loads(jpath.read_text(encoding="utf-8", errors="replace"))
+            return LectureItem(
+                title=data.get("title") or _title_from_stem(stem),
+                url=data.get("url", ""),
+                duration=int(data.get("duration", 0) or 0),
+                pub_date=data.get("pub_date", ""),
+                author=data.get("author", ""),
+                guid=data.get("guid", ""),
+            )
+        except Exception:
+            pass
+    return LectureItem(title=_title_from_stem(stem), url="")
+
+
+def reorganize_outputs(output_dir: Path, organize: str) -> List[str]:
+    """Move existing transcript files into <organize> folders. Returns moved paths."""
+    import shutil
+
+    moved: List[str] = []
+    for group in list_transcripts(output_dir):
+        item = _item_from_path(output_dir, group["stem"], group["folder"])
+        target_dir = output_dir_for(output_dir, item, organize)
+        for rel in list(group["formats"].values()):
+            src = output_dir / rel
+            if not src.exists():
+                continue
+            ensure_dir(target_dir)
+            dest = target_dir / src.name
+            if dest.resolve() == src.resolve():
+                continue
+            if dest.exists():
+                dest = target_dir / f"{src.stem}_dup{src.suffix}"
+            shutil.move(str(src), str(dest))
+            moved.append(dest.relative_to(output_dir).as_posix())
+    return moved

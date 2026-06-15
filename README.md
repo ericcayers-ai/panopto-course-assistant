@@ -11,17 +11,30 @@ FastAPI** backend with a plain **HTML + JavaScript** frontend (no build step).
 
 | Tab | What it does |
 | --- | --- |
-| **Lectures** | Paste a Panopto RSS feed URL (or upload the `.xml`) and list every lecture, with week/date/duration parsed from the title and metadata. Queue any lecture for transcription. |
-| **Transcripts** | Browse generated transcripts (grouped by lecture, organised into Week/Date/Topic folders) and read any `.txt` / `.srt` / `.vtt` / `.md` / `.json` output inline. Includes a one-click **Export for NotebookLM**. |
-| **Search** | Full-text search across every transcript with highlighted snippets. |
+| **Lectures** | Paste a Panopto RSS feed URL (or upload the `.xml`) and list every lecture, with week/date/duration/size parsed from the title and metadata. Each lecture shows a **transcribed / pending** badge. Pick output formats and options, then transcribe one, a selection, or **all pending** in a batch. |
+| **Transcripts** | Browse generated transcripts (grouped by lecture, one row each, with format chips) and read any `.txt` / `.srt` / `.vtt` / `.md` / `.json` / summary output inline. One-click **Export for NotebookLM** and **Reorganize** into Week/Date/Topic folders. |
+| **Search** | Full-text search across every transcript — one result per lecture, ranked by hit count, with snippets and a jump-to-transcript button. |
 | **PDF → Markdown** | Point at a folder of lecture-slide PDFs and convert them all to Markdown (mirrors the folder structure into a `*_copy` folder), via [MarkItDown](https://github.com/microsoft/markitdown). |
-| **Jobs** | Live progress of running transcription jobs (download → transcribe → write), with a polling progress bar. |
-| **Materials** | Browse any local folder (e.g. the course slides / source code) from the browser. |
+| **Jobs** | Live progress of running transcription jobs (download → transcribe → write) with a polling progress bar and a count badge; finished jobs refresh the lecture badges automatically. |
+| **Materials** | Browse any local folder (e.g. the course slides / source code) from the browser, with click-to-descend and an *up* button. |
+
+### Transcription options
+
+When an engine is installed, the **Transcription settings** panel exposes:
+engine, model, language, device (auto/cuda/cpu), folder organisation
+(week/date/topic/none), the TXT timestamp interval, and the output formats —
+`txt`, `srt`, `vtt`, `md`, `json`, **`notebooklm`** (clean prose), and
+**`summary`** (an extractive key-points study summary, no LLM required). Toggles
+cover **audio-only download** (saves bandwidth), **keep media**, **skip
+already-transcribed**, and **force re-transcribe**. A cookies-file path lets you
+reach auth-gated feeds. Your settings, feed URL and course name are remembered in
+the browser between visits.
 
 The transcription engine ([faster-whisper](https://github.com/SYSTRAN/faster-whisper)
 or [openai-whisper](https://github.com/openai/whisper)) is **optional**. The app
-runs fine for feed parsing, search, viewing, PDF conversion and browsing without
-it — the **Lectures** tab simply shows that no engine is installed.
+runs fine for feed parsing, search, viewing, PDF conversion, export and browsing
+without it — the **Lectures** tab simply shows that no engine is installed and
+disables the transcribe buttons.
 
 ## Quick start
 
@@ -99,24 +112,40 @@ The frontend is a thin client over a JSON API (see `app/main.py`):
 - `GET  /api/search?q=` – full-text search
 - `POST /api/export/notebooklm` `{selection?, combined?, course?}` – NotebookLM export
 - `POST /api/transcribe` – queue a transcription job
+- `POST /api/organize` `{by}` – reorganize existing transcripts into folders
 - `GET  /api/jobs` / `GET /api/jobs/{id}` – job status
 - `POST /api/pdf/convert` `{input_path, ...}` – convert a PDF folder
 - `GET  /api/materials?path=` – list a local folder
 
 Interactive API docs are available at `/docs` when the server is running.
 
+## Tests
+
+```bash
+pip install -r requirements.txt -r requirements-dev.txt
+python -m pytest -q          # ~90 unit + API tests
+```
+
+The suite covers feed-parsing edge cases (malformed XML, missing/garbage
+fields), date/week inference, timestamp rounding, every renderer, the
+extractive summary, transcript listing/search, the path-traversal guard, the
+NotebookLM export, reorganisation, the background job lifecycle, the
+skip/force transcribe flow, and the HTTP API (via `fastapi.testclient`).
+
 ## Project layout
 
 ```
 panopto-course-assistant/
 ├── app/
-│   ├── core.py         # feed parsing, organisation, writers, search, PDF→MD
+│   ├── core.py         # feed parsing, organisation, writers, search, summary, PDF→MD, NotebookLM
 │   ├── transcribe.py   # optional download + whisper engines (lazy imports)
 │   ├── jobs.py         # in-memory background job manager
 │   └── main.py         # FastAPI app + routes
-├── static/             # index.html, app.js, style.css (vanilla frontend)
+├── static/             # index.html, app.js, style.css (vanilla frontend, no build step)
+├── tests/              # pytest suite (core, jobs/transcribe, API)
 ├── requirements.txt
-├── requirements-transcribe.txt
+├── requirements-transcribe.txt   # optional: faster-whisper, yt-dlp, markitdown
+├── requirements-dev.txt          # pytest, httpx
 └── run.py
 ```
 

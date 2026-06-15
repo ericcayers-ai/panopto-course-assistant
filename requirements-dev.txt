@@ -1,0 +1,5 @@
+# Development / test dependencies.
+#   pip install -r requirements.txt -r requirements-dev.txt
+#   python -m pytest -q
+pytest>=8.0
+httpx>=0.27        # required by fastapi.testclient for the API tests

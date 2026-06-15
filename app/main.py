@@ -12,6 +12,7 @@ GET  /api/transcript       -> read one transcript file (?path=)
 GET  /api/search           -> full-text search across transcripts (?q=)
 POST /api/export/notebooklm -> render transcripts into NotebookLM-friendly Markdown
 POST /api/transcribe       -> queue a transcription job (needs whisper installed)
+POST /api/organize         -> reorganize existing transcripts into folders
 GET  /api/jobs             -> list jobs
 GET  /api/jobs/{job_id}    -> one job's status
 POST /api/pdf/convert      -> convert a folder of PDFs to Markdown
@@ -60,7 +61,15 @@ class TranscribeRequest(BaseModel):
     outputs: List[str] = ["txt", "srt", "md", "json"]
     interval: int = 30
     keep_media: bool = False
+    audio_only: bool = False
+    skip_existing: bool = True
+    force: bool = False
     cookies: str = ""
+    course: str = ""
+
+
+class OrganizeRequest(BaseModel):
+    by: str = "week"                 # none | date | week | topic
 
 
 class PdfRequest(BaseModel):
@@ -85,6 +94,8 @@ class NotebookLMRequest(BaseModel):
 def api_status() -> Dict[str, Any]:
     status = transcribe.engine_status()
     status["output_dir"] = str(OUTPUT_DIR)
+    status["output_choices"] = core.OUTPUT_CHOICES
+    status["organize_choices"] = core.ORG_CHOICES
     return status
 
 
@@ -182,12 +193,25 @@ def api_transcribe(req: TranscribeRequest) -> Dict[str, Any]:
             outputs=req.outputs,
             interval=req.interval,
             keep_media=req.keep_media,
+            audio_only=req.audio_only,
+            skip_existing=req.skip_existing,
+            force=req.force,
             cookies=req.cookies,
+            course=req.course,
             progress=progress,
         )
 
     job = manager.submit(item.title, work)
     return job.to_dict()
+
+
+@app.post("/api/organize")
+def api_organize(req: OrganizeRequest) -> Dict[str, Any]:
+    """Move existing transcripts into none/date/week/topic folders."""
+    if req.by not in core.ORG_CHOICES:
+        raise HTTPException(status_code=400, detail=f"organize must be one of {core.ORG_CHOICES}")
+    moved = core.reorganize_outputs(OUTPUT_DIR, req.by)
+    return {"moved": len(moved), "files": moved, "by": req.by}
 
 
 @app.get("/api/jobs")
