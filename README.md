@@ -16,13 +16,15 @@ FastAPI** backend with a plain **HTML + JavaScript** frontend (no build step).
 | **Search** | Full-text search across every transcript — one result per lecture, ranked by hit count, with snippets and a jump-to-transcript button. |
 | **PDF → Markdown** | Point at a folder of lecture-slide PDFs and convert them all to Markdown (mirrors the folder structure into a `*_copy` folder), via [MarkItDown](https://github.com/microsoft/markitdown). |
 | **Jobs** | Live progress of running transcription jobs (download → transcribe → write) with a polling progress bar and a count badge; finished jobs refresh the lecture badges automatically. |
-| **Materials** | Browse any local folder (e.g. the course slides / source code) from the browser, with click-to-descend and an *up* button. |
+| **Materials** | Browse any local folder (e.g. the course slides / source code), and **parse a Moodle course export** (any saved Moodle course HTML) to pull the course title, code and week/topic outline — then set it as the course name or save the outline as an AI source. |
 
 ### Transcription options
 
 When an engine is installed, the **Transcription settings** panel exposes:
 engine, model, language, device (auto/cuda/cpu), folder organisation
-(week/date/topic/none), the TXT timestamp interval, and the output formats —
+(**auto**/week/lecture/module/date/topic/none — `auto` detects whichever of
+Week/Lecture/Module/Unit/Session/Lab a title uses, so non-"Week N" courses
+still organise sensibly), the TXT timestamp interval, and the output formats —
 `txt`, `srt`, `vtt`, `md`, `json`, **`notebooklm`** (clean prose), and
 **`summary`** (an extractive key-points study summary, no LLM required). Toggles
 cover **audio-only download** (saves bandwidth), **keep media**, **skip
@@ -113,6 +115,7 @@ The frontend is a thin client over a JSON API (see `app/main.py`):
 - `POST /api/export/notebooklm` `{selection?, combined?, course?}` – NotebookLM export
 - `POST /api/transcribe` – queue a transcription job
 - `POST /api/organize` `{by}` – reorganize existing transcripts into folders
+- `POST /api/moodle/parse` `{path, save_outline?}` – parse a Moodle course export
 - `GET  /api/jobs` / `GET /api/jobs/{id}` – job status
 - `POST /api/pdf/convert` `{input_path, ...}` – convert a PDF folder
 - `GET  /api/materials?path=` – list a local folder
@@ -138,6 +141,7 @@ skip/force transcribe flow, and the HTTP API (via `fastapi.testclient`).
 panopto-course-assistant/
 ├── app/
 │   ├── core.py         # feed parsing, organisation, writers, search, summary, PDF→MD, NotebookLM
+│   ├── sources.py      # course-material parsers (Moodle course HTML export)
 │   ├── transcribe.py   # optional download + whisper engines (lazy imports)
 │   ├── jobs.py         # in-memory background job manager
 │   └── main.py         # FastAPI app + routes

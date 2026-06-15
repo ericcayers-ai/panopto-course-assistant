@@ -13,6 +13,7 @@ GET  /api/search           -> full-text search across transcripts (?q=)
 POST /api/export/notebooklm -> render transcripts into NotebookLM-friendly Markdown
 POST /api/transcribe       -> queue a transcription job (needs whisper installed)
 POST /api/organize         -> reorganize existing transcripts into folders
+POST /api/moodle/parse     -> parse a Moodle course HTML export into an outline
 GET  /api/jobs             -> list jobs
 GET  /api/jobs/{job_id}    -> one job's status
 POST /api/pdf/convert      -> convert a folder of PDFs to Markdown
@@ -29,7 +30,7 @@ from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from . import core, transcribe
+from . import core, transcribe, sources
 from .jobs import manager
 
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -69,7 +70,12 @@ class TranscribeRequest(BaseModel):
 
 
 class OrganizeRequest(BaseModel):
-    by: str = "week"                 # none | date | week | topic
+    by: str = "week"                 # auto | none | date | week | lecture | module | topic
+
+
+class MoodleRequest(BaseModel):
+    path: str                        # mirror folder or course/view_php.html
+    save_outline: bool = False       # also write the outline as a source file
 
 
 class PdfRequest(BaseModel):
@@ -248,6 +254,20 @@ def api_pdf_convert(req: PdfRequest) -> Dict[str, Any]:
         "output_root": str(path.parent / f"{path.name}{req.suffix}"),
         "files": [{"pdf": p, "md": m} for p, m in converted],
     }
+
+
+@app.post("/api/moodle/parse")
+def api_moodle_parse(req: MoodleRequest) -> Dict[str, Any]:
+    """Parse a Moodle course HTML export into a structured outline."""
+    try:
+        parsed = sources.parse_moodle_course(Path(req.path).expanduser())
+    except FileNotFoundError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Could not parse course page: {e}")
+    if req.save_outline:
+        parsed["saved_as"] = sources.save_outline(OUTPUT_DIR, parsed)
+    return parsed
 
 
 @app.get("/api/materials")

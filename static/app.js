@@ -493,6 +493,48 @@ async function browse(path) {
     });
   } catch (e) { out.textContent = "Error: " + e.message; }
 }
+// Moodle course parser
+$("moodle-go").addEventListener("click", async () => {
+  const out = $("moodle-results");
+  const path = $("moodle-path").value.trim();
+  if (!path) { toast("Enter the Moodle course folder/file path.", "warn"); return; }
+  remember("moodlepath", path);
+  out.textContent = "Parsing…";
+  try {
+    const d = await api("/api/moodle/parse", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ path }),
+    });
+    clear(out);
+    out.appendChild(el("p", { class: "ok-text", text: `✓ ${d.title || d.code || "Course"}` }));
+    if (d.code) out.appendChild(el("p", { class: "muted", text: "Code: " + d.code }));
+    const actions = el("div", { class: "row" }, [
+      el("button", { class: "tag", text: "use as course name",
+        onclick: () => { setCourse(d.title || d.code); toast("Course name set.", "ok"); } }),
+      el("button", { class: "tag", text: "save outline as source",
+        onclick: () => saveMoodleOutline(path) }),
+    ]);
+    out.appendChild(actions);
+    out.appendChild(el("p", { class: "muted", text: `${d.section_count} section(s):` }));
+    d.sections.forEach((s) => {
+      const tag = s.week != null ? `Week ${s.week}` : "";
+      out.appendChild(el("div", { class: "list-item" }, [
+        el("span", { class: "li-label", text: s.name }),
+        el("span", { class: "muted", text: tag }),
+      ]));
+    });
+  } catch (e) { out.textContent = "Error: " + e.message; toast(e.message, "warn"); }
+});
+async function saveMoodleOutline(path) {
+  try {
+    const d = await api("/api/moodle/parse", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ path, save_outline: true }),
+    });
+    toast("Saved outline → " + (d.saved_as || "output folder"), "ok");
+  } catch (e) { toast(e.message, "warn"); }
+}
+
 $("materials-go").addEventListener("click", () => browse($("materials-path").value.trim()));
 $("materials-up").addEventListener("click", () => {
   const p = $("materials-path").value.trim().replace(/[\\/]+$/, "");
@@ -506,6 +548,7 @@ function restore() {
   $("feed-source").value = recall("feed");
   $("pdf-path").value = recall("pdfpath");
   $("materials-path").value = recall("matpath");
+  $("moodle-path").value = recall("moodlepath");
   const course = recall("course");
   if (course) { $("course-name").textContent = course; $("opt-course").value = course; $("nlm-course").value = course; }
   try {

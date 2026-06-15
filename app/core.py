@@ -68,7 +68,7 @@ class LectureItem:
         }
 
 
-ORG_CHOICES = ["none", "date", "week", "topic"]
+ORG_CHOICES = ["auto", "none", "date", "week", "lecture", "module", "topic"]
 OUTPUT_CHOICES = ["txt", "srt", "vtt", "md", "json", "notebooklm", "summary"]
 
 
@@ -123,9 +123,49 @@ def parse_pubdate(value: str) -> Optional[dt.date]:
         return None
 
 
-def infer_week(title: str) -> Optional[int]:
-    m = re.search(r"\b(?:week|w)[_\-\s]*0*(\d{1,2})(?!\d)", title or "", flags=re.IGNORECASE)
+# Recognised "sequence" keywords in lecture titles, longest/safest alternations
+# first. Single-letter abbreviations are deliberately conservative to avoid false
+# positives (e.g. bare "l"/"m" matching ordinary words).
+_SEQUENCE_PATTERNS = {
+    "week": r"(?:week|wk|w)",
+    "lecture": r"(?:lecture|lect|lec)",
+    "module": r"(?:module|mod)",
+    "unit": r"(?:unit)",
+    "session": r"(?:session|sess)",
+    "topic": r"(?:topic)",
+    "lab": r"(?:lab|practical|prac)",
+}
+
+_SEQUENCE_LABELS = {
+    "week": "Week", "lecture": "Lecture", "module": "Module",
+    "unit": "Unit", "session": "Session", "topic": "Topic", "lab": "Lab",
+}
+
+# Order tried by the "auto" organiser: most-specific course structure first.
+_AUTO_ORDER = ["week", "lecture", "module", "unit", "session", "lab"]
+
+
+def infer_number(title: str, kind: str) -> Optional[int]:
+    """Extract the N from e.g. 'Week 3', 'Lecture_03', 'Mod-4' for the given kind."""
+    pat = _SEQUENCE_PATTERNS.get(kind)
+    if not pat:
+        return None
+    m = re.search(rf"\b{pat}[_\-\s]*0*(\d{{1,2}})(?!\d)", title or "", flags=re.IGNORECASE)
     return int(m.group(1)) if m else None
+
+
+def infer_week(title: str) -> Optional[int]:
+    return infer_number(title, "week")
+
+
+def infer_sequence(title: str) -> Optional[tuple]:
+    """Return (kind, number) for the first recognised sequence keyword, else None.
+    Used by the 'auto' organiser to handle courses that don't say 'Week N'."""
+    for kind in _AUTO_ORDER:
+        n = infer_number(title, kind)
+        if n is not None:
+            return kind, n
+    return None
 
 
 def infer_topic(title: str) -> str:
@@ -133,7 +173,9 @@ def infer_topic(title: str) -> str:
     title = re.sub(r"\b(old|draft|rev(?:ision)?|part\s*\d+)\b", "", title, flags=re.I)
     title = re.sub(r"[_\-]+", " ", title)
     title = re.sub(r"\s+", " ", title).strip()
-    m = re.match(r"(?i)(?:week|w)\s*0*\d+\s*(.*)$", title)
+    # strip a leading sequence prefix (Week 3, Lecture 2, Module 1, …) if present
+    seq_alt = "|".join(p for p in _SEQUENCE_PATTERNS.values())
+    m = re.match(rf"(?i)(?:{seq_alt})\s*0*\d+\s*[:.\-]?\s*(.*)$", title)
     if m and m.group(1).strip():
         title = m.group(1).strip()
     if not title:
@@ -264,11 +306,19 @@ def organization_folder(item: LectureItem, mode: str) -> str:
     if mode == "date":
         d = item.date_obj
         return d.strftime("%Y-%m-%d") if d else "unknown-date"
-    if mode == "week":
-        w = item.week
-        return f"Week_{w:02d}" if w is not None else "unparsed-week"
     if mode == "topic":
         return item.topic
+    if mode in _SEQUENCE_LABELS:  # week | lecture | module | unit | session | lab
+        n = infer_number(item.title, mode)
+        label = _SEQUENCE_LABELS[mode]
+        return f"{label}_{n:02d}" if n is not None else f"unparsed-{mode}"
+    if mode == "auto":
+        seq = infer_sequence(item.title)
+        if seq:
+            kind, n = seq
+            return f"{_SEQUENCE_LABELS[kind]}_{n:02d}"
+        d = item.date_obj
+        return d.strftime("%Y-%m-%d") if d else "uncategorized"
     return ""
 
 

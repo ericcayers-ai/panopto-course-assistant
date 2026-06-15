@@ -46,7 +46,7 @@
         <div id="engine-warning" class="banner warn hidden"></div>
         <div class="grid">
           <label>Course name
-            <input type="text" id="opt-course" placeholder="e.g. COMPX234 – Systems and Networks" />
+            <input type="text" id="opt-course" placeholder="e.g. your course name" />
           </label>
           <label>Engine <select id="opt-engine"></select></label>
           <label>Model
@@ -62,7 +62,10 @@
           </label>
           <label>Organize by
             <select id="opt-organize">
-              <option value="week" selected>week</option>
+              <option value="auto" selected>auto</option>
+              <option value="week">week</option>
+              <option value="lecture">lecture</option>
+              <option value="module">module</option>
               <option value="date">date</option>
               <option value="topic">topic</option>
               <option value="none">none</option>
@@ -119,7 +122,10 @@
         <p class="hint">Move existing transcripts into folders by week / date / topic.</p>
         <div class="row">
           <select id="org-by">
-            <option value="week" selected>week</option>
+            <option value="auto" selected>auto</option>
+            <option value="week">week</option>
+            <option value="lecture">lecture</option>
+            <option value="module">module</option>
             <option value="date">date</option>
             <option value="topic">topic</option>
             <option value="none">none (flat)</option>
@@ -170,13 +176,28 @@
 
     <!-- MATERIALS -->
     <section id="materials" class="panel">
-      <h2>Browse course materials</h2>
-      <div class="row">
-        <input type="text" id="materials-path" placeholder="Folder path to browse (e.g. ..\Slides-20260615)" />
-        <button id="materials-go">List</button>
-        <button id="materials-up" class="ghost" title="Parent folder">↑ up</button>
+      <h2>Course materials</h2>
+
+      <div class="card">
+        <h3>🏫 Parse a Moodle course export</h3>
+        <p class="hint">Point at a saved Moodle course folder (or its <code>course/view_php.html</code>)
+          to pull the course title and week/topic outline. Works with any Moodle course.</p>
+        <div class="row">
+          <input type="text" id="moodle-path" placeholder="Path to the Moodle course folder or HTML file" />
+          <button id="moodle-go">Parse</button>
+        </div>
+        <div id="moodle-results" class="results"></div>
       </div>
-      <div id="materials-results" class="results"></div>
+
+      <div class="card">
+        <h3>📂 Browse a local folder</h3>
+        <div class="row">
+          <input type="text" id="materials-path" placeholder="Folder path to browse (e.g. ..\Slides-20260615)" />
+          <button id="materials-go">List</button>
+          <button id="materials-up" class="ghost" title="Parent folder">↑ up</button>
+        </div>
+        <div id="materials-results" class="results"></div>
+      </div>
     </section>
   </main>
 
