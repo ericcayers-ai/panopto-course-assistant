@@ -69,7 +69,7 @@ class LectureItem:
 
 
 ORG_CHOICES = ["none", "date", "week", "topic"]
-OUTPUT_CHOICES = ["txt", "srt", "vtt", "md", "json"]
+OUTPUT_CHOICES = ["txt", "srt", "vtt", "md", "json", "notebooklm"]
 
 
 # ---------------------------------------------------------------------------
@@ -381,6 +381,73 @@ def render_md(item: LectureItem, segments: List[Dict[str, Any]], meta: Dict[str,
     return "\n".join(lines).rstrip() + "\n"
 
 
+# ---------------------------------------------------------------------------
+# NotebookLM-friendly rendering
+#
+# NotebookLM works best with clean, readable prose: a clear title, a compact
+# metadata line for grounding/citations, and continuous paragraphs WITHOUT
+# per-segment timestamps (timestamps fragment sentences and add noise). These
+# helpers turn whisper segments — or an already-written .txt — into that shape.
+# ---------------------------------------------------------------------------
+
+# Matches a leading grouped timestamp like "[00:12:30]  " produced by render_txt.
+_TS_PREFIX = re.compile(r"^\[\d{1,2}:\d{2}:\d{2}\]\s*")
+
+
+def paragraphs_from_texts(texts: List[str], target_chars: int = 700) -> List[str]:
+    """Merge many short fragments into readable paragraphs of ~target_chars."""
+    paragraphs: List[str] = []
+    buf = ""
+    for raw in texts:
+        t = (raw or "").strip()
+        if not t:
+            continue
+        buf = f"{buf} {t}".strip() if buf else t
+        if len(buf) >= target_chars and re.search(r"[.!?]\"?$", buf):
+            paragraphs.append(buf)
+            buf = ""
+    if buf:
+        paragraphs.append(buf)
+    return paragraphs
+
+
+def notebooklm_header(item: LectureItem, course: str = "") -> List[str]:
+    bits = []
+    if item.week is not None:
+        bits.append(f"Week {item.week}")
+    d = item.date_obj
+    if d:
+        bits.append(d.isoformat())
+    if item.duration:
+        bits.append(human_duration(item.duration))
+    source_line = "Source: lecture transcript"
+    if course:
+        source_line += f" — {course}"
+    lines = [f"# {item.title}", ""]
+    if bits:
+        lines.append("> " + "  ·  ".join(bits))
+    lines.append(f"> {source_line}")
+    lines.append("")
+    return lines
+
+
+def render_notebooklm(item: LectureItem, segments: List[Dict[str, Any]], course: str = "") -> str:
+    """Clean, de-timestamped Markdown optimised for a NotebookLM source."""
+    texts = [(s.get("text") or "").strip() for s in segments]
+    paragraphs = paragraphs_from_texts(texts)
+    header = "\n".join(notebooklm_header(item, course)).rstrip()
+    return (header + "\n\n" + "\n\n".join(paragraphs)).strip() + "\n"
+
+
+def clean_txt_to_notebooklm(raw_txt: str, title: str = "", course: str = "") -> str:
+    """Convert an existing grouped-timestamp .txt transcript into NotebookLM prose."""
+    blocks = [b.strip() for b in raw_txt.split("\n\n") if b.strip()]
+    texts = [_TS_PREFIX.sub("", b).replace("\n", " ").strip() for b in blocks]
+    paragraphs = paragraphs_from_texts(texts)
+    header = [f"# {title}", "", "> Source: lecture transcript" + (f" — {course}" if course else ""), ""] if title else []
+    return ("\n".join(header) + "\n" + "\n\n".join(paragraphs)).strip() + "\n"
+
+
 def write_outputs(
     item: LectureItem,
     segments: List[Dict[str, Any]],
@@ -409,6 +476,10 @@ def write_outputs(
         p = out_dir / f"{stem}.md"
         p.write_text(render_md(item, segments, meta), encoding="utf-8")
         written["md"] = str(p)
+    if "notebooklm" in outputs:
+        p = out_dir / f"{stem}.notebooklm.md"
+        p.write_text(render_notebooklm(item, segments, meta.get("course", "")), encoding="utf-8")
+        written["notebooklm"] = str(p)
     if "json" in outputs:
         p = out_dir / f"{stem}.json"
         payload = {
@@ -430,6 +501,12 @@ def write_outputs(
 TEXT_EXTS = {".txt", ".md", ".srt", ".vtt", ".json"}
 
 
+def _is_internal(f: Path, output_dir: Path) -> bool:
+    """True for manifests, error logs, and anything under an export folder (_*)."""
+    rel = f.relative_to(output_dir)
+    return any(part.startswith("_") for part in rel.parts)
+
+
 def list_transcripts(output_dir: Path) -> List[Dict[str, Any]]:
     """Group transcript files under output_dir by their stem (one entry per lecture)."""
     if not output_dir.exists():
@@ -438,7 +515,9 @@ def list_transcripts(output_dir: Path) -> List[Dict[str, Any]]:
     for f in sorted(output_dir.rglob("*")):
         if not f.is_file() or f.suffix.lower() not in TEXT_EXTS:
             continue
-        if f.name.startswith("_"):  # skip manifests / error logs
+        if _is_internal(f, output_dir):
+            continue
+        if f.name.endswith(".notebooklm.md"):  # export, listed separately
             continue
         rel_parent = f.parent.relative_to(output_dir).as_posix()
         key = f"{rel_parent}/{f.stem}"
@@ -469,7 +548,7 @@ def search_transcripts(output_dir: Path, query: str, context: int = 60) -> List[
     for f in sorted(output_dir.rglob("*")):
         if not f.is_file() or f.suffix.lower() not in {".txt", ".md"}:
             continue
-        if f.name.startswith("_"):
+        if _is_internal(f, output_dir) or f.name.endswith(".notebooklm.md"):
             continue
         try:
             content = f.read_text(encoding="utf-8", errors="replace")
@@ -539,3 +618,111 @@ def convert_pdf_tree(
         out_file.write_text(text if text.endswith("\n") else text + "\n", encoding="utf-8")
         converted.append((str(pdf), str(out_file)))
     return converted
+
+
+# ---------------------------------------------------------------------------
+# NotebookLM export (convert EXISTING transcripts into clean NotebookLM sources)
+# ---------------------------------------------------------------------------
+
+NOTEBOOKLM_DIRNAME = "_notebooklm"
+
+
+def _title_from_stem(stem: str) -> str:
+    return re.sub(r"\s+", " ", stem.replace("_", " ")).strip() or stem
+
+
+def _notebooklm_body_for_group(output_dir: Path, group: Dict[str, Any], course: str) -> Tuple[str, str]:
+    """Build (clean_markdown, display_title) for one transcript group.
+
+    Prefers the .json output (has segments + metadata); falls back to the
+    grouped-timestamp .txt; finally to stripping the .md. Returns ("", "") if
+    no usable source is found.
+    """
+    fmts = group["formats"]
+
+    if "json" in fmts:
+        data = json.loads((output_dir / fmts["json"]).read_text(encoding="utf-8", errors="replace"))
+        item = LectureItem(
+            title=data.get("title") or _title_from_stem(group["stem"]),
+            url=data.get("url", ""),
+            duration=int(data.get("duration", 0) or 0),
+            pub_date=data.get("pub_date", ""),
+            author=data.get("author", ""),
+            guid=data.get("guid", ""),
+        )
+        segments = data.get("segments") or [{"text": data.get("text", "")}]
+        return render_notebooklm(item, segments, course), item.title
+
+    if "txt" in fmts:
+        title = _title_from_stem(group["stem"])
+        raw = (output_dir / fmts["txt"]).read_text(encoding="utf-8", errors="replace")
+        return clean_txt_to_notebooklm(raw, title=title, course=course), title
+
+    if "md" in fmts:
+        title = _title_from_stem(group["stem"])
+        raw = (output_dir / fmts["md"]).read_text(encoding="utf-8", errors="replace")
+        kept = [
+            ln for ln in raw.splitlines()
+            if not ln.startswith("### ") and not ln.startswith("- **") and ln.strip() not in ("## Transcript",)
+        ]
+        texts = [ln.strip() for ln in kept if ln.strip() and not ln.startswith("#")]
+        return clean_txt_to_notebooklm("\n\n".join(texts), title=title, course=course), title
+
+    return "", ""
+
+
+def export_notebooklm(
+    output_dir: Path,
+    selection: Optional[List[str]] = None,
+    combined: bool = False,
+    course: str = "",
+) -> Dict[str, Any]:
+    """Render existing transcripts into NotebookLM-friendly Markdown.
+
+    Writes one clean ``.md`` per lecture under ``<output_dir>/_notebooklm/``
+    (mirroring the week/topic folder structure). If ``combined`` is set, also
+    writes a single ``course_pack.md`` containing every lecture — handy as one
+    NotebookLM upload. ``selection`` (a list of "<folder>/<stem>" or "<stem>"
+    keys) limits which lectures are exported; ``None`` exports all.
+    """
+    groups = list_transcripts(output_dir)
+    if selection:
+        wanted = set(selection)
+        groups = [
+            g for g in groups
+            if g["stem"] in wanted or f"{g['folder']}/{g['stem']}".strip("/") in wanted
+        ]
+
+    dest = ensure_dir(output_dir / NOTEBOOKLM_DIRNAME)
+    written: List[str] = []
+    docs: List[Tuple[str, str]] = []  # (title, body)
+
+    for g in groups:
+        body, title = _notebooklm_body_for_group(output_dir, g, course)
+        if not body.strip():
+            continue
+        target_dir = ensure_dir(dest / g["folder"]) if g["folder"] else dest
+        out_file = target_dir / f"{g['stem']}.md"
+        out_file.write_text(body, encoding="utf-8")
+        written.append(out_file.relative_to(output_dir).as_posix())
+        docs.append((title, body))
+
+    combined_path = None
+    if combined and docs:
+        header = [f"# {course or 'Course'} — Lecture Transcripts", ""]
+        header.append("## Contents")
+        header += [f"- {title}" for title, _ in docs]
+        header.append("")
+        parts = ["\n".join(header)]
+        for title, body in docs:
+            parts.append(body.strip())
+        combined_file = dest / "course_pack.md"
+        combined_file.write_text("\n\n---\n\n".join(parts).strip() + "\n", encoding="utf-8")
+        combined_path = combined_file.relative_to(output_dir).as_posix()
+
+    return {
+        "count": len(written),
+        "dest": str(dest),
+        "files": written,
+        "combined": combined_path,
+    }

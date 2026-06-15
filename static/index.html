@@ -65,6 +65,19 @@
     <!-- TRANSCRIPTS -->
     <section id="transcripts" class="panel">
       <h2>Transcript library <button id="transcripts-refresh" class="small">refresh</button></h2>
+
+      <div class="card">
+        <h3>Export for NotebookLM</h3>
+        <p class="hint">Produces clean, de-timestamped Markdown (one file per lecture) under
+          <code>_notebooklm/</code> in the output folder — ready to upload to NotebookLM as sources.</p>
+        <div class="row">
+          <input type="text" id="nlm-course" placeholder="Course name (optional, e.g. COMPX234 – Systems and Networks)" />
+          <label><input type="checkbox" id="nlm-combined" /> also make one combined <code>course_pack.md</code></label>
+          <button id="nlm-export">Export all transcripts</button>
+        </div>
+        <div id="nlm-results"></div>
+      </div>
+
       <div class="split">
         <div id="transcripts-list" class="list"></div>
         <pre id="transcript-view" class="viewer">Select a transcript to view it here.</pre>

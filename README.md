@@ -12,7 +12,7 @@ FastAPI** backend with a plain **HTML + JavaScript** frontend (no build step).
 | Tab | What it does |
 | --- | --- |
 | **Lectures** | Paste a Panopto RSS feed URL (or upload the `.xml`) and list every lecture, with week/date/duration parsed from the title and metadata. Queue any lecture for transcription. |
-| **Transcripts** | Browse generated transcripts (grouped by lecture, organised into Week/Date/Topic folders) and read any `.txt` / `.srt` / `.vtt` / `.md` / `.json` output inline. |
+| **Transcripts** | Browse generated transcripts (grouped by lecture, organised into Week/Date/Topic folders) and read any `.txt` / `.srt` / `.vtt` / `.md` / `.json` output inline. Includes a one-click **Export for NotebookLM**. |
 | **Search** | Full-text search across every transcript with highlighted snippets. |
 | **PDF → Markdown** | Point at a folder of lecture-slide PDFs and convert them all to Markdown (mirrors the folder structure into a `*_copy` folder), via [MarkItDown](https://github.com/microsoft/markitdown). |
 | **Jobs** | Live progress of running transcription jobs (download → transcribe → write), with a polling progress bar. |
@@ -51,6 +51,34 @@ This adds `faster-whisper` (recommended; runs on CPU with int8, or GPU if you
 have CUDA), `yt-dlp` (download fallback for auth-gated media), and `markitdown`
 (PDF → Markdown). The first transcription downloads the chosen Whisper model.
 
+## Exporting to NotebookLM
+
+[NotebookLM](https://notebooklm.google.com/) works best when each source is
+clean, readable prose — per-segment timestamps fragment sentences and add noise.
+The **Transcripts → Export for NotebookLM** button (or `POST /api/export/notebooklm`)
+turns your existing transcripts into NotebookLM-ready Markdown:
+
+- **One file per lecture** under `transcripts/_notebooklm/`, mirroring the
+  Week/Topic folder structure. Each file has a clear `# Title` heading, a compact
+  metadata line (week · date · duration) to help NotebookLM ground its citations,
+  and the transcript re-flowed into clean paragraphs with timestamps removed.
+- **Optional combined `course_pack.md`** — every lecture in one document with a
+  table of contents, so you can upload the whole course as a single source.
+
+How to use it:
+
+1. Transcribe some lectures (or drop existing `.txt`/`.json` transcripts in the
+   output folder).
+2. Open the **Transcripts** tab, optionally type a course name, tick *combined*
+   if you want a single file, and click **Export all transcripts**.
+3. In NotebookLM, click **+ Add source** and upload the `.md` files from
+   `transcripts/_notebooklm/` (or just `course_pack.md`).
+
+The exporter reads from the richest source available per lecture (`.json` →
+`.txt` → `.md`), so it works even on transcripts produced before this feature
+existed. You can also produce a NotebookLM file at transcription time by adding
+`notebooklm` to the `outputs` list.
+
 ## Configuration
 
 | Env var | Default | Meaning |
@@ -69,6 +97,7 @@ The frontend is a thin client over a JSON API (see `app/main.py`):
 - `GET  /api/transcripts` – list generated transcripts
 - `GET  /api/transcript?path=` – read one transcript file
 - `GET  /api/search?q=` – full-text search
+- `POST /api/export/notebooklm` `{selection?, combined?, course?}` – NotebookLM export
 - `POST /api/transcribe` – queue a transcription job
 - `GET  /api/jobs` / `GET /api/jobs/{id}` – job status
 - `POST /api/pdf/convert` `{input_path, ...}` – convert a PDF folder

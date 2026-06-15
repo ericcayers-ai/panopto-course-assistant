@@ -197,6 +197,38 @@ async function viewTranscript(relPath) {
 
 document.getElementById("transcripts-refresh").addEventListener("click", loadTranscripts);
 
+// ---- NotebookLM export ----------------------------------------------------
+
+document.getElementById("nlm-export").addEventListener("click", async () => {
+  const out = document.getElementById("nlm-results");
+  out.textContent = "Exporting…";
+  try {
+    const data = await api("/api/export/notebooklm", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        course: document.getElementById("nlm-course").value.trim(),
+        combined: document.getElementById("nlm-combined").checked,
+      }),
+    });
+    clear(out);
+    out.appendChild(el("p", { text: `Exported ${data.count} file(s) → ${data.dest}` }));
+    if (data.combined) {
+      out.appendChild(el("div", {}, [
+        el("button", { class: "tag", text: "view course_pack.md", onclick: () => viewTranscript(data.combined) }),
+      ]));
+    }
+    data.files.forEach((f) => {
+      out.appendChild(el("div", { class: "list-item" }, [
+        el("span", { text: f }),
+        el("button", { class: "tag", text: "view", onclick: () => viewTranscript(f) }),
+      ]));
+    });
+  } catch (e) {
+    out.textContent = "Error: " + e.message;
+  }
+});
+
 // ---- search ---------------------------------------------------------------
 
 async function doSearch() {

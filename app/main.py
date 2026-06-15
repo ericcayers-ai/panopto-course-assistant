@@ -10,6 +10,7 @@ POST /api/feed/upload      -> parse an uploaded RSS .xml file -> lectures
 GET  /api/transcripts      -> list transcripts in the output directory
 GET  /api/transcript       -> read one transcript file (?path=)
 GET  /api/search           -> full-text search across transcripts (?q=)
+POST /api/export/notebooklm -> render transcripts into NotebookLM-friendly Markdown
 POST /api/transcribe       -> queue a transcription job (needs whisper installed)
 GET  /api/jobs             -> list jobs
 GET  /api/jobs/{job_id}    -> one job's status
@@ -69,6 +70,12 @@ class PdfRequest(BaseModel):
     overwrite: bool = False
 
 
+class NotebookLMRequest(BaseModel):
+    selection: Optional[List[str]] = None  # ["folder/stem", ...]; None = all
+    combined: bool = False                 # also write a single course_pack.md
+    course: str = ""                       # optional course name for headers
+
+
 # ---------------------------------------------------------------------------
 # API
 # ---------------------------------------------------------------------------
@@ -123,6 +130,23 @@ def api_transcript(path: str) -> Dict[str, Any]:
 @app.get("/api/search")
 def api_search(q: str) -> Dict[str, Any]:
     return {"query": q, "results": core.search_transcripts(OUTPUT_DIR, q)}
+
+
+@app.post("/api/export/notebooklm")
+def api_export_notebooklm(req: NotebookLMRequest) -> Dict[str, Any]:
+    """Render existing transcripts into clean, NotebookLM-friendly Markdown."""
+    result = core.export_notebooklm(
+        OUTPUT_DIR,
+        selection=req.selection,
+        combined=req.combined,
+        course=req.course,
+    )
+    if result["count"] == 0:
+        raise HTTPException(
+            status_code=404,
+            detail="No transcripts found to export. Transcribe some lectures first.",
+        )
+    return result
 
 
 @app.post("/api/transcribe")
