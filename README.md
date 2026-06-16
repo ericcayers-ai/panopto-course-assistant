@@ -22,7 +22,7 @@ every import and export automatically), then move through four steps:
 | 🎓 **1 · Course** | Name your course, or **grab its real title + week/topic outline from a Moodle export** (any Moodle course) and use it as the course name in one click. |
 | 📥 **2 · Import** | One hub to **keep importing whatever you have**, with a sub-switch: **Lectures** (load a Panopto RSS feed — URL, local `.xml`, or upload — then transcribe one, a selection, or all pending), **Documents** (PDF / PowerPoint / Word / Excel / HTML / EPUB / CSV… → Markdown via [MarkItDown](https://github.com/microsoft/markitdown)), **Notion** (an HTML export → clean Markdown), and **Browse files** (find a folder path on disk). Everything lands in your Library. |
 | 📚 **3 · Library** | Everything you've imported, in one searchable place: full-text **search** across transcripts, a **viewer**, and **reorganize** into auto/week/lecture/module/date/topic folders. |
-| 📤 **4 · Export** | Turn the library into study material — **NotebookLM** sources, an **Anki** flashcard deck (auto-tagged by course·week·topic, plus categorize-an-existing-deck), and a **Notion study-database CSV** — all tagged with your course name. |
+| 📤 **4 · Export** | Turn the library into study material. **Export everything for AI** brings *all* your imported sources (transcripts + documents + Notion pages) together into one combined `everything_pack.md` for NotebookLM or any other AI; or export one kind at a time — **NotebookLM** sources, an **Anki** flashcard deck (auto-tagged by course·week·topic, plus categorize-an-existing-deck), and a **Notion study-database CSV** — all tagged with your course name. |
 | ⚙️ **Jobs** | Live progress of transcription jobs with a count badge; finished jobs refresh the lecture badges. |
 
 ### Transcription options
@@ -115,7 +115,10 @@ existed. You can also produce a NotebookLM file at transcription time by adding
 | --- | --- | --- |
 | `PANOPTO_OUTPUT` | `./transcripts` | Where transcripts are written and read. |
 | `HOST` | `127.0.0.1` | Bind address for `run.py`. |
-| `PORT` | `8000` | Port for `run.py`. |
+| `PORT` | `8000` | Preferred port for `run.py` (auto-bumps to the next free one if taken). |
+| `PANOPTO_WORKERS` | `1` | Transcription jobs run concurrently up to this many. Default `1` keeps exactly one job in flight so a whole feed doesn't exhaust RAM/VRAM or freeze the desktop. |
+| `PANOPTO_NICE` | `1` | Drop to below-normal process priority while jobs run, so the GUI stays responsive. Set `0` to disable. |
+| `PANOPTO_CPU_THREADS` | *cores − 2* | CPU threads for CPU transcription; the default leaves a couple of cores free for the rest of the machine. |
 
 ## API
 
@@ -128,6 +131,7 @@ The frontend is a thin client over a JSON API (see `app/main.py`):
 - `GET  /api/transcript?path=` – read one transcript file
 - `GET  /api/search?q=` – full-text search
 - `POST /api/export/notebooklm` `{selection?, combined?, course?}` – NotebookLM export
+- `POST /api/export/all` `{combined?, course?}` – combine transcripts + documents + Notion into one AI export
 - `POST /api/export/notion-csv` `{course?, filename?}` – Notion study-database CSV
 - `POST /api/flashcards/generate` `{selection?, course?, deck?, prefer?, max_per_lecture?}` – Anki cards
 - `POST /api/flashcards/categorize` `{text|path, course?, extra_keywords?, deck?}` – tag a deck

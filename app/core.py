@@ -926,6 +926,79 @@ def export_notebooklm(
     }
 
 
+NOTION_DIRNAME = "_notion"
+
+
+def _collect_source_markdown(folder: Path, exclude: set) -> List[Tuple[str, str]]:
+    """Read every ``.md`` under ``folder`` (recursively) into (title, body),
+    skipping combined-pack files we generated ourselves."""
+    out: List[Tuple[str, str]] = []
+    if not folder.is_dir():
+        return out
+    for f in sorted(folder.rglob("*.md")):
+        if f.name in exclude:
+            continue
+        out.append((_title_from_stem(f.stem), f.read_text(encoding="utf-8", errors="replace")))
+    return out
+
+
+def export_all_sources(output_dir: Path, combined: bool = True, course: str = "") -> Dict[str, Any]:
+    """Bring **everything imported** together into one NotebookLM / AI export.
+
+    Gathers cleaned lecture transcripts *and* the converted documents (``_docs``)
+    and Notion pages (``_notion``) already in the library, writes the per-lecture
+    transcript Markdown into ``_notebooklm/`` (as the normal export does), and —
+    when ``combined`` is set — concatenates all three into a single
+    ``everything_pack.md`` with a grouped table of contents. The combined pack is
+    plain Markdown, so it works as a NotebookLM source *or* for any other AI.
+    """
+    # Per-lecture transcript Markdown (reuses the standard exporter).
+    nb = export_notebooklm(output_dir, combined=False, course=course)
+
+    transcripts: List[Tuple[str, str]] = []
+    for g in list_transcripts(output_dir):
+        body, title = _notebooklm_body_for_group(output_dir, g, course)
+        if body.strip():
+            transcripts.append((title, body))
+    documents = _collect_source_markdown(output_dir / DOCS_DIRNAME, {"documents_pack.md"})
+    notion_pages = _collect_source_markdown(output_dir / NOTION_DIRNAME, {"notion_pack.md"})
+
+    sections = [
+        ("Lecture transcripts", transcripts),
+        ("Documents", documents),
+        ("Notion pages", notion_pages),
+    ]
+    total = sum(len(items) for _, items in sections)
+
+    dest = ensure_dir(output_dir / NOTEBOOKLM_DIRNAME)
+    combined_path = None
+    if combined and total:
+        toc = [f"# {course or 'Course'} — All sources", ""]
+        for name, items in sections:
+            if not items:
+                continue
+            toc.append(f"## {name}")
+            toc += [f"- {title}" for title, _ in items]
+            toc.append("")
+        parts = ["\n".join(toc).strip()]
+        for name, items in sections:
+            for title, body in items:
+                parts.append(body.strip())
+        cf = dest / "everything_pack.md"
+        cf.write_text("\n\n---\n\n".join(parts).strip() + "\n", encoding="utf-8")
+        combined_path = cf.relative_to(output_dir).as_posix()
+
+    return {
+        "count": total,
+        "transcripts": len(transcripts),
+        "documents": len(documents),
+        "notion": len(notion_pages),
+        "notebooklm_files": nb["count"],
+        "dest": str(dest),
+        "combined": combined_path,
+    }
+
+
 # ---------------------------------------------------------------------------
 # Extractive summary (no LLM required)
 # ---------------------------------------------------------------------------

@@ -303,6 +303,21 @@
           <p class="panel-intro">Turn your library into study material. Everything is tagged with your
             course name automatically.</p>
 
+          <div class="card feature-card">
+            <h3>📦 Export everything for AI <span class="pill">all sources</span></h3>
+            <p class="hint">One click brings <strong>everything you've imported</strong> together —
+              lecture transcripts, converted documents and Notion pages — into clean Markdown under
+              <code>_notebooklm/</code>, plus a single combined <code>everything_pack.md</code> you can
+              drop into <strong>NotebookLM</strong> or hand to <strong>any other AI</strong>.</p>
+            <div class="row">
+              <label class="toggle"><input type="checkbox" id="all-combined" checked /> combined <code>everything_pack.md</code></label>
+              <button id="export-all">Export everything</button>
+            </div>
+            <div id="export-all-results" class="results"></div>
+          </div>
+
+          <h3 class="section-title">Or export one kind at a time</h3>
+
           <div class="export-grid">
             <div class="card">
               <h3>📓 NotebookLM sources</h3>

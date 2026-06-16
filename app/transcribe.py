@@ -9,12 +9,48 @@ available to the frontend.
 from __future__ import annotations
 
 import importlib.util
+import os
+import threading
 import time
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional
 
 from . import core
 from .core import LectureItem, ensure_dir
+
+
+def _cpu_threads() -> int:
+    """Leave a couple of cores free so the desktop stays usable during CPU
+    transcription. Override with PANOPTO_CPU_THREADS."""
+    env = os.environ.get("PANOPTO_CPU_THREADS")
+    if env:
+        try:
+            return max(1, int(env))
+        except ValueError:
+            pass
+    return max(1, (os.cpu_count() or 4) - 2)
+
+
+# A loaded Whisper model is large; reuse it across jobs instead of reloading it
+# (and re-allocating VRAM) for every lecture. Keyed by (model, device, compute).
+_MODEL_CACHE: Dict[tuple, Any] = {}
+_MODEL_LOCK = threading.Lock()
+
+
+def _faster_whisper_model(model_name: str, device: str):
+    compute_type = "float16" if device == "cuda" else "int8"
+    key = (model_name, device, compute_type)
+    with _MODEL_LOCK:
+        model = _MODEL_CACHE.get(key)
+        if model is None:
+            from faster_whisper import WhisperModel
+
+            kwargs: Dict[str, Any] = {}
+            if device != "cuda":
+                kwargs["cpu_threads"] = _cpu_threads()
+            model = WhisperModel(model_name, device=device, compute_type=compute_type, **kwargs)
+            _MODEL_CACHE[key] = model
+        return model
 
 
 def _have(module: str) -> bool:
@@ -170,19 +206,13 @@ def _download_audio(url: str, dest: Path, cookies: str = "") -> Path:
 
 def _transcribe_faster_whisper(media: Path, model_name: str, language: str, device: str,
                                beam_size: int, vad_filter: bool) -> Dict[str, Any]:
-    from faster_whisper import WhisperModel
-
-    def _load(dev: str):
-        compute_type = "float16" if dev == "cuda" else "int8"
-        return WhisperModel(model_name, device=dev, compute_type=compute_type)
-
     try:
-        model = _load(device)
+        model = _faster_whisper_model(model_name, device)
     except Exception:
         # GPU was requested but its libraries are missing/incompatible — don't
         # fail the whole job, fall back to CPU and record the real device used.
         if device == "cuda":
-            model = _load("cpu")
+            model = _faster_whisper_model(model_name, "cpu")
             device = "cpu"
         else:
             raise

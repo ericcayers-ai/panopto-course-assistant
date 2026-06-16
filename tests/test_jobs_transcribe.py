@@ -67,6 +67,29 @@ def test_job_get_unknown_returns_none():
     assert JobManager().get("nope") is None
 
 
+def test_jobs_run_serially_with_single_worker():
+    """A single worker must run one job at a time — submitting a whole feed
+    should queue the rest, not stampede the machine with concurrent jobs."""
+    import threading
+
+    mgr = JobManager(workers=1)
+    started = threading.Event()
+    release = threading.Event()
+
+    def slow(progress):
+        started.set()
+        release.wait(2)
+        return {}
+
+    j1 = mgr.submit("slow", slow)
+    j2 = mgr.submit("quick", lambda p: {})
+
+    assert started.wait(2)                       # job1 is running
+    assert mgr.get(j2.id).status == "queued"     # job2 waits its turn
+    release.set()
+    assert _wait(j2, mgr).status == "done"
+
+
 # ---------------------------------------------------------------------------
 # transcribe_lecture control flow (skip / force / output filtering)
 # ---------------------------------------------------------------------------

@@ -11,6 +11,7 @@ GET  /api/transcripts      -> list transcripts in the output directory
 GET  /api/transcript       -> read one transcript file (?path=)
 GET  /api/search           -> full-text search across transcripts (?q=)
 POST /api/export/notebooklm -> render transcripts into NotebookLM-friendly Markdown
+POST /api/export/all        -> combine transcripts + documents + Notion into one AI export
 POST /api/flashcards/generate -> Anki-importable flashcards from transcripts
 POST /api/flashcards/categorize -> tag/categorise an existing flashcard deck
 POST /api/export/notion-csv -> export a Notion-importable study-database CSV
@@ -128,6 +129,11 @@ class NotebookLMRequest(BaseModel):
     course: str = ""                       # optional course name for headers
 
 
+class ExportAllRequest(BaseModel):
+    combined: bool = True                  # write a single everything_pack.md
+    course: str = ""                       # optional course name for headers
+
+
 class FlashcardGenRequest(BaseModel):
     selection: Optional[List[str]] = None  # limit to these lecture stems; None = all
     course: str = ""
@@ -221,6 +227,20 @@ def api_export_notebooklm(req: NotebookLMRequest) -> Dict[str, Any]:
         raise HTTPException(
             status_code=404,
             detail="No transcripts found to export. Transcribe some lectures first.",
+        )
+    return result
+
+
+@app.post("/api/export/all")
+def api_export_all(req: ExportAllRequest) -> Dict[str, Any]:
+    """Bring everything imported (transcripts + documents + Notion) together as
+    one NotebookLM / AI export, with an optional combined everything_pack.md."""
+    result = core.export_all_sources(OUTPUT_DIR, combined=req.combined, course=req.course)
+    if result["count"] == 0:
+        raise HTTPException(
+            status_code=404,
+            detail="Nothing to export yet. Import some lectures, documents or "
+            "Notion pages first.",
         )
     return result
 

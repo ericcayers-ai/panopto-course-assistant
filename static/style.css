@@ -149,6 +149,7 @@ details.card > summary { cursor: pointer; }
 details.card[open] > summary { margin-bottom: 12px; }
 .export-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 12px; }
 .export-grid .card { margin: 0; }
+.feature-card { border-color: var(--brand); background: linear-gradient(135deg, var(--brand-soft), transparent); }
 
 .row { display: flex; gap: 8px; align-items: center; margin: 10px 0; flex-wrap: wrap; }
 input[type=text], input[type=number] { flex: 1; min-width: 180px; padding: 9px 11px; border: 1px solid var(--border); border-radius: 8px; font: inherit; background: var(--surface); color: var(--ink); }

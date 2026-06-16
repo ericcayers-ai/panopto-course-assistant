@@ -435,6 +435,28 @@ async function viewTranscript(relPath) {
 
 $("transcripts-refresh").addEventListener("click", loadTranscripts);
 
+// Export everything (transcripts + documents + Notion) for NotebookLM / any AI
+$("export-all").addEventListener("click", async () => {
+  const out = $("export-all-results");
+  const btn = $("export-all");
+  btn.disabled = true; out.textContent = "Gathering every source…";
+  try {
+    const data = await api("/api/export/all", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ course: currentCourse(), combined: $("all-combined").checked }),
+    });
+    clear(out);
+    out.appendChild(el("p", { class: "ok-text",
+      text: `✓ ${data.count} source(s) — ${data.transcripts} transcript(s), ${data.documents} document(s), ${data.notion} Notion page(s)` }));
+    if (data.combined) out.appendChild(el("div", {}, [
+      el("button", { class: "tag", text: "view everything_pack.md", onclick: () => { viewTranscript(data.combined); showTab("library"); } }),
+    ]));
+    out.appendChild(el("p", { class: "hint", text: `Per-lecture files written under ${data.dest}` }));
+    toast(`Exported ${data.count} source(s) for AI.`, "ok");
+  } catch (e) { out.textContent = "Error: " + e.message; toast(e.message, "warn"); }
+  finally { btn.disabled = false; }
+});
+
 // NotebookLM export
 $("nlm-export").addEventListener("click", async () => {
   const out = $("nlm-results");

@@ -466,6 +466,33 @@ def test_export_notebooklm_nothing(tmp_path):
     assert res["combined"] is None
 
 
+def test_export_all_sources_combines_everything(tmp_path):
+    # a transcript, a converted document, and a Notion page in the library
+    _seed(tmp_path, title="Week2_CPU_Scheduling", formats=("json",))
+    docs = core.ensure_dir(tmp_path / core.DOCS_DIRNAME)
+    (docs / "Lecture_Slides.md").write_text("# Slides\nslide content\n", encoding="utf-8")
+    (docs / "documents_pack.md").write_text("combined — must be skipped\n", encoding="utf-8")
+    notion = core.ensure_dir(tmp_path / core.NOTION_DIRNAME)
+    (notion / "Study_Notes.md").write_text("# Notes\nnotion content\n", encoding="utf-8")
+
+    res = core.export_all_sources(tmp_path, combined=True, course="COMPX234")
+    assert res["transcripts"] == 1
+    assert res["documents"] == 1          # the pack file is excluded
+    assert res["notion"] == 1
+    assert res["count"] == 3
+    pack = (tmp_path / res["combined"]).read_text(encoding="utf-8")
+    assert "All sources" in pack
+    assert "slide content" in pack and "notion content" in pack
+    # the self-generated combined pack must not be folded back in
+    assert "must be skipped" not in pack
+
+
+def test_export_all_sources_nothing(tmp_path):
+    res = core.export_all_sources(tmp_path)
+    assert res["count"] == 0
+    assert res["combined"] is None
+
+
 def test_export_excluded_from_listing_and_search(tmp_path):
     _seed(tmp_path, formats=("txt", "json"))
     core.export_notebooklm(tmp_path, combined=True, course="C")
