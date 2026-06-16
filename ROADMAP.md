@@ -287,6 +287,8 @@ PUT  /api/sync/mapping       {target, fields}      editable field mapping
 
 ## §6 — Study Planner
 
+**Status:** ✅ **Shipped.** `study_planner.py` adds: assessment CRUD over the 4 status states; an SM-2 spaced-repetition scheduler (`schedule_after`/`grade_review`, deterministic) seeded from flashcards into `review_items`; a dependency-free RFC-5545 `.ics` builder for deadlines; a day-by-day `generate_plan` bounded by a weekly hours budget with assessment-prep ramp + missed-lecture catch-up; and `progress` (completion %, study hours, streak, mastery from `quiz_attempts`). Routes: `/api/assessments` (CRUD), `/api/plan`, `/api/calendar.ics`, `/api/study-sessions`, `/api/reviews` + `/{id}/grade`, `/api/quiz-attempts`, `/api/progress`. `tests/test_study_planner.py` green. (AI advisory layer over the plan is §4's `synth`, later.)
+
 **Goal:** Turn content into actionable, scheduled study workflows.
 **Depends:** §1 (`assessments`, `study_sessions` tables).
 **Files:** `app/study_planner.py` [NEW]; `app/study.py` [keep CSV export, reuse].

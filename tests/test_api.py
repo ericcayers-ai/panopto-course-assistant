@@ -104,6 +104,27 @@ def test_sync_anki_dryrun_offline(client):
     assert r.json()["dry_run"] is True
 
 
+def test_assessments_plan_calendar_progress(client):
+    c, _ = client
+    # need an active course
+    cid = c.post("/api/courses", json={"name": "COMPX234", "code": "COMPX234"}).json()["id"]
+    c.post(f"/api/courses/{cid}/activate")
+    r = c.post("/api/assessments", json={"name": "A1", "due_date": "2026-04-10", "weight": 10})
+    assert r.status_code == 200 and r.json()["name"] == "A1"
+    aid = r.json()["id"]
+    assert c.patch(f"/api/assessments/{aid}", json={"status": "submitted"}).json()["status"] == "submitted"
+    # plan + progress + calendar
+    assert c.get("/api/plan", params={"hours": 14}).status_code == 200
+    cal = c.get("/api/calendar.ics")
+    assert cal.status_code == 200 and "BEGIN:VCALENDAR" in cal.text
+    assert cal.headers["content-type"].startswith("text/calendar")
+    prog = c.get("/api/progress").json()
+    assert prog["completion_pct"] == 100.0
+    # study session + quiz attempt logging
+    assert c.post("/api/study-sessions", json={"duration": 30}).status_code == 200
+    assert c.post("/api/quiz-attempts", json={"score": 5, "total": 10}).status_code == 200
+
+
 def test_feed_upload_and_bad_feed(client):
     c, _ = client
     r = c.post("/api/feed/upload", files={"file": ("feed.xml", FEED, "text/xml")})

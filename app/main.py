@@ -35,11 +35,11 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from fastapi import FastAPI, HTTPException, UploadFile, File
-from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from . import core, transcribe, sources, notion, flashcards, study, database, courses, settings_store, search, llm, ai
+from . import core, transcribe, sources, notion, flashcards, study, database, courses, settings_store, search, llm, ai, study_planner
 from .integrations import notion as notion_sync, anki as anki_sync, state as sync_state
 from .jobs import manager
 
@@ -292,6 +292,42 @@ class MappingReq(BaseModel):
     fields: Dict[str, str]             # local field -> remote property name
 
 
+# --- Study planner (§6) ----------------------------------------------------
+
+
+class AssessmentReq(BaseModel):
+    name: str
+    due_date: str = ""
+    weight: Optional[float] = None
+    status: str = "not_started"
+    course_id: Optional[int] = None    # defaults to the active course
+
+
+class AssessmentUpdate(BaseModel):
+    name: Optional[str] = None
+    due_date: Optional[str] = None
+    weight: Optional[float] = None
+    status: Optional[str] = None
+
+
+class StudySessionReq(BaseModel):
+    duration: int                      # minutes
+    activity_type: str = ""
+    course_id: Optional[int] = None
+
+
+class QuizAttemptReq(BaseModel):
+    scope: str = ""
+    score: float = 0
+    total: int = 0
+    mode: str = ""
+    course_id: Optional[int] = None
+
+
+class GradeReq(BaseModel):
+    quality: int                       # 0–5 recall score (SM-2)
+
+
 # ---------------------------------------------------------------------------
 # API
 # ---------------------------------------------------------------------------
@@ -530,6 +566,105 @@ def api_sync_anki(req: AnkiSyncReq) -> Dict[str, Any]:
         raise HTTPException(status_code=502, detail=str(e))
     sync_state.set_target(db, "anki", {"last_sync": core.now_iso(), "url": url})
     return result
+
+
+# ---------------------------------------------------------------------------
+# Study planner (§6) — assessments, calendar, spaced repetition, progress.
+# All deterministic; `course` defaults to the active course.
+# ---------------------------------------------------------------------------
+
+
+def _course_or_active(course_id: Optional[int]) -> int:
+    cid = course_id if course_id is not None else settings_store.get_active_course(db)
+    if cid is None:
+        raise HTTPException(status_code=400, detail="No active course; create one first.")
+    return cid
+
+
+@app.get("/api/assessments")
+def api_assessments_list(course: Optional[int] = None) -> Dict[str, Any]:
+    cid = course if course is not None else settings_store.get_active_course(db)
+    return {"assessments": study_planner.list_assessments(db, cid)}
+
+
+@app.post("/api/assessments")
+def api_assessments_create(req: AssessmentReq) -> Dict[str, Any]:
+    cid = _course_or_active(req.course_id)
+    try:
+        return study_planner.create_assessment(db, cid, req.name, req.due_date,
+                                               req.weight, req.status)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@app.patch("/api/assessments/{assessment_id}")
+def api_assessments_update(assessment_id: int, req: AssessmentUpdate) -> Dict[str, Any]:
+    if not db.get_assessment(assessment_id):
+        raise HTTPException(status_code=404, detail="Assessment not found")
+    try:
+        return study_planner.update_assessment(db, assessment_id,
+                                               **req.model_dump(exclude_none=True))
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@app.delete("/api/assessments/{assessment_id}")
+def api_assessments_delete(assessment_id: int) -> Dict[str, Any]:
+    if not study_planner.delete_assessment(db, assessment_id):
+        raise HTTPException(status_code=404, detail="Assessment not found")
+    return {"deleted": assessment_id}
+
+
+@app.get("/api/plan")
+def api_plan(course: Optional[int] = None, horizon: int = 14,
+            hours: float = 10.0) -> Dict[str, Any]:
+    cid = _course_or_active(course)
+    return study_planner.generate_plan(db, OUTPUT_DIR, cid, horizon_days=horizon,
+                                      hours_per_week=hours)
+
+
+@app.get("/api/calendar.ics")
+def api_calendar(course: Optional[int] = None) -> Response:
+    cid = _course_or_active(course)
+    row = db.get_course(cid)
+    name = (row["code"] or row["name"]) if row else "Course"
+    ics = study_planner.build_ics(db, OUTPUT_DIR, cid, course_name=name)
+    return Response(content=ics, media_type="text/calendar",
+                    headers={"Content-Disposition": f'attachment; filename="course-{cid}.ics"'})
+
+
+@app.post("/api/study-sessions")
+def api_study_session(req: StudySessionReq) -> Dict[str, Any]:
+    cid = _course_or_active(req.course_id)
+    sid = db.log_study_session(cid, core.now_iso(), req.duration, req.activity_type)
+    return {"id": sid, "course_id": cid, "duration": req.duration}
+
+
+@app.get("/api/reviews")
+def api_reviews(course: Optional[int] = None, due: str = "") -> Dict[str, Any]:
+    cid = course if course is not None else settings_store.get_active_course(db)
+    return {"reviews": study_planner.due_reviews(db, cid, due or None)}
+
+
+@app.post("/api/reviews/{item_id}/grade")
+def api_review_grade(item_id: int, req: GradeReq) -> Dict[str, Any]:
+    out = study_planner.grade_review(db, item_id, req.quality)
+    if out is None:
+        raise HTTPException(status_code=404, detail="Review item not found")
+    return out
+
+
+@app.post("/api/quiz-attempts")
+def api_quiz_attempt(req: QuizAttemptReq) -> Dict[str, Any]:
+    cid = _course_or_active(req.course_id)
+    aid = db.record_quiz_attempt(cid, req.scope, req.score, req.total, req.mode)
+    return {"id": aid, "course_id": cid, "score": req.score, "total": req.total}
+
+
+@app.get("/api/progress")
+def api_progress(course: Optional[int] = None) -> Dict[str, Any]:
+    cid = _course_or_active(course)
+    return study_planner.progress(db, cid)
 
 
 @app.post("/api/feed")
