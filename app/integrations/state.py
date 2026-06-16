@@ -56,6 +56,14 @@ def set_target(db: Database, target: str, values: Dict[str, Any]) -> Dict[str, A
 def notion_token(db: Database, override: str = "") -> str:
     if override:
         return override
+    # Prefer the §10 secret store (keyring), then legacy settings, then env.
+    try:
+        from .. import secrets as secret_store
+        kr = secret_store.get_secret("notion_token", root=db.root)
+        if kr:
+            return kr
+    except Exception:
+        pass
     stored = get(db)["notion"].get("token", "")
     return stored or os.environ.get("NOTION_TOKEN", "")
 

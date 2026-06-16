@@ -146,6 +146,31 @@ def test_moodle_import_url_validates(client):
     assert r.status_code == 400
 
 
+def test_secrets_privacy_and_audit(client):
+    c, _ = client
+    # store a secret -> only the name is ever returned
+    r = c.put("/api/secrets/openai", json={"value": "sk-test-123"})
+    assert r.status_code == 200
+    listed = c.get("/api/secrets").json()
+    assert "openai" in listed["names"]
+    assert "sk-test-123" not in r.text
+    # privacy labels available
+    pv = c.get("/api/privacy").json()
+    assert "labels" in pv["transparency"]
+    # audit endpoint works and clears
+    assert c.get("/api/audit").status_code == 200
+    assert c.post("/api/audit/clear").status_code == 200
+    # delete the secret
+    assert c.delete("/api/secrets/openai").json()["ok"] is True
+
+
+def test_status_reports_secret_backend(client):
+    c, _ = client
+    body = c.get("/api/status").json()
+    assert "secrets" in body and "backend" in body["secrets"]
+    assert "privacy" in body
+
+
 def test_feed_upload_and_bad_feed(client):
     c, _ = client
     r = c.post("/api/feed/upload", files={"file": ("feed.xml", FEED, "text/xml")})

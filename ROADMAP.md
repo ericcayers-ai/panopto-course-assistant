@@ -376,6 +376,8 @@ GET  /api/export/{id}
 
 ## §10 — Security & Privacy (cross-cutting)
 
+**Status:** ✅ **Shipped (core).** `secrets.py`: secrets go to the OS keyring when available, else a `cryptography`-encrypted file, else an obfuscated file with an explicit "not encrypted" warning surfaced in `backend_status` (asserted by test: the raw value never appears on disk). Names are tracked in a sidecar so they can be listed without exposing values. Data-transparency labels (`local-only | local+internet | cloud-processed`) map every feature; an `audit_log` table (migration v3) records every external/cloud action (sync, cloud AI). Routes: `/api/secrets` (PUT/DELETE/list names only, `/clear`), `/api/privacy`, `/api/audit` (+`/clear`); `/api/status` reports the secret backend + transparency. Notion token now resolves from the keyring first. `tests/test_secrets.py` green. (Dependency-integrity checks + a full per-feature privacy panel UI remain for §8/§11.)
+
 **Goal:** Preserve trust as AI + integrations add network surface. Land **before** any cloud call (§4) or sync (§5).
 **Files:** `app/secrets.py` [NEW], plus guards across modules.
 

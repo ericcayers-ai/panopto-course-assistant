@@ -40,6 +40,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from . import core, transcribe, sources, notion, flashcards, study, database, courses, settings_store, search, llm, ai, study_planner
+from . import secrets as secret_store
 from .integrations import notion as notion_sync, anki as anki_sync, state as sync_state
 from .imports import moodle_web, folder as folder_import, preflight as import_preflight
 from .jobs import manager
@@ -350,6 +351,13 @@ class PreflightReq(BaseModel):
     path: str
 
 
+# --- Security & privacy (§10) ----------------------------------------------
+
+
+class SecretReq(BaseModel):
+    value: str
+
+
 # ---------------------------------------------------------------------------
 # API
 # ---------------------------------------------------------------------------
@@ -369,6 +377,8 @@ def api_status() -> Dict[str, Any]:
     }
     status["ai"] = llm.detect()
     status["ai"]["config"] = _safe_ai_config(llm.get_config(db, settings_store.get_active_course(db)))
+    status["secrets"] = secret_store.backend_status()
+    status["privacy"] = secret_store.transparency()
     return status
 
 
@@ -511,8 +521,14 @@ def api_llm_quiz(req: QuizReq) -> Dict[str, Any]:
 def api_llm_chat(req: ChatReq) -> Dict[str, Any]:
     if not req.query.strip():
         raise HTTPException(status_code=400, detail="Ask a question first.")
-    return ai.chat(OUTPUT_DIR, req.query, history=req.history, db=db,
-                  course_id=settings_store.get_active_course(db))
+    cid = settings_store.get_active_course(db)
+    out = ai.chat(OUTPUT_DIR, req.query, history=req.history, db=db, course_id=cid)
+    if out.get("generated") == "ai":      # only a cloud/local provider call leaves a trace
+        cfg = llm.get_config(db, cid)
+        if cfg.get("provider") in llm.CLOUD_PROVIDERS:
+            _audit("ai.chat", target=cfg.get("provider", ""),
+                   detail="RAG chat", feature="ai_cloud")
+    return out
 
 
 # ---------------------------------------------------------------------------
@@ -562,6 +578,9 @@ def api_sync_notion(req: NotionSyncReq) -> Dict[str, Any]:
         raise HTTPException(status_code=502, detail=str(e))
     sync_state.set_target(db, "notion", {"last_sync": core.now_iso(),
                                         "database_id": _notion_args(req)["database_id"]})
+    _audit("sync.notion", target="notion",
+           detail=f"created={result.get('created',0)} updated={result.get('updated',0)}",
+           feature="sync_notion")
     return result
 
 
@@ -587,6 +606,8 @@ def api_sync_anki(req: AnkiSyncReq) -> Dict[str, Any]:
     except anki_sync.AnkiError as e:
         raise HTTPException(status_code=502, detail=str(e))
     sync_state.set_target(db, "anki", {"last_sync": core.now_iso(), "url": url})
+    _audit("sync.anki", target=req.deck,
+           detail=f"added={result.get('added',0)}", feature="sync_anki")
     return result
 
 
@@ -687,6 +708,66 @@ def api_quiz_attempt(req: QuizAttemptReq) -> Dict[str, Any]:
 def api_progress(course: Optional[int] = None) -> Dict[str, Any]:
     cid = _course_or_active(course)
     return study_planner.progress(db, cid)
+
+
+# ---------------------------------------------------------------------------
+# Security & privacy (§10) — secret storage (names only over the wire), data
+# transparency labels, and an audit trail of anything that left the machine.
+# ---------------------------------------------------------------------------
+
+
+def _audit(action: str, target: str = "", detail: str = "", feature: str = "") -> None:
+    """Record an external/cloud action so the user can review what left the box."""
+    try:
+        db.add_audit(action, target=target, detail=detail,
+                    label=secret_store.label_for(feature) if feature else "")
+    except Exception:
+        pass
+
+
+@app.get("/api/secrets")
+def api_secrets_list() -> Dict[str, Any]:
+    return {"backend": secret_store.backend_status(),
+            "names": secret_store.list_secret_names(OUTPUT_DIR)}
+
+
+@app.put("/api/secrets/{name}")
+def api_secrets_set(name: str, req: SecretReq) -> Dict[str, Any]:
+    if not req.value.strip():
+        raise HTTPException(status_code=400, detail="Empty secret.")
+    secret_store.set_secret(name, req.value, root=OUTPUT_DIR)
+    _audit("secret.set", target=name, feature="")
+    return {"stored": name, "backend": secret_store.backend_status()["backend"]}
+
+
+@app.delete("/api/secrets/{name}")
+def api_secrets_delete(name: str) -> Dict[str, Any]:
+    ok = secret_store.delete_secret(name, root=OUTPUT_DIR)
+    return {"deleted": name if ok else "", "ok": ok}
+
+
+@app.post("/api/secrets/clear")
+def api_secrets_clear() -> Dict[str, Any]:
+    secret_store.clear_all(OUTPUT_DIR)
+    _audit("secret.clear_all")
+    return {"cleared": True}
+
+
+@app.get("/api/privacy")
+def api_privacy() -> Dict[str, Any]:
+    return {"transparency": secret_store.transparency(),
+            "secrets": secret_store.backend_status()}
+
+
+@app.get("/api/audit")
+def api_audit(limit: int = 200) -> Dict[str, Any]:
+    rows = db.list_audit(limit)
+    return {"events": [dict(r) for r in rows]}
+
+
+@app.post("/api/audit/clear")
+def api_audit_clear() -> Dict[str, Any]:
+    return {"cleared": db.clear_audit()}
 
 
 @app.post("/api/feed")

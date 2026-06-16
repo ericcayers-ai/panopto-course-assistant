@@ -153,6 +153,21 @@ _MIGRATIONS: List[tuple[int, List[str]]] = [
             "CREATE INDEX IF NOT EXISTS idx_review_due ON review_items(due)",
         ],
     ),
+    (
+        3,
+        [
+            # §10 — audit trail for anything that leaves the machine (sync/cloud).
+            """CREATE TABLE IF NOT EXISTS audit_log (
+                id         INTEGER PRIMARY KEY AUTOINCREMENT,
+                action     TEXT NOT NULL,
+                target     TEXT DEFAULT '',
+                detail     TEXT DEFAULT '',
+                label      TEXT DEFAULT '',
+                created_at TEXT NOT NULL
+            )""",
+            "CREATE INDEX IF NOT EXISTS idx_audit_created ON audit_log(created_at)",
+        ],
+    ),
 ]
 
 SCHEMA_VERSION = _MIGRATIONS[-1][0]
@@ -518,6 +533,22 @@ class Database:
 
     def delete_saved_view(self, id: int) -> bool:
         return self.execute("DELETE FROM saved_views WHERE id=?", (id,)).rowcount > 0
+
+    # -- audit log DAO (§10) -----------------------------------------------
+
+    def add_audit(self, action: str, target: str = "", detail: str = "",
+                 label: str = "") -> int:
+        cur = self.execute(
+            "INSERT INTO audit_log(action, target, detail, label, created_at) "
+            "VALUES(?, ?, ?, ?, ?)", (action, target, detail, label, now_iso()))
+        return int(cur.lastrowid)
+
+    def list_audit(self, limit: int = 200) -> List[sqlite3.Row]:
+        return self.query("SELECT * FROM audit_log ORDER BY created_at DESC LIMIT ?",
+                          (limit,))
+
+    def clear_audit(self) -> int:
+        return self.execute("DELETE FROM audit_log").rowcount
 
 
 # ---------------------------------------------------------------------------
