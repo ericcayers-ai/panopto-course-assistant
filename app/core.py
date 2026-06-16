@@ -672,8 +672,126 @@ def search_transcripts(output_dir: Path, query: str, context: int = 60) -> List[
 
 
 # ---------------------------------------------------------------------------
-# PDF -> Markdown
+# Documents -> Markdown (via MarkItDown) — versatile, for NotebookLM / other AI
 # ---------------------------------------------------------------------------
+
+# Extensions MarkItDown can convert. Slides/docs/sheets/pages all become text
+# suitable for feeding to NotebookLM or any other AI alongside the transcripts.
+DOC_EXTS = [
+    ".pdf", ".pptx", ".ppt", ".docx", ".doc", ".xlsx", ".xls",
+    ".html", ".htm", ".csv", ".json", ".xml", ".epub", ".txt", ".md", ".rtf",
+]
+
+DOCS_DIRNAME = "_docs"
+
+
+def _markitdown_converter():
+    """Return a function path->markdown using MarkItDown, or raise RuntimeError."""
+    try:
+        from markitdown import MarkItDown
+    except Exception as e:  # pragma: no cover - optional dep
+        raise RuntimeError(
+            "markitdown is not installed. Install with: pip install markitdown"
+        ) from e
+    md = MarkItDown()
+
+    def convert(path: str) -> str:
+        result = md.convert(path)
+        text = getattr(result, "text_content", None) or str(result)
+        return text if text.endswith("\n") else text + "\n"
+
+    return convert
+
+
+def convert_documents(
+    input_path: Path,
+    output_dir: Path,
+    *,
+    exts: Optional[List[str]] = None,
+    include_subfolders: bool = True,
+    overwrite: bool = False,
+    target: str = "ai",          # "ai" -> output_dir/_docs ; "copy" -> sibling *_copy
+    suffix: str = "_copy",
+    combined: bool = False,
+    converter=None,              # injectable for testing; defaults to MarkItDown
+) -> Dict[str, Any]:
+    """Convert a document (or a folder of documents) to Markdown.
+
+    target="ai":  write into ``output_dir/_docs`` (an AI/NotebookLM source area,
+                  excluded from the transcript library), optionally with a single
+                  combined ``documents_pack.md``.
+    target="copy": mirror a folder into a sibling ``<name><suffix>`` folder
+                  (the classic "PDF → Markdown" behaviour).
+    """
+    input_path = Path(input_path).expanduser()
+    if not input_path.exists():
+        raise FileNotFoundError(str(input_path))
+    wanted = {e.lower() if e.startswith(".") else "." + e.lower() for e in (exts or DOC_EXTS)}
+    convert = converter or _markitdown_converter()
+
+    # Gather (file, relative-path) pairs.
+    if input_path.is_file():
+        if input_path.suffix.lower() not in wanted:
+            raise ValueError(f"Unsupported file type: {input_path.suffix}")
+        items = [(input_path, Path(input_path.name))]
+        base = input_path.parent
+    else:
+        globber = input_path.rglob("*") if include_subfolders else input_path.glob("*")
+        files = sorted(p for p in globber if p.is_file() and p.suffix.lower() in wanted)
+        if not files:
+            raise ValueError("No supported documents found to convert.")
+        items = [(p, p.relative_to(input_path)) for p in files]
+        base = input_path
+
+    if target == "copy":
+        if not input_path.is_dir():
+            raise ValueError("'copy' target requires a folder.")
+        out_root = ensure_dir(input_path.parent / f"{input_path.name}{suffix}")
+    else:
+        out_root = ensure_dir(output_dir / DOCS_DIRNAME)
+
+    converted: List[Dict[str, str]] = []
+    docs: List[Tuple[str, str]] = []
+    for src, rel in items:
+        target_dir = ensure_dir(out_root / rel.parent) if len(rel.parts) > 1 else out_root
+        out_file = target_dir / f"{safe_name(rel.stem)}.md"
+        if out_file.exists() and not overwrite:
+            converted.append({"src": str(src), "md": _relto(out_file, output_dir, out_root, target)})
+            continue
+        try:
+            text = convert(str(src))
+        except Exception as e:
+            converted.append({"src": str(src), "md": "", "error": str(e)})
+            continue
+        out_file.write_text(text, encoding="utf-8")
+        converted.append({"src": str(src), "md": _relto(out_file, output_dir, out_root, target)})
+        docs.append((rel.stem, text))
+
+    combined_path = None
+    if combined and docs and target == "ai":
+        parts = ["# Documents", ""] + [f"- {t}" for t, _ in docs]
+        body = "\n\n---\n\n".join(d.strip() for _, d in docs)
+        cf = out_root / "documents_pack.md"
+        cf.write_text("\n".join(parts) + "\n\n---\n\n" + body + "\n", encoding="utf-8")
+        combined_path = cf.relative_to(output_dir).as_posix()
+
+    return {
+        "count": sum(1 for c in converted if not c.get("error")),
+        "output_root": str(out_root),
+        "files": converted,
+        "combined": combined_path,
+    }
+
+
+def _relto(path: Path, output_dir: Path, out_root: Path, target: str) -> str:
+    """Path relative to output_dir for AI target (so it's viewable via the API),
+    else an absolute string for the sibling-copy target."""
+    if target == "ai":
+        try:
+            return path.relative_to(output_dir).as_posix()
+        except ValueError:
+            return str(path)
+    return str(path)
 
 
 def convert_pdf_tree(
@@ -682,35 +800,14 @@ def convert_pdf_tree(
     include_subfolders: bool = True,
     overwrite: bool = False,
 ) -> List[Tuple[str, str]]:
-    """Mirror input_root into <name><suffix> and convert each PDF to Markdown."""
-    try:
-        from markitdown import MarkItDown
-    except Exception as e:  # pragma: no cover - depends on optional dep
-        raise RuntimeError(
-            "markitdown is not installed. Install with: pip install markitdown"
-        ) from e
-
-    md = MarkItDown()
-    input_root = input_root.resolve()
-    if not input_root.is_dir():
+    """Backwards-compatible PDF-only mirror into <name><suffix> (uses convert_documents)."""
+    if not Path(input_root).expanduser().is_dir():
         raise NotADirectoryError(str(input_root))
-    out_root = input_root.parent / f"{input_root.name}{suffix}"
-    ensure_dir(out_root)
-
-    pdfs = list(input_root.rglob("*.pdf")) if include_subfolders else list(input_root.glob("*.pdf"))
-    converted: List[Tuple[str, str]] = []
-    for pdf in pdfs:
-        rel = pdf.relative_to(input_root)
-        target_dir = ensure_dir(out_root / rel.parent)
-        out_file = target_dir / (pdf.stem + ".md")
-        if out_file.exists() and not overwrite:
-            converted.append((str(pdf), str(out_file)))
-            continue
-        result = md.convert(str(pdf))
-        text = getattr(result, "text_content", None) or str(result)
-        out_file.write_text(text if text.endswith("\n") else text + "\n", encoding="utf-8")
-        converted.append((str(pdf), str(out_file)))
-    return converted
+    res = convert_documents(
+        input_root, Path(input_root), exts=[".pdf"], include_subfolders=include_subfolders,
+        overwrite=overwrite, target="copy", suffix=suffix,
+    )
+    return [(c["src"], c["md"]) for c in res["files"]]
 
 
 # ---------------------------------------------------------------------------

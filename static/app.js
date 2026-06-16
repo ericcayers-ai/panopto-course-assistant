@@ -87,6 +87,8 @@ async function loadStatus() {
 
     // output-format checkboxes
     buildOutputChecks(s.output_choices || ["txt", "srt", "md", "json"]);
+    // document-type checkboxes (for the Documents → Markdown tab)
+    buildDocExtChecks(s.doc_exts || [".pdf"]);
 
     // engine-aware warning
     const warn = $("engine-warning");
@@ -117,6 +119,21 @@ function buildOutputChecks(choices) {
 }
 function selectedOutputs() {
   return [...document.querySelectorAll("#opt-outputs input:checked")].map((i) => i.value);
+}
+
+function buildDocExtChecks(exts) {
+  const box = $("doc-exts");
+  if (!box) return;
+  clear(box);
+  exts.forEach((ext) => {
+    box.appendChild(el("label", { class: "chk" }, [
+      el("input", { type: "checkbox", value: ext, checked: true }),
+      " " + ext.replace(".", ""),
+    ]));
+  });
+}
+function selectedDocExts() {
+  return [...document.querySelectorAll("#doc-exts input:checked")].map((i) => i.value);
 }
 
 // ---- settings persistence -------------------------------------------------
@@ -409,23 +426,34 @@ $("search-q").addEventListener("keydown", (e) => { if (e.key === "Enter") doSear
 $("pdf-go").addEventListener("click", async () => {
   const out = $("pdf-results");
   const input_path = $("pdf-path").value.trim();
-  if (!input_path) { toast("Enter a folder path.", "warn"); return; }
+  if (!input_path) { toast("Enter a folder or file path.", "warn"); return; }
   remember("pdfpath", input_path);
+  const target = $("doc-target").value;
   const btn = $("pdf-go");
   btn.disabled = true; out.textContent = "Converting… (this can take a moment)";
   try {
-    const data = await api("/api/pdf/convert", {
+    const data = await api("/api/docs/convert", {
       method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         input_path,
+        exts: selectedDocExts(),
         include_subfolders: $("pdf-recursive").checked,
         overwrite: $("pdf-overwrite").checked,
+        target,
+        combined: $("doc-combined").checked,
       }),
     });
     clear(out);
-    out.appendChild(el("p", { class: "ok-text", text: `✓ Converted ${data.count} PDF(s) → ${data.output_root}` }));
-    data.files.forEach((f) => out.appendChild(el("div", { class: "snippet", text: f.md })));
-    toast(`Converted ${data.count} PDF(s).`, "ok");
+    out.appendChild(el("p", { class: "ok-text", text: `✓ Converted ${data.count} document(s) → ${data.output_root}` }));
+    if (data.combined) out.appendChild(el("div", {}, [
+      el("button", { class: "tag", text: "view documents_pack.md", onclick: () => { viewTranscript(data.combined); showTab("transcripts"); } }),
+    ]));
+    data.files.forEach((f) => {
+      const row = el("div", { class: "list-item" }, [el("span", { class: "li-label", text: f.error ? `⚠ ${f.src}: ${f.error}` : f.md })]);
+      if (!f.error && target === "ai") row.appendChild(el("button", { class: "tag", text: "view", onclick: () => { viewTranscript(f.md); showTab("transcripts"); } }));
+      out.appendChild(row);
+    });
+    toast(`Converted ${data.count} document(s).`, "ok");
   } catch (e) { out.textContent = "Error: " + e.message; toast(e.message, "warn"); }
   finally { btn.disabled = false; }
 });

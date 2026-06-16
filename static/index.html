@@ -19,7 +19,7 @@
     <button class="tab active" data-tab="lectures">📡 Lectures</button>
     <button class="tab" data-tab="transcripts">📄 Transcripts</button>
     <button class="tab" data-tab="search">🔎 Search</button>
-    <button class="tab" data-tab="pdf">📑 PDF → Markdown</button>
+    <button class="tab" data-tab="pdf">📑 Documents → MD</button>
     <button class="tab" data-tab="jobs">⚙️ Jobs <span id="jobs-badge" class="count-badge hidden">0</span></button>
     <button class="tab" data-tab="materials">📂 Materials</button>
   </nav>
@@ -151,19 +151,34 @@
       <div id="search-results" class="results"></div>
     </section>
 
-    <!-- PDF -->
+    <!-- DOCUMENTS -->
     <section id="pdf" class="panel">
-      <h2>Convert a folder of PDFs to Markdown</h2>
+      <h2>Convert documents to Markdown</h2>
       <div class="card">
+        <p class="hint">Convert lecture slides and documents — <strong>PDF, PowerPoint, Word, Excel,
+          HTML, EPUB, CSV…</strong> — into Markdown for NotebookLM or any other AI. Powered by
+          <a href="https://github.com/microsoft/markitdown" target="_blank" rel="noopener">MarkItDown</a>.</p>
         <div class="row">
-          <input type="text" id="pdf-path" placeholder="Folder path (e.g. C:\Users\…\Slides-20260615)" />
+          <input type="text" id="pdf-path" placeholder="Folder path or a single document (e.g. C:\Users\…\Slides-20260615)" />
           <button id="pdf-go">Convert</button>
+        </div>
+        <div class="outputs-row">
+          <span class="muted">File types:</span>
+          <span id="doc-exts" class="checks"></span>
+        </div>
+        <div class="grid">
+          <label>Output
+            <select id="doc-target">
+              <option value="ai" selected>AI sources (_docs, exportable to NotebookLM)</option>
+              <option value="copy">sibling *_copy folder (mirror in place)</option>
+            </select>
+          </label>
         </div>
         <div class="toggles">
           <label class="toggle"><input type="checkbox" id="pdf-recursive" checked /> include subfolders</label>
           <label class="toggle"><input type="checkbox" id="pdf-overwrite" /> overwrite existing</label>
+          <label class="toggle"><input type="checkbox" id="doc-combined" /> combined <code>documents_pack.md</code> (AI)</label>
         </div>
-        <p class="hint">Mirrors the folder structure into a sibling <code>*_copy</code> folder. Needs <code>markitdown</code>.</p>
       </div>
       <div id="pdf-results" class="results"></div>
     </section>

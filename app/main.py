@@ -15,6 +15,7 @@ POST /api/transcribe       -> queue a transcription job (needs whisper installed
 POST /api/organize         -> reorganize existing transcripts into folders
 POST /api/moodle/parse     -> parse a Moodle course HTML export into an outline
 POST /api/notion/convert   -> convert a Notion HTML export into Markdown
+POST /api/docs/convert     -> convert documents (pdf/pptx/docx/…) to Markdown for AI
 GET  /api/jobs             -> list jobs
 GET  /api/jobs/{job_id}    -> one job's status
 POST /api/pdf/convert      -> convert a folder of PDFs to Markdown
@@ -91,6 +92,15 @@ class PdfRequest(BaseModel):
     overwrite: bool = False
 
 
+class DocsRequest(BaseModel):
+    input_path: str
+    exts: Optional[List[str]] = None     # default: all supported types
+    include_subfolders: bool = True
+    overwrite: bool = False
+    target: str = "ai"                   # "ai" (_docs) | "copy" (sibling *_copy)
+    combined: bool = False               # one documents_pack.md (ai target only)
+
+
 class NotebookLMRequest(BaseModel):
     selection: Optional[List[str]] = None  # ["folder/stem", ...]; None = all
     combined: bool = False                 # also write a single course_pack.md
@@ -108,6 +118,7 @@ def api_status() -> Dict[str, Any]:
     status["output_dir"] = str(OUTPUT_DIR)
     status["output_choices"] = core.OUTPUT_CHOICES
     status["organize_choices"] = core.ORG_CHOICES
+    status["doc_exts"] = core.DOC_EXTS
     return status
 
 
@@ -286,6 +297,28 @@ def api_notion_convert(req: NotionRequest) -> Dict[str, Any]:
     except FileNotFoundError:
         raise HTTPException(status_code=400, detail=f"Path not found: {req.path}")
     except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    return result
+
+
+@app.post("/api/docs/convert")
+def api_docs_convert(req: DocsRequest) -> Dict[str, Any]:
+    """Convert documents (pdf/pptx/docx/xlsx/html/…) to Markdown for AI ingestion."""
+    try:
+        result = core.convert_documents(
+            Path(req.input_path).expanduser(),
+            OUTPUT_DIR,
+            exts=req.exts,
+            include_subfolders=req.include_subfolders,
+            overwrite=req.overwrite,
+            target=req.target,
+            combined=req.combined,
+        )
+    except RuntimeError as e:        # markitdown missing
+        raise HTTPException(status_code=503, detail=str(e))
+    except FileNotFoundError:
+        raise HTTPException(status_code=400, detail=f"Path not found: {req.input_path}")
+    except (ValueError, NotADirectoryError) as e:
         raise HTTPException(status_code=400, detail=str(e))
     return result
 
