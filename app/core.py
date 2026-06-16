@@ -839,17 +839,23 @@ def _notebooklm_body_for_group(output_dir: Path, group: Dict[str, Any], course: 
     fmts = group["formats"]
 
     if "json" in fmts:
-        data = json.loads((output_dir / fmts["json"]).read_text(encoding="utf-8", errors="replace"))
-        item = LectureItem(
-            title=data.get("title") or _title_from_stem(group["stem"]),
-            url=data.get("url", ""),
-            duration=int(data.get("duration", 0) or 0),
-            pub_date=data.get("pub_date", ""),
-            author=data.get("author", ""),
-            guid=data.get("guid", ""),
-        )
-        segments = data.get("segments") or [{"text": data.get("text", "")}]
-        return render_notebooklm(item, segments, course), item.title
+        # An empty/corrupt .json (e.g. an interrupted transcription) must not sink
+        # the whole export — fall through to the .txt/.md sources below instead.
+        try:
+            data = json.loads((output_dir / fmts["json"]).read_text(encoding="utf-8", errors="replace"))
+        except (json.JSONDecodeError, OSError):
+            data = None
+        if data is not None:
+            item = LectureItem(
+                title=data.get("title") or _title_from_stem(group["stem"]),
+                url=data.get("url", ""),
+                duration=int(data.get("duration", 0) or 0),
+                pub_date=data.get("pub_date", ""),
+                author=data.get("author", ""),
+                guid=data.get("guid", ""),
+            )
+            segments = data.get("segments") or [{"text": data.get("text", "")}]
+            return render_notebooklm(item, segments, course), item.title
 
     if "txt" in fmts:
         title = _title_from_stem(group["stem"])
@@ -1016,7 +1022,10 @@ def export_formats(output_dir: Path, formats: List[str], interval: int = 30) -> 
         fmts = g["formats"]
         if "json" not in fmts:
             continue
-        data = json.loads((output_dir / fmts["json"]).read_text(encoding="utf-8", errors="replace"))
+        try:
+            data = json.loads((output_dir / fmts["json"]).read_text(encoding="utf-8", errors="replace"))
+        except (json.JSONDecodeError, OSError):
+            continue   # skip an interrupted/corrupt transcript rather than 500
         item = LectureItem(
             title=data.get("title") or _title_from_stem(g["stem"]),
             url=data.get("url", ""),

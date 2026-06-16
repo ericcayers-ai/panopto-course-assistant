@@ -50,6 +50,19 @@ def test_export_notebooklm_runs(tmp_path: Path):
     assert out["results"]["notebooklm"]["count"] == 1
 
 
+def test_export_tolerates_corrupt_transcript_json(tmp_path: Path):
+    """An empty/corrupt .json (e.g. an interrupted transcription) must not 500
+    the export — it falls back to the .txt source."""
+    _seed(tmp_path, "Week1_Intro", "the transmission control protocol")
+    # corrupt the json output for that lecture
+    for p in tmp_path.rglob("*.json"):
+        p.write_text("", encoding="utf-8")
+    nb = core.export_notebooklm(tmp_path, combined=True, course="COMPX234")
+    assert nb["count"] == 1                       # recovered from .txt fallback
+    fmt = core.export_formats(tmp_path, formats=["srt"])
+    assert isinstance(fmt, dict)                   # did not raise
+
+
 def test_course_archive_roundtrips(tmp_path: Path):
     db = database.Database(tmp_path / "t.db")
     cid = db.create_course("COMPX234", code="COMPX234")

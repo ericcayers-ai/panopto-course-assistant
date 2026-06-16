@@ -10,6 +10,18 @@ courses but **course-agnostic** (validated against 7 different Moodle exports).
 A **Python / FastAPI** backend with a plain **HTML + JavaScript** frontend
 (no build step), a sidebar dashboard, and light/dark themes.
 
+## What's new in v2.0
+
+A big step from "single-session tool" toward a persistent, multi-course study platform:
+
+- **Pick how you work** — a launcher with two windows (*Full workspace* vs *Just my Moodle course*), each in **Simple** or **Advanced** mode. Simple uses best defaults; Advanced exposes every knob.
+- **Import a Moodle course from its link** — paste `…/course/view.php?id=…`; with your browser session it pulls the outline, activities and Panopto lecture feeds (crawls the linked section pages).
+- **Guided Simple flow** — import → auto-transcribe with the best detected settings for your machine → one export choice (NotebookLM or general AI). Transcription progress refreshes ~every 30 s.
+- **Study planner** — assessments, an SM-2 spaced-repetition scheduler, `.ics` calendar export, an hours-budgeted study plan, and progress/mastery tracking.
+- **Live sync** — incremental, duplicate-aware Notion & Anki sync with a dry-run preview.
+- **Export engine** — intent presets (revision/ai/exam/notion/anki/archive) × scopes, preview-before-write, and a portable course archive.
+- **Privacy & safety** — secrets in the OS keyring (never plaintext), data-egress labels, an audit log, local-only analytics, and one-file backup/restore.
+
 ## An all-in-one course workflow
 
 The app is organised as **one flow around a single course**, not a pile of
