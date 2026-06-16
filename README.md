@@ -1,22 +1,27 @@
-# Panopto Course Assistant
+# Course Assistant
 
-A small **web app** for working with [Panopto](https://www.panopto.com/) lecture
-recordings published as an RSS podcast feed (originally built for the University
-of Waikato **COMPX234 – Systems and Networks** course).
+A **web app** that turns university course material into study resources. Point
+it at a [Panopto](https://www.panopto.com/) lecture feed and/or your course
+documents, and it transcribes, converts, organises and **exports clean sources
+for [NotebookLM](https://notebooklm.google.com/), [Anki](https://apps.ankiweb.net/)
+and [Notion](https://notion.so/)**. Built around the University of Waikato
+courses but **course-agnostic** (validated against 7 different Moodle exports).
 
-It is the web version of the original single-file CLI tool: a **Python /
-FastAPI** backend with a plain **HTML + JavaScript** frontend (no build step).
+A **Python / FastAPI** backend with a plain **HTML + JavaScript** frontend
+(no build step), a sidebar dashboard, and light/dark themes.
 
 ## Features
 
 | Tab | What it does |
 | --- | --- |
-| **Lectures** | Paste a Panopto RSS feed URL (or upload the `.xml`) and list every lecture, with week/date/duration/size parsed from the title and metadata. Each lecture shows a **transcribed / pending** badge. Pick output formats and options, then transcribe one, a selection, or **all pending** in a batch. |
-| **Transcripts** | Browse generated transcripts (grouped by lecture, one row each, with format chips) and read any `.txt` / `.srt` / `.vtt` / `.md` / `.json` / summary output inline. One-click **Export for NotebookLM** and **Reorganize** into Week/Date/Topic folders. |
-| **Search** | Full-text search across every transcript — one result per lecture, ranked by hit count, with snippets and a jump-to-transcript button. |
-| **PDF → Markdown** | Point at a folder of lecture-slide PDFs and convert them all to Markdown (mirrors the folder structure into a `*_copy` folder), via [MarkItDown](https://github.com/microsoft/markitdown). |
-| **Jobs** | Live progress of running transcription jobs (download → transcribe → write) with a polling progress bar and a count badge; finished jobs refresh the lecture badges automatically. |
-| **Materials** | Browse any local folder; **parse a Moodle course export** (any saved Moodle course HTML) for the course title/outline; and **convert a Notion HTML export** (page or folder) into clean Markdown sources. |
+| **Home** | Dashboard: environment status, quick-action tiles, and at-a-glance counts. |
+| **Lectures** | Load a Panopto RSS feed (URL, local `.xml`, or upload). Lectures show week/date/duration/size and a **transcribed / pending** badge; transcribe one, a selection, or **all pending** in a batch. |
+| **Documents** | Convert **PDF / PowerPoint / Word / Excel / HTML / EPUB / CSV…** to Markdown via [MarkItDown](https://github.com/microsoft/markitdown) — as AI sources (`_docs/`, with an optional combined pack) or a sibling `*_copy` mirror. |
+| **Materials** | **Parse a Moodle course export** for the title + week/topic outline (any Moodle course); **convert a Notion HTML export** (page or folder) to clean Markdown; and browse any local folder. |
+| **Transcripts** | Read transcripts (grouped per lecture, format chips). Export for **NotebookLM**, export a **Notion study-database CSV**, and **reorganize** into auto/week/lecture/module/date/topic folders. |
+| **Search** | Full-text search across every transcript — one ranked result per lecture, with snippets and jump-to-transcript. |
+| **Flashcards** | **Generate Anki-importable flashcards** (definitions + acronyms) from your transcripts, auto-tagged by course·week·topic — or paste an existing deck and **auto-categorize/tag** it. |
+| **Jobs** | Live progress of transcription jobs with a count badge; finished jobs refresh the lecture badges. |
 
 ### Transcription options
 
@@ -121,12 +126,15 @@ The frontend is a thin client over a JSON API (see `app/main.py`):
 - `GET  /api/transcript?path=` – read one transcript file
 - `GET  /api/search?q=` – full-text search
 - `POST /api/export/notebooklm` `{selection?, combined?, course?}` – NotebookLM export
+- `POST /api/export/notion-csv` `{course?, filename?}` – Notion study-database CSV
+- `POST /api/flashcards/generate` `{selection?, course?, deck?, prefer?, max_per_lecture?}` – Anki cards
+- `POST /api/flashcards/categorize` `{text|path, course?, extra_keywords?, deck?}` – tag a deck
+- `POST /api/docs/convert` `{input_path, exts?, target, combined?, ...}` – documents → Markdown
 - `POST /api/transcribe` – queue a transcription job
 - `POST /api/organize` `{by}` – reorganize existing transcripts into folders
 - `POST /api/moodle/parse` `{path, save_outline?}` – parse a Moodle course export
 - `POST /api/notion/convert` `{path, combined?}` – Notion HTML export → Markdown
 - `GET  /api/jobs` / `GET /api/jobs/{id}` – job status
-- `POST /api/pdf/convert` `{input_path, ...}` – convert a PDF folder
 - `GET  /api/materials?path=` – list a local folder
 
 Interactive API docs are available at `/docs` when the server is running.
@@ -135,30 +143,36 @@ Interactive API docs are available at `/docs` when the server is running.
 
 ```bash
 pip install -r requirements.txt -r requirements-dev.txt
-python -m pytest -q          # ~90 unit + API tests
+python -m pytest -q          # 160+ unit + API tests
 ```
 
 The suite covers feed-parsing edge cases (malformed XML, missing/garbage
-fields), date/week inference, timestamp rounding, every renderer, the
-extractive summary, transcript listing/search, the path-traversal guard, the
-NotebookLM export, reorganisation, the background job lifecycle, the
-skip/force transcribe flow, and the HTTP API (via `fastapi.testclient`).
+fields), date/week/sequence inference, the Moodle parser (synthetic + the real
+example exports), timestamp rounding, every renderer, the extractive summary,
+transcript listing/search, the path-traversal guard, the NotebookLM/Notion-CSV
+exports, document conversion, flashcard generation/categorisation, reorganisation,
+the background job lifecycle, the skip/force transcribe flow, and the HTTP API
+(via `fastapi.testclient`).
 
 ## Project layout
 
 ```
 panopto-course-assistant/
 ├── app/
-│   ├── core.py         # feed parsing, organisation, writers, search, summary, PDF→MD, NotebookLM
-│   ├── sources.py      # course-material parsers (Moodle course HTML export)
+│   ├── core.py         # feed parsing, organise, writers, search, summary, NotebookLM, docs→MD
+│   ├── sources.py      # Moodle course HTML export parser
 │   ├── notion.py       # Notion HTML export -> Markdown converter (stdlib only)
+│   ├── flashcards.py   # Anki flashcard generation + categorisation
+│   ├── study.py        # Notion study-database CSV export
 │   ├── transcribe.py   # optional download + whisper engines (lazy imports)
 │   ├── jobs.py         # in-memory background job manager
 │   └── main.py         # FastAPI app + routes
-├── static/             # index.html, app.js, style.css (vanilla frontend, no build step)
-├── tests/              # pytest suite (core, jobs/transcribe, API)
+├── static/             # index.html, app.js, style.css (vanilla SPA, sidebar + dark mode)
+├── tests/              # pytest suite (core, sources, notion, docs, flashcards, study, jobs, API)
+├── start-windows.bat / start-unix.sh          # one-click launchers
+├── install-extras-windows.bat / -unix.sh      # optional heavy add-ons
 ├── requirements.txt
-├── requirements-transcribe.txt   # optional: faster-whisper, yt-dlp, markitdown
+├── requirements-transcribe.txt   # optional: faster-whisper, yt-dlp, markitdown[all]
 ├── requirements-dev.txt          # pytest, httpx
 └── run.py
 ```

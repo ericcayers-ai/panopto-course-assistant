@@ -54,12 +54,63 @@ function recall(key, def = "") { try { return localStorage.getItem(key) ?? def; 
 function showTab(name) {
   document.querySelectorAll(".tab").forEach((b) => b.classList.toggle("active", b.dataset.tab === name));
   document.querySelectorAll(".panel").forEach((p) => p.classList.toggle("active", p.id === name));
+  document.querySelector(".app").classList.remove("menu-open");  // close mobile drawer
+  if (name === "home") loadDashboard();
   if (name === "transcripts") loadTranscripts();
   if (name === "jobs") loadJobs();
 }
 document.querySelectorAll(".tab").forEach((btn) =>
   btn.addEventListener("click", () => showTab(btn.dataset.tab))
 );
+// dashboard tiles + any [data-goto] element jump to a tab
+document.querySelectorAll("[data-goto]").forEach((b) =>
+  b.addEventListener("click", () => showTab(b.dataset.goto))
+);
+
+// ---- theme + mobile menu --------------------------------------------------
+
+function applyTheme(theme) {
+  document.documentElement.setAttribute("data-theme", theme);
+  remember("theme", theme);
+  const btn = $("theme-toggle");
+  if (btn) btn.textContent = theme === "dark" ? "☀️ Theme" : "🌙 Theme";
+}
+$("theme-toggle").addEventListener("click", () =>
+  applyTheme(document.documentElement.getAttribute("data-theme") === "dark" ? "light" : "dark"));
+$("menu-toggle").addEventListener("click", () =>
+  document.querySelector(".app").classList.toggle("menu-open"));
+
+// ---- dashboard ------------------------------------------------------------
+
+async function loadDashboard() {
+  const env = $("dash-env");
+  const stats = $("dash-stats");
+  const s = State.status;
+  if (s && env) {
+    clear(env);
+    const pill = (label, state) => el("span", { class: "env-pill" }, [
+      el("span", { class: "dot " + state }), label]);
+    const engines = Object.entries(s.engines).filter(([, v]) => v).map(([k]) => k);
+    env.appendChild(pill(engines.length ? `Transcription: ${engines.join(", ")}` : "Transcription: not installed",
+      engines.length ? "on" : "off"));
+    env.appendChild(pill(s.cuda ? "GPU: CUDA" : "GPU: CPU only", s.cuda ? "on" : "warn"));
+    env.appendChild(pill(s.markitdown ? "Documents: ready" : "Documents: install markitdown",
+      s.markitdown ? "on" : "off"));
+  }
+  if (stats) {
+    try {
+      const data = await api("/api/transcripts");
+      State.transcribedStems = new Set(data.items.map((i) => i.stem));
+      const fmtCount = data.items.reduce((n, it) => n + Object.keys(it.formats).length, 0);
+      clear(stats);
+      const tile = (num, lbl) => el("div", { class: "stat" }, [
+        el("div", { class: "num", text: String(num) }), el("div", { class: "lbl", text: lbl })]);
+      stats.appendChild(tile(data.items.length, "transcripts"));
+      stats.appendChild(tile(fmtCount, "output files"));
+      stats.appendChild(tile(State.lectures.length, "lectures loaded"));
+    } catch (_) { /* leave empty */ }
+  }
+}
 
 // ---- environment status ---------------------------------------------------
 
@@ -179,7 +230,7 @@ function renderLectures() {
   const list = $("lectures-list");
   clear(list);
   const has = State.lectures.length > 0;
-  ["settings-heading", "lectures-heading", "lectures-toolbar"].forEach((id) =>
+  ["lectures-heading", "lectures-toolbar"].forEach((id) =>
     $(id).classList.toggle("hidden", !has));
   $("settings").classList.toggle("hidden", !has);
   if (!has) { list.appendChild(el("p", { class: "empty", text: "No lectures loaded yet." })); return; }
@@ -683,6 +734,11 @@ $("materials-up").addEventListener("click", () => {
 // ---- init -----------------------------------------------------------------
 
 function restore() {
+  // theme: saved choice, else follow the OS preference
+  const savedTheme = recall("theme") ||
+    (window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
+  applyTheme(savedTheme);
+
   $("feed-source").value = recall("feed");
   $("pdf-path").value = recall("pdfpath");
   $("materials-path").value = recall("matpath");
@@ -703,4 +759,4 @@ function restore() {
 }
 
 restore();
-loadStatus();
+loadStatus().then(loadDashboard);   // home is the default panel
