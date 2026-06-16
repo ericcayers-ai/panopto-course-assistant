@@ -111,12 +111,35 @@ def _extract_sections(raw: str) -> List[str]:
     return out
 
 
+# Section names that are really just a date range (e.g. "7 - 11 July",
+# "28 July - 1 August") carry no topic information.
+_MONTHS = (
+    r"jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|"
+    r"aug(?:ust)?|sep(?:tember)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?"
+)
+# Tested after separators have been collapsed to spaces, so the gap is \s/"to".
+# Requires a month name on the second date to avoid eating topics like "2 3 4 Trees".
+_DATE_RANGE_RE = re.compile(
+    rf"^\d{{1,2}}\s*(?:{_MONTHS})?\s*(?:to\s+|\s)\d{{1,2}}\s*(?:{_MONTHS})$", re.I)
+# Generic words left over once the numbered prefix is gone, e.g. "Week 1 Lecture".
+_GENERIC_LEFTOVERS = re.compile(
+    r"^(?:lecture|lectures|lec|lab|labs|tutorial|tutorials|tut|seminar|workshop|"
+    r"class|classes|session|sessions|content|material|materials)$",
+    re.I,
+)
+
+
 def _readable_topic(name: str) -> str:
     """Human-readable topic from a section name: drop week/lecture markers and
-    leading separators, keep spaces (unlike core.infer_topic which slugifies)."""
-    t = re.sub(r"\b(?:week|wk|lecture|lect|lec|module|mod|unit|topic)\s*0*\d+\b", "", name, flags=re.I)
+    leading separators, keep spaces (unlike core.infer_topic which slugifies).
+    Returns "" when the section name carries no real topic (bare 'Week 3',
+    a date range, or a single generic word like 'Lecture')."""
+    t = re.sub(r"\b(?:week|wk|lecture|lect|lec|module|mod|unit|topic|lab|tutorial|tut)\s*0*\d+\b",
+               "", name, flags=re.I)
     t = re.sub(r"[\-–—:]+", " ", t)
     t = _WS_RE.sub(" ", t).strip(" -–—:()")
+    if not t or _DATE_RANGE_RE.match(t) or _GENERIC_LEFTOVERS.match(t):
+        return ""
     return t
 
 

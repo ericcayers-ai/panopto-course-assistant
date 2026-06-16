@@ -115,6 +115,34 @@ def test_parse_topics_format(tmp_path: Path):
     assert "Contacts" not in names                       # has class attr, not bare h3
 
 
+@pytest.mark.parametrize(
+    "name,topic",
+    [
+        ("Week 1: Stacks and Queues", "Stacks and Queues"),
+        ("Week 1", ""),                       # bare week -> no topic
+        ("Week 2 - 14 18 July", ""),          # date range -> no topic
+        ("Week 3 28 July 1 August", ""),      # date range with months -> no topic
+        ("Week 4 Lecture", ""),               # generic leftover -> no topic
+        ("Week 5 2 3 4 Trees", "2 3 4 Trees"),  # numbers + real word kept
+    ],
+)
+def test_readable_topic_blanking(name, topic):
+    assert sources._readable_topic(name) == topic
+
+
+def test_date_range_sections_blanked(tmp_path: Path):
+    html = """<html><head><title>Paper: MATHS135-25B - Discrete | Moodle</title></head>
+    <body><h1 class="h2">MATHS135-25B (HAM) - Discrete Structures</h1>
+    <div data-sectionname="Week 1 - 7 11 July"></div>
+    <div data-sectionname="Week 2 Sets and Logic"></div>
+    </body></html>"""
+    f = tmp_path / "course.html"
+    f.write_text(html, encoding="utf-8")
+    p = sources.parse_moodle_course(f)
+    assert 1 not in p["week_topics"]                 # date range dropped
+    assert p["week_topics"].get(2) == "Sets and Logic"
+
+
 def test_find_course_file_in_folder(tmp_path: Path):
     (tmp_path / "course").mkdir()
     (tmp_path / "course" / "view_php.html").write_text(WEEKLY_HTML, encoding="utf-8")
