@@ -49,6 +49,30 @@ def test_status(client):
     assert "engines" in body and "output_choices" in body
 
 
+def test_index_and_assets_are_no_cache(client):
+    c, _ = client
+    # the SPA shell and its assets must revalidate so updates aren't masked by
+    # heuristic browser caching.
+    r = c.get("/")
+    assert r.status_code == 200
+    assert r.headers.get("cache-control") == "no-cache"
+    r = c.get("/static/app.js")
+    assert r.status_code == 200
+    assert r.headers.get("cache-control") == "no-cache"
+
+
+def test_docs_is_self_contained_offline(client):
+    c, _ = client
+    r = c.get("/docs")
+    assert r.status_code == 200
+    html = r.text
+    # no CDN/external fetches — the page must work with no internet
+    assert "cdn." not in html and "https://" not in html and "http://" not in html
+    assert "/openapi.json" in html          # it renders from the local schema
+    # and the schema it reads is actually served locally
+    assert c.get("/openapi.json").status_code == 200
+
+
 def test_feed_upload_and_bad_feed(client):
     c, _ = client
     r = c.post("/api/feed/upload", files={"file": ("feed.xml", FEED, "text/xml")})

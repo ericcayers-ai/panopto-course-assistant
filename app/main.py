@@ -31,7 +31,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from fastapi import FastAPI, HTTPException, UploadFile, File
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
@@ -40,11 +40,29 @@ from .jobs import manager
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 STATIC_DIR = BASE_DIR / "static"
+APP_VERSION = "1.1.0"
 # Where transcripts are written/read. Override with PANOPTO_OUTPUT.
 OUTPUT_DIR = Path(os.environ.get("PANOPTO_OUTPUT", BASE_DIR / "transcripts")).resolve()
 core.ensure_dir(OUTPUT_DIR)
 
-app = FastAPI(title="Panopto Course Assistant", version="1.0.0")
+# Default Swagger/ReDoc pull their JS+CSS from a CDN, so /docs is blank when the
+# machine is offline. We disable them and serve a self-contained docs page below.
+app = FastAPI(title="Course Assistant", version=APP_VERSION, docs_url=None, redoc_url=None)
+
+
+class NoCacheStaticFiles(StaticFiles):
+    """StaticFiles that tells browsers to always revalidate.
+
+    Without this, assets are served with only an ETag/Last-Modified and browsers
+    apply *heuristic caching* — happily serving a stale app.js/style.css after an
+    update without checking. ``no-cache`` keeps the ETag fast-path (304 when
+    unchanged) but forces a revalidation every load, so updates show immediately.
+    """
+
+    def file_response(self, *args: Any, **kwargs: Any):  # type: ignore[override]
+        resp = super().file_response(*args, **kwargs)
+        resp.headers["Cache-Control"] = "no-cache"
+        return resp
 
 
 # ---------------------------------------------------------------------------
@@ -431,7 +449,111 @@ def api_materials(path: str) -> Dict[str, Any]:
 
 @app.get("/")
 def index() -> FileResponse:
-    return FileResponse(STATIC_DIR / "index.html")
+    # no-cache so a freshly updated index.html (and the assets it references) is
+    # always picked up instead of a stale browser-cached copy.
+    return FileResponse(STATIC_DIR / "index.html", headers={"Cache-Control": "no-cache"})
 
 
-app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
+@app.get("/docs", include_in_schema=False)
+def docs() -> HTMLResponse:
+    """Self-contained API docs (no CDN), rendered from /openapi.json.
+
+    Works fully offline, unlike the default Swagger UI which fetches its
+    JavaScript and CSS from a public CDN.
+    """
+    return HTMLResponse(_DOCS_HTML)
+
+
+_DOCS_HTML = """<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Course Assistant — API</title>
+<style>
+  :root { color-scheme: light dark; --bg:#f4f7fc; --surface:#fff; --ink:#1b2230;
+    --muted:#5b6577; --border:#e3e9f3; --brand:#3b6ef5; }
+  @media (prefers-color-scheme: dark) { :root { --bg:#0e131c; --surface:#161d29;
+    --ink:#e7ecf5; --muted:#9aa6bb; --border:#27313f; --brand:#5b8bff; } }
+  * { box-sizing: border-box; }
+  body { margin:0; font:15px/1.55 system-ui,"Segoe UI",Roboto,Arial,sans-serif;
+    color:var(--ink); background:var(--bg); padding:28px 22px; }
+  .wrap { max-width:920px; margin:0 auto; }
+  h1 { font-size:24px; margin:0 0 2px; }
+  a.back { color:var(--brand); text-decoration:none; font-size:14px; }
+  .sub { color:var(--muted); margin:4px 0 22px; }
+  .ep { background:var(--surface); border:1px solid var(--border); border-radius:10px;
+    padding:12px 14px; margin:10px 0; box-shadow:0 1px 3px rgba(20,30,60,.06); }
+  .row { display:flex; gap:10px; align-items:center; flex-wrap:wrap; }
+  .m { font-weight:700; font-size:12px; padding:3px 9px; border-radius:6px; color:#fff;
+    letter-spacing:.04em; }
+  .m.get{background:#1f9d63;} .m.post{background:#3b6ef5;} .m.put{background:#c9820a;}
+  .m.delete{background:#d4433b;} .m.patch{background:#7c3aed;}
+  .path { font-family:ui-monospace,Menlo,Consolas,monospace; font-size:14px; }
+  .summary { color:var(--muted); font-size:13.5px; margin-left:auto; }
+  .body { margin:8px 0 0; padding-left:2px; font-size:13px; color:var(--muted); }
+  code { background:rgba(127,127,127,.14); border-radius:5px; padding:1px 5px;
+    font-size:12.5px; }
+  .params { margin:6px 0 0; font-size:13px; }
+  .params li { margin:2px 0; }
+  .err { color:#d4433b; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <a class="back" href="/">← back to the app</a>
+  <h1 id="title">API</h1>
+  <p class="sub" id="sub">Loading the OpenAPI schema…</p>
+  <div id="eps"></div>
+</div>
+<script>
+const ORDER = { get:0, post:1, put:2, patch:3, delete:4 };
+function esc(s){ return String(s).replace(/[&<>]/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c])); }
+function refName(schema){
+  if(!schema) return null;
+  if(schema.$ref) return schema.$ref.split('/').pop();
+  if(schema.items && schema.items.$ref) return schema.items.$ref.split('/').pop()+'[]';
+  return null;
+}
+(async () => {
+  try {
+    const spec = await (await fetch('/openapi.json')).json();
+    document.getElementById('title').textContent =
+      (spec.info && spec.info.title || 'API') + ' — v' + (spec.info && spec.info.version || '');
+    const rows = [];
+    for (const [path, methods] of Object.entries(spec.paths)) {
+      for (const [method, op] of Object.entries(methods)) {
+        rows.push({ path, method, op });
+      }
+    }
+    rows.sort((a,b) => a.path.localeCompare(b.path) || (ORDER[a.method]-ORDER[b.method]));
+    document.getElementById('sub').textContent =
+      rows.length + ' endpoint' + (rows.length===1?'':'s') + ' — this page is generated locally, no internet required.';
+    const host = document.getElementById('eps');
+    for (const { path, method, op } of rows) {
+      const div = document.createElement('div');
+      div.className = 'ep';
+      let html = '<div class="row"><span class="m '+method+'">'+method.toUpperCase()+'</span>'+
+        '<span class="path">'+esc(path)+'</span>'+
+        (op.summary ? '<span class="summary">'+esc(op.summary)+'</span>' : '')+'</div>';
+      const params = (op.parameters||[]).map(p =>
+        '<li><code>'+esc(p.name)+'</code> <span style="opacity:.7">('+esc(p.in)+
+        (p.required?', required':'')+')</span></li>').join('');
+      if (params) html += '<ul class="params">'+params+'</ul>';
+      const rb = op.requestBody && op.requestBody.content && op.requestBody.content['application/json'];
+      const bodyRef = rb && refName(rb.schema);
+      if (bodyRef) html += '<div class="body">body: <code>'+esc(bodyRef)+'</code> (JSON)</div>';
+      div.innerHTML = html;
+      host.appendChild(div);
+    }
+  } catch (e) {
+    document.getElementById('sub').className = 'sub err';
+    document.getElementById('sub').textContent = 'Could not load /openapi.json: ' + e.message;
+  }
+})();
+</script>
+</body>
+</html>"""
+
+
+app.mount("/static", NoCacheStaticFiles(directory=str(STATIC_DIR)), name="static")
