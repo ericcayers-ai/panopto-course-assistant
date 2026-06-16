@@ -40,6 +40,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from . import core, transcribe, sources, notion, flashcards, study, database, courses, settings_store, search, llm, ai
+from .integrations import notion as notion_sync, anki as anki_sync, state as sync_state
 from .jobs import manager
 
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -270,6 +271,27 @@ class ChatReq(BaseModel):
     history: Optional[List[Dict[str, str]]] = None
 
 
+# --- Integrations / sync (§5) ----------------------------------------------
+
+
+class NotionSyncReq(BaseModel):
+    course: str = ""                   # course name for the Course property
+    token: str = ""                    # overrides stored/env token
+    database_id: str = ""              # target Notion DB (overrides stored)
+
+
+class AnkiSyncReq(BaseModel):
+    deck: str = "Course Assistant"
+    course: str = ""
+    selection: Optional[List[str]] = None   # limit flashcard source lectures
+    url: str = ""                      # overrides stored AnkiConnect URL
+
+
+class MappingReq(BaseModel):
+    target: str                        # "notion"
+    fields: Dict[str, str]             # local field -> remote property name
+
+
 # ---------------------------------------------------------------------------
 # API
 # ---------------------------------------------------------------------------
@@ -433,6 +455,81 @@ def api_llm_chat(req: ChatReq) -> Dict[str, Any]:
         raise HTTPException(status_code=400, detail="Ask a question first.")
     return ai.chat(OUTPUT_DIR, req.query, history=req.history, db=db,
                   course_id=settings_store.get_active_course(db))
+
+
+# ---------------------------------------------------------------------------
+# Integrations — live Notion / Anki sync (§5). Every write is incremental,
+# duplicate-aware, and offered as a dry-run first. Tokens are stored via §10.
+# ---------------------------------------------------------------------------
+
+
+@app.get("/api/sync/status")
+def api_sync_status() -> Dict[str, Any]:
+    return sync_state.public_status(db)
+
+
+@app.put("/api/sync/mapping")
+def api_sync_mapping(req: MappingReq) -> Dict[str, Any]:
+    if req.target != "notion":
+        raise HTTPException(status_code=400, detail="Only the Notion mapping is editable.")
+    cfg = sync_state.set_target(db, "notion", {"field_map": req.fields})
+    return {"target": "notion", "field_map": cfg["notion"]["field_map"]}
+
+
+def _notion_args(req: NotionSyncReq) -> Dict[str, Any]:
+    cfg = sync_state.get(db)["notion"]
+    token = sync_state.notion_token(db, req.token)
+    database_id = req.database_id or cfg.get("database_id", "")
+    if not token:
+        raise HTTPException(status_code=400, detail="No Notion token configured (set it in Sync settings or NOTION_TOKEN).")
+    if not database_id:
+        raise HTTPException(status_code=400, detail="No Notion database_id configured.")
+    return {"token": token, "database_id": database_id,
+            "course": req.course, "field_map": cfg.get("field_map")}
+
+
+@app.post("/api/sync/notion/dryrun")
+def api_sync_notion_dryrun(req: NotionSyncReq) -> Dict[str, Any]:
+    try:
+        return notion_sync.sync_course(OUTPUT_DIR, dry_run=True, **_notion_args(req))
+    except notion_sync.NotionError as e:
+        raise HTTPException(status_code=502, detail=str(e))
+
+
+@app.post("/api/sync/notion")
+def api_sync_notion(req: NotionSyncReq) -> Dict[str, Any]:
+    try:
+        result = notion_sync.sync_course(OUTPUT_DIR, dry_run=False, **_notion_args(req))
+    except notion_sync.NotionError as e:
+        raise HTTPException(status_code=502, detail=str(e))
+    sync_state.set_target(db, "notion", {"last_sync": core.now_iso(),
+                                        "database_id": _notion_args(req)["database_id"]})
+    return result
+
+
+def _anki_cards(req: AnkiSyncReq) -> List[Dict[str, Any]]:
+    out = ai.generate_flashcards(OUTPUT_DIR, selection=req.selection, course=req.course,
+                                db=db, course_id=settings_store.get_active_course(db))
+    return out.get("cards", [])
+
+
+@app.post("/api/sync/anki/dryrun")
+def api_sync_anki_dryrun(req: AnkiSyncReq) -> Dict[str, Any]:
+    url = req.url or sync_state.get(db)["anki"].get("url", "")
+    return anki_sync.sync_flashcards(_anki_cards(req), req.deck, course=req.course,
+                                    dry_run=True, url=url)
+
+
+@app.post("/api/sync/anki")
+def api_sync_anki(req: AnkiSyncReq) -> Dict[str, Any]:
+    url = req.url or sync_state.get(db)["anki"].get("url", "")
+    try:
+        result = anki_sync.sync_flashcards(_anki_cards(req), req.deck, course=req.course,
+                                          dry_run=False, url=url)
+    except anki_sync.AnkiError as e:
+        raise HTTPException(status_code=502, detail=str(e))
+    sync_state.set_target(db, "anki", {"last_sync": core.now_iso(), "url": url})
+    return result
 
 
 @app.post("/api/feed")

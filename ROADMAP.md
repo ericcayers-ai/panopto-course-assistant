@@ -260,6 +260,8 @@ POST /api/ai/cleanup    {scope, course}                        → suggested out
 
 ## §5 — Integrations (write/sync side)
 
+**Status:** ✅ **Shipped (core sync).** `integrations/notion.py` (live API: create DB/page/update, incremental + title-dedup, editable field map, dry-run) and `integrations/anki.py` (AnkiConnect: auto-create deck, tagged notes, duplicate-aware, dry-run) both ship with injectable transports so the planning/dedup logic is fully tested offline. `integrations/state.py` persists connection config + last-sync timestamps under the `sync` settings key (tokens never echoed). Routes: `/api/sync/{notion,anki}` + `/dryrun`, `/api/sync/status`, `PUT /api/sync/mapping`. Anki cards are sourced from the §4 flashcard generator. (Conflict-resolution UI + a dedicated retry queue beyond §3's job infra remain for a later pass; token storage moves to the keyring in §10.)
+
 **Goal:** Remove manual export/import round-trips via live API sync. (Distinct from existing import-side `app/notion.py`.)
 **Depends:** §1, §4 (sync AI summaries/cards), §10 (tokens).
 **Files:** `app/integrations/notion.py` [NEW], `app/integrations/anki.py` [NEW].

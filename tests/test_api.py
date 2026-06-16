@@ -73,6 +73,37 @@ def test_docs_is_self_contained_offline(client):
     assert c.get("/openapi.json").status_code == 200
 
 
+def test_sync_status_and_mapping(client):
+    c, _ = client
+    r = c.get("/api/sync/status")
+    assert r.status_code == 200
+    body = r.json()
+    # no token leaks; defaults present
+    assert body["notion"]["connected"] is False
+    assert "token" not in body["notion"]
+    assert body["notion"]["field_map"]["title"] == "Name"
+    # edit the field mapping and read it back
+    r2 = c.put("/api/sync/mapping",
+               json={"target": "notion", "fields": {"title": "Lecture"}})
+    assert r2.status_code == 200
+    assert r2.json()["field_map"]["title"] == "Lecture"
+    assert c.get("/api/sync/status").json()["notion"]["field_map"]["title"] == "Lecture"
+
+
+def test_sync_notion_requires_token(client):
+    c, _ = client
+    r = c.post("/api/sync/notion", json={"course": "X"})
+    assert r.status_code == 400          # no token configured
+
+
+def test_sync_anki_dryrun_offline(client):
+    c, tmp = client
+    _seed(tmp)
+    r = c.post("/api/sync/anki/dryrun", json={"deck": "D", "course": "COMPX234"})
+    assert r.status_code == 200
+    assert r.json()["dry_run"] is True
+
+
 def test_feed_upload_and_bad_feed(client):
     c, _ = client
     r = c.post("/api/feed/upload", files={"file": ("feed.xml", FEED, "text/xml")})
