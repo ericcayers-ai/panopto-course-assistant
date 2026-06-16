@@ -39,15 +39,58 @@ from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from . import core, transcribe, sources, notion, flashcards, study
+from . import core, transcribe, sources, notion, flashcards, study, database, courses, settings_store
 from .jobs import manager
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 STATIC_DIR = BASE_DIR / "static"
-APP_VERSION = "1.2.0"
+APP_VERSION = "1.3.0"
 # Where transcripts are written/read. Override with PANOPTO_OUTPUT.
 OUTPUT_DIR = Path(os.environ.get("PANOPTO_OUTPUT", BASE_DIR / "transcripts")).resolve()
 core.ensure_dir(OUTPUT_DIR)
+
+# --- Persistence (§1) ------------------------------------------------------
+# Durable SQLite store lives alongside the library. Initialised at import so a
+# reload (the test pattern) rebinds everything to the active output directory.
+db = database.init(OUTPUT_DIR / "course_assistant.db")
+manager.bind(db)          # jobs now survive restarts; crashed jobs -> 'interrupted'
+
+
+def _backfill_library(database_, output_dir: Path) -> None:
+    """One-time import of an existing ``transcripts/`` folder into the DB index.
+
+    Runs only when the DB has no courses yet, so we never orphan files a user
+    already produced before persistence existed (roadmap §Conventions). Idempotent
+    via ``INSERT OR IGNORE`` on the file path.
+    """
+    if database_.count_courses() > 0:
+        return
+    groups = core.list_transcripts(output_dir)
+    library = core.list_library(output_dir)
+    documents = library["categories"]["documents"]
+    if not groups and not documents:
+        return
+    course = courses.create_course(database_, name="My Course")
+    cid = course["id"]
+    for g in groups:
+        fmts = g["formats"]
+        primary = (fmts.get("txt") or fmts.get("md") or fmts.get("json")
+                   or next(iter(fmts.values()), ""))
+        if not primary:
+            continue
+        title = g["stem"]
+        database_.insert_transcript(
+            cid, title=title, path=primary,
+            week=core.infer_week(title), topic=core.infer_topic(title),
+        )
+    for d in documents:
+        database_.insert_document(
+            cid, title=d["name"], path=d["path"], type="document",
+            import_source="backfill",
+        )
+
+
+_backfill_library(db, OUTPUT_DIR)
 
 # Default Swagger/ReDoc pull their JS+CSS from a CDN, so /docs is blank when the
 # machine is offline. We disable them and serve a self-contained docs page below.
@@ -166,6 +209,30 @@ class StudyCsvRequest(BaseModel):
     filename: str = "study_database"
 
 
+# --- Multi-course / persistence (§1) ---------------------------------------
+
+
+class CourseCreate(BaseModel):
+    name: str
+    code: str = ""
+    semester: str = ""
+    year: Optional[int] = None
+
+
+class CourseUpdate(BaseModel):
+    name: Optional[str] = None
+    code: Optional[str] = None
+    semester: Optional[str] = None
+    year: Optional[int] = None
+    archived: Optional[bool] = None
+
+
+class SettingsUpdate(BaseModel):
+    # Arbitrary preference bag (active_course, theme, export defaults, ai, sync…).
+    # Stored JSON-encoded; reserved keys (schema_version) are ignored.
+    values: Dict[str, Any]
+
+
 # ---------------------------------------------------------------------------
 # API
 # ---------------------------------------------------------------------------
@@ -178,7 +245,99 @@ def api_status() -> Dict[str, Any]:
     status["output_choices"] = core.OUTPUT_CHOICES
     status["organize_choices"] = core.ORG_CHOICES
     status["doc_exts"] = core.DOC_EXTS
+    status["db"] = {
+        "schema_version": db.schema_version(),
+        "courses": db.count_courses(),
+        "active_course": settings_store.get_active_course(db),
+    }
     return status
+
+
+# ---------------------------------------------------------------------------
+# Courses (§1 — multi-course foundation)
+# ---------------------------------------------------------------------------
+
+
+@app.get("/api/courses")
+def api_courses_list(include_archived: bool = True) -> Dict[str, Any]:
+    return {
+        "courses": courses.list_courses(db, include_archived=include_archived),
+        "active_course": settings_store.get_active_course(db),
+    }
+
+
+@app.post("/api/courses")
+def api_courses_create(req: CourseCreate) -> Dict[str, Any]:
+    try:
+        return courses.create_course(db, name=req.name, code=req.code,
+                                     semester=req.semester, year=req.year)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@app.get("/api/courses/{course_id}")
+def api_courses_get(course_id: int) -> Dict[str, Any]:
+    course = courses.get_course(db, course_id)
+    if not course:
+        raise HTTPException(status_code=404, detail="Course not found")
+    return course
+
+
+@app.patch("/api/courses/{course_id}")
+def api_courses_update(course_id: int, req: CourseUpdate) -> Dict[str, Any]:
+    if not db.get_course(course_id):
+        raise HTTPException(status_code=404, detail="Course not found")
+    try:
+        return courses.update_course(db, course_id, **req.model_dump(exclude_none=True))
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@app.delete("/api/courses/{course_id}")
+def api_courses_delete(course_id: int) -> Dict[str, Any]:
+    if not courses.delete_course(db, course_id):
+        raise HTTPException(status_code=404, detail="Course not found")
+    return {"deleted": course_id, "active_course": settings_store.get_active_course(db)}
+
+
+@app.post("/api/courses/{course_id}/duplicate")
+def api_courses_duplicate(course_id: int) -> Dict[str, Any]:
+    dup = courses.duplicate_course(db, course_id)
+    if not dup:
+        raise HTTPException(status_code=404, detail="Course not found")
+    return dup
+
+
+@app.post("/api/courses/{course_id}/activate")
+def api_courses_activate(course_id: int) -> Dict[str, Any]:
+    active = courses.set_active(db, course_id)
+    if not active:
+        raise HTTPException(status_code=404, detail="Course not found")
+    return active
+
+
+@app.post("/api/courses/{course_id}/export")
+def api_courses_export(course_id: int) -> Dict[str, Any]:
+    # Course-archive export is owned by the Export Engine (roadmap §9); this
+    # endpoint is the stable entry point that §9 will fill in.
+    if not db.get_course(course_id):
+        raise HTTPException(status_code=404, detail="Course not found")
+    raise HTTPException(status_code=501, detail="Course archive export arrives with §9 (Export Engine).")
+
+
+# ---------------------------------------------------------------------------
+# Settings (§1 — persistent preferences)
+# ---------------------------------------------------------------------------
+
+
+@app.get("/api/settings")
+def api_settings_get() -> Dict[str, Any]:
+    return settings_store.all(db)
+
+
+@app.put("/api/settings")
+def api_settings_update(req: SettingsUpdate) -> Dict[str, Any]:
+    return settings_store.update(db, req.values)
 
 
 @app.post("/api/feed")

@@ -18,6 +18,15 @@ async function api(path, opts) {
   return data;
 }
 
+// POST/PUT a JSON body; returns the parsed response.
+function postJSON(path, body, method = "POST") {
+  return api(path, {
+    method,
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+}
+
 function el(tag, attrs = {}, children = []) {
   const node = document.createElement(tag);
   for (const [k, v] of Object.entries(attrs)) {
@@ -213,6 +222,67 @@ function setCourse(name) {
   if (main) main.value = name;
   remember("course", name);
 }
+
+// ---- multi-course switcher (§1) -------------------------------------------
+// The persisted courses live in the DB now; the switcher picks the *active*
+// one and keeps the legacy free-text tag in sync so imports/exports still tag
+// correctly. With no courses yet, the switcher hides and the free-text field
+// works exactly as before.
+const Courses = { list: [], active: null };
+
+async function loadCourses() {
+  const sel = $("course-switcher");
+  if (!sel) return;
+  let data;
+  try { data = await api("/api/courses"); } catch (_) { return; }
+  Courses.list = data.courses || [];
+  Courses.active = data.active_course;
+  clear(sel);
+  if (!Courses.list.length) {
+    sel.classList.add("hidden");
+    return;
+  }
+  sel.classList.remove("hidden");
+  for (const c of Courses.list) {
+    const label = (c.code ? c.code + " — " : "") + c.name + (c.archived ? " (archived)" : "");
+    sel.appendChild(el("option", { value: String(c.id), text: label }));
+  }
+  if (Courses.active != null) {
+    sel.value = String(Courses.active);
+    const active = Courses.list.find((c) => c.id === Courses.active);
+    if (active) setCourse(active.code || active.name);
+  }
+}
+
+async function activateCourse(id) {
+  try {
+    const c = await postJSON("/api/courses/" + id + "/activate", {});
+    Courses.active = c.id;
+    const sel = $("course-switcher");
+    if (sel) sel.value = String(c.id);      // keep the dropdown in sync on programmatic switches
+    setCourse(c.code || c.name);
+    toast("Switched to “" + c.name + "”.", "ok");
+    if (document.querySelector("#library.active")) loadTranscripts();
+    if (document.querySelector("#home.active")) loadDashboard();
+  } catch (e) { toast(e.message, "err"); }
+}
+
+async function createCourse() {
+  const name = (window.prompt("New course name:") || "").trim();
+  if (!name) return;
+  try {
+    const c = await postJSON("/api/courses", { name });
+    await loadCourses();
+    await activateCourse(c.id);
+  } catch (e) { toast(e.message, "err"); }
+}
+
+if ($("course-switcher")) {
+  $("course-switcher").addEventListener("change", (e) => {
+    if (e.target.value) activateCourse(Number(e.target.value));
+  });
+}
+if ($("course-new")) $("course-new").addEventListener("click", createCourse);
 
 // keep the top-bar field and the Course panel field in sync + persisted
 $("course-input").addEventListener("input", () => remember("course", $("course-input").value.trim()));
@@ -872,3 +942,4 @@ function restore() {
 
 restore();
 loadStatus().then(loadDashboard);   // home is the default panel
+loadCourses();                       // populate the multi-course switcher (§1)

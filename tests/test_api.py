@@ -213,3 +213,94 @@ def test_flashcards_categorize(client):
     assert r.status_code == 200 and r.json()["count"] == 2
     # empty input -> 400
     assert c.post("/api/flashcards/categorize", json={"text": ""}).status_code == 400
+
+
+# ---------------------------------------------------------------------------
+# §1 — multi-course + persistence routes
+# ---------------------------------------------------------------------------
+
+
+def test_status_reports_db_block(client):
+    c, _ = client
+    db = c.get("/api/status").json()["db"]
+    assert db["schema_version"] >= 1
+    assert db["courses"] == 0 and db["active_course"] is None
+
+
+def test_courses_full_lifecycle(client):
+    c, _ = client
+    assert c.get("/api/courses").json()["courses"] == []
+
+    created = c.post("/api/courses",
+                     json={"name": "Networks", "code": "COMPX234", "year": 2026})
+    assert created.status_code == 200
+    cid = created.json()["id"]
+    # the very first course becomes the active one automatically
+    assert c.get("/api/courses").json()["active_course"] == cid
+
+    # rename + archive via PATCH
+    assert c.patch(f"/api/courses/{cid}", json={"name": "Networking"}).json()["name"] == "Networking"
+    assert c.patch(f"/api/courses/{cid}", json={"archived": True}).json()["archived"] is True
+    assert c.get("/api/courses", params={"include_archived": "false"}).json()["courses"] == []
+
+    # duplicate -> a new "(copy)" course
+    dup = c.post(f"/api/courses/{cid}/duplicate").json()
+    assert dup["name"].endswith("(copy)") and dup["id"] != cid
+
+    # activate the copy
+    assert c.post(f"/api/courses/{dup['id']}/activate").json()["id"] == dup["id"]
+    assert c.get("/api/courses").json()["active_course"] == dup["id"]
+
+    # delete the original
+    assert c.delete(f"/api/courses/{cid}").status_code == 200
+    assert c.get(f"/api/courses/{cid}").status_code == 404
+
+
+def test_course_validation_and_404s(client):
+    c, _ = client
+    assert c.post("/api/courses", json={"name": "   "}).status_code == 400
+    assert c.patch("/api/courses/9999", json={"name": "x"}).status_code == 404
+    assert c.delete("/api/courses/9999").status_code == 404
+    assert c.post("/api/courses/9999/activate").status_code == 404
+
+
+def test_course_export_is_stubbed_until_phase9(client):
+    c, _ = client
+    cid = c.post("/api/courses", json={"name": "X"}).json()["id"]
+    assert c.post(f"/api/courses/{cid}/export").status_code == 501
+
+
+def test_settings_persist_and_hide_reserved(client):
+    c, _ = client
+    assert "schema_version" not in c.get("/api/settings").json()
+    body = c.put("/api/settings", json={"values": {
+        "theme": "dark", "export_defaults": {"format": "md"}, "schema_version": 999,
+    }}).json()
+    assert body["theme"] == "dark"
+    assert body["export_defaults"]["format"] == "md"
+    assert "schema_version" not in body                 # reserved key ignored
+    # survives a re-read
+    assert c.get("/api/settings").json()["theme"] == "dark"
+
+
+def test_startup_backfills_existing_transcripts(tmp_path, monkeypatch):
+    """A transcripts/ folder that predates persistence is indexed on startup
+    rather than orphaned (roadmap §Conventions)."""
+    monkeypatch.setenv("PANOPTO_OUTPUT", str(tmp_path))
+    from app import core
+    item = core.LectureItem(title="Week2_CPU", url="u", duration=60,
+                            pub_date="Mon, 09 Mar 2026 02:13:40 GMT")
+    core.write_outputs(item, [{"start": 0, "end": 5, "text": "TCP handshake basics"}],
+                       "TCP handshake basics", core.output_dir_for(tmp_path, item, "week"),
+                       ["txt", "json"], 30, {"course": "COMPX234"})
+
+    import app.main as main
+    main = importlib.reload(main)                       # triggers startup backfill
+    c = TestClient(main.app)
+
+    body = c.get("/api/courses").json()
+    assert len(body["courses"]) == 1
+    course = body["courses"][0]
+    assert body["active_course"] == course["id"]
+    assert course["counts"]["transcripts"] >= 1
+    assert c.get("/api/status").json()["db"]["courses"] == 1
