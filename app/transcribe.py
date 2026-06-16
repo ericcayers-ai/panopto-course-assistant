@@ -30,6 +30,7 @@ def engine_status() -> Dict[str, Any]:
         "faster-whisper": _have("faster_whisper"),
         "whisper": _have("whisper"),
     }
+    via = _cuda_backend()
     return {
         "engines": engines,
         "any_engine": any(engines.values()),
@@ -37,22 +38,44 @@ def engine_status() -> Dict[str, Any]:
         "requests": _have("requests"),
         "markitdown": _have("markitdown"),
         "torch": _have("torch"),
-        "cuda": _cuda_available(),
+        "cuda": via is not None,
+        "cuda_via": via,                 # "ctranslate2" | "torch" | None — for diagnostics
         "default_engine": "faster-whisper" if engines["faster-whisper"] else (
             "whisper" if engines["whisper"] else None
         ),
     }
 
 
-def _cuda_available() -> bool:
-    if not _have("torch"):
-        return False
-    try:
-        import torch
+def _cuda_backend() -> Optional[str]:
+    """Which backend can see a CUDA GPU, or None.
 
-        return bool(torch.cuda.is_available())
-    except Exception:
-        return False
+    The recommended engine, faster-whisper, runs on **CTranslate2**, which ships
+    its own CUDA runtime and does *not* depend on PyTorch — so checking torch
+    alone wrongly reports "CPU only" on machines that have a working GPU but no
+    torch installed. Probe CTranslate2 first, then fall back to torch (used by
+    the optional openai-whisper engine).
+    """
+    if _have("ctranslate2"):
+        try:
+            import ctranslate2
+
+            if ctranslate2.get_cuda_device_count() > 0:
+                return "ctranslate2"
+        except Exception:
+            pass
+    if _have("torch"):
+        try:
+            import torch
+
+            if torch.cuda.is_available():
+                return "torch"
+        except Exception:
+            pass
+    return None
+
+
+def _cuda_available() -> bool:
+    return _cuda_backend() is not None
 
 
 def resolve_device(requested: str) -> str:
@@ -149,8 +172,20 @@ def _transcribe_faster_whisper(media: Path, model_name: str, language: str, devi
                                beam_size: int, vad_filter: bool) -> Dict[str, Any]:
     from faster_whisper import WhisperModel
 
-    compute_type = "float16" if device == "cuda" else "int8"
-    model = WhisperModel(model_name, device=device, compute_type=compute_type)
+    def _load(dev: str):
+        compute_type = "float16" if dev == "cuda" else "int8"
+        return WhisperModel(model_name, device=dev, compute_type=compute_type)
+
+    try:
+        model = _load(device)
+    except Exception:
+        # GPU was requested but its libraries are missing/incompatible — don't
+        # fail the whole job, fall back to CPU and record the real device used.
+        if device == "cuda":
+            model = _load("cpu")
+            device = "cpu"
+        else:
+            raise
     segments_iter, info = model.transcribe(
         str(media),
         language=language or None,
@@ -167,6 +202,7 @@ def _transcribe_faster_whisper(media: Path, model_name: str, language: str, devi
         "segments": segments,
         "text": " ".join(p for p in parts if p).strip(),
         "language": getattr(info, "language", None) or language or "",
+        "device": device,
     }
 
 
@@ -266,7 +302,7 @@ def transcribe_lecture(
         "engine": engine,
         "model": model,
         "language": res.get("language", language),
-        "device": device,
+        "device": res.get("device", device),     # the engine may have fallen back to CPU
         "runtime_s": round(runtime, 1),
         "source_video": str(media),
         "course": course,
