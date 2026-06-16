@@ -212,6 +212,8 @@ GET  /api/jobs?status=dead_letter            inspect unrecoverable jobs
 
 ## §4 — AI / LLM Layer (Optional)
 
+**Status:** ✅ **Shipped (backend).** `llm.py` provider abstraction (ollama, llama.cpp/LM-Studio, openai, anthropic; default cloud model `claude-opus-4-8`); import never touches the network; per-course AI config in settings with API keys redacted from all responses (keyring is §10). `ai.py` ships summarise / flashcards / quiz / RAG-chat — each with a dependency-free extractive fallback so features never vanish when AI is off; outputs labelled `generated: ai|extractive`. Routes under `/api/llm/*`; `/api/status.ai` reports detected providers. (Chat/settings UI lands in the §8 frontend pass; topic-synthesis/outline-cleanup later.)
+
 **Goal:** Advanced AI features behind a provider abstraction, with zero impact on offline-first when disabled.
 **Depends:** §2 (index for RAG), §10 (secrets for cloud keys).
 **Files:** `app/llm.py` [NEW provider abstraction], `app/ai/summarize.py`, `app/ai/flashcards_ai.py`, `app/ai/quiz.py`, `app/ai/rag.py`, `app/ai/synth.py` [NEW]; `app/flashcards.py` [keep heuristic path as fallback].

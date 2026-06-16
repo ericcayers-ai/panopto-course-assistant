@@ -39,7 +39,7 @@ from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from . import core, transcribe, sources, notion, flashcards, study, database, courses, settings_store, search
+from . import core, transcribe, sources, notion, flashcards, study, database, courses, settings_store, search, llm, ai
 from .jobs import manager
 
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -238,6 +238,38 @@ class SavedViewCreate(BaseModel):
     query: Dict[str, Any] = {}
 
 
+# --- Optional AI / LLM (§4) ------------------------------------------------
+
+
+class LLMSettings(BaseModel):
+    values: Dict[str, Any]            # provider, model, temperature, max_tokens, retrieval_depth, host, api_key
+
+
+class SummarizeReq(BaseModel):
+    scope: str = "course"             # lecture | week | topic | course
+    target: str = ""                  # path (lecture) | week number | topic
+
+
+class FlashcardsAIReq(BaseModel):
+    selection: Optional[List[str]] = None
+    types: Optional[List[str]] = None
+    course: str = ""
+    max_cards: int = 20
+
+
+class QuizReq(BaseModel):
+    scope: str = "course"
+    target: str = ""
+    types: Optional[List[str]] = None
+    difficulty: str = "medium"
+    n: int = 8
+
+
+class ChatReq(BaseModel):
+    query: str
+    history: Optional[List[Dict[str, str]]] = None
+
+
 # ---------------------------------------------------------------------------
 # API
 # ---------------------------------------------------------------------------
@@ -255,7 +287,16 @@ def api_status() -> Dict[str, Any]:
         "courses": db.count_courses(),
         "active_course": settings_store.get_active_course(db),
     }
+    status["ai"] = llm.detect()
+    status["ai"]["config"] = _safe_ai_config(llm.get_config(db, settings_store.get_active_course(db)))
     return status
+
+
+def _safe_ai_config(cfg: Dict[str, Any]) -> Dict[str, Any]:
+    """Never echo a stored API key back to the client — report only its presence."""
+    out = {k: v for k, v in cfg.items() if k != "api_key"}
+    out["has_api_key"] = bool(cfg.get("api_key"))
+    return out
 
 
 # ---------------------------------------------------------------------------
@@ -343,6 +384,55 @@ def api_settings_get() -> Dict[str, Any]:
 @app.put("/api/settings")
 def api_settings_update(req: SettingsUpdate) -> Dict[str, Any]:
     return settings_store.update(db, req.values)
+
+
+# ---------------------------------------------------------------------------
+# Optional AI / LLM (§4) — every endpoint degrades to an extractive fallback
+# ---------------------------------------------------------------------------
+
+
+@app.get("/api/llm/providers")
+def api_llm_providers() -> Dict[str, Any]:
+    return llm.detect()
+
+
+@app.get("/api/llm/settings")
+def api_llm_settings_get() -> Dict[str, Any]:
+    return _safe_ai_config(llm.get_config(db, settings_store.get_active_course(db)))
+
+
+@app.patch("/api/llm/settings")
+def api_llm_settings_update(req: LLMSettings) -> Dict[str, Any]:
+    cfg = llm.set_config(db, settings_store.get_active_course(db), req.values)
+    return _safe_ai_config(cfg)
+
+
+@app.post("/api/llm/summarize")
+def api_llm_summarize(req: SummarizeReq) -> Dict[str, Any]:
+    return ai.summarize(OUTPUT_DIR, req.scope, req.target, db=db,
+                       course_id=settings_store.get_active_course(db))
+
+
+@app.post("/api/llm/flashcards")
+def api_llm_flashcards(req: FlashcardsAIReq) -> Dict[str, Any]:
+    return ai.generate_flashcards(OUTPUT_DIR, selection=req.selection, types=req.types,
+                                 course=req.course, max_cards=req.max_cards, db=db,
+                                 course_id=settings_store.get_active_course(db))
+
+
+@app.post("/api/llm/quiz")
+def api_llm_quiz(req: QuizReq) -> Dict[str, Any]:
+    return ai.generate_quiz(OUTPUT_DIR, req.scope, req.target, types=req.types,
+                           difficulty=req.difficulty, n=req.n, db=db,
+                           course_id=settings_store.get_active_course(db))
+
+
+@app.post("/api/llm/chat")
+def api_llm_chat(req: ChatReq) -> Dict[str, Any]:
+    if not req.query.strip():
+        raise HTTPException(status_code=400, detail="Ask a question first.")
+    return ai.chat(OUTPUT_DIR, req.query, history=req.history, db=db,
+                  course_id=settings_store.get_active_course(db))
 
 
 @app.post("/api/feed")

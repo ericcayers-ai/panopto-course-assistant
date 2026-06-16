@@ -316,6 +316,36 @@ def test_search_fuzzy_fallback(client):
     assert isinstance(res, list)
 
 
+def test_status_has_ai_block(client):
+    c, _ = client
+    ai = c.get("/api/status").json()["ai"]
+    assert "providers" in ai and "anthropic" in ai["providers"]
+    assert ai["config"]["provider"] == "none"           # off by default
+    assert "api_key" not in ai["config"]                 # never leaked
+
+
+def test_llm_settings_redacts_api_key(client):
+    c, _ = client
+    assert c.get("/api/llm/providers").status_code == 200
+    r = c.patch("/api/llm/settings", json={"values": {
+        "provider": "anthropic", "api_key": "sk-secret", "temperature": 0.5}})
+    body = r.json()
+    assert body["provider"] == "anthropic" and body["temperature"] == 0.5
+    assert "api_key" not in body and body["has_api_key"] is True
+    # and never echoed via GET either
+    assert "api_key" not in c.get("/api/llm/settings").json()
+
+
+def test_llm_features_fall_back_without_provider(client):
+    c, tmp = client
+    _seed(tmp)  # Week2_CPU "TCP handshake basics"
+    s = c.post("/api/llm/summarize", json={"scope": "course"}).json()
+    assert s["generated"] == "extractive"
+    chat = c.post("/api/llm/chat", json={"query": "handshake"}).json()
+    assert chat["generated"] == "extractive"
+    assert c.post("/api/llm/chat", json={"query": "  "}).status_code == 400
+
+
 def test_job_control_routes_404_for_unknown(client):
     c, _ = client
     assert c.get("/api/jobs/nope/logs").status_code == 404
