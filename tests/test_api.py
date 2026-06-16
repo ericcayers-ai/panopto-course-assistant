@@ -136,6 +136,18 @@ def test_flashcards_generate_empty_then_success(client):
     assert body["anki_tsv"].endswith(".txt") and body["csv"].endswith(".csv")
 
 
+def test_export_notion_csv_empty_then_success(client):
+    c, tmp = client
+    assert c.post("/api/export/notion-csv", json={}).status_code == 404
+    _seed(tmp)
+    r = c.post("/api/export/notion-csv", json={"course": "COMPX234"})
+    assert r.status_code == 200
+    body = r.json()
+    assert body["count"] == 1
+    assert body["csv"].endswith(".csv")
+    assert "Name" in body["columns"]
+
+
 def test_flashcards_categorize(client):
     c, _ = client
     r = c.post("/api/flashcards/categorize", json={

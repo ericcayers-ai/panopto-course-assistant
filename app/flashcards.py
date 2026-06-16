@@ -266,7 +266,7 @@ def to_anki_tsv(cards: List[Dict[str, Any]]) -> str:
 
 def to_csv(cards: List[Dict[str, Any]]) -> str:
     out = io.StringIO()
-    w = csv.writer(out)
+    w = csv.writer(out, lineterminator="\n")  # avoid \r\r\n after write_text on Windows
     w.writerow(["Front", "Back", "Tags"])
     for c in cards:
         w.writerow([c.get("front", ""), c.get("back", ""), " ".join(c.get("tags") or [])])

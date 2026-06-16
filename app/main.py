@@ -13,6 +13,7 @@ GET  /api/search           -> full-text search across transcripts (?q=)
 POST /api/export/notebooklm -> render transcripts into NotebookLM-friendly Markdown
 POST /api/flashcards/generate -> Anki-importable flashcards from transcripts
 POST /api/flashcards/categorize -> tag/categorise an existing flashcard deck
+POST /api/export/notion-csv -> export a Notion-importable study-database CSV
 POST /api/transcribe       -> queue a transcription job (needs whisper installed)
 POST /api/organize         -> reorganize existing transcripts into folders
 POST /api/moodle/parse     -> parse a Moodle course HTML export into an outline
@@ -34,7 +35,7 @@ from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from . import core, transcribe, sources, notion, flashcards
+from . import core, transcribe, sources, notion, flashcards, study
 from .jobs import manager
 
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -125,6 +126,11 @@ class FlashcardCatRequest(BaseModel):
     deck: str = "categorized"
 
 
+class StudyCsvRequest(BaseModel):
+    course: str = ""
+    filename: str = "study_database"
+
+
 # ---------------------------------------------------------------------------
 # API
 # ---------------------------------------------------------------------------
@@ -197,6 +203,18 @@ def api_export_notebooklm(req: NotebookLMRequest) -> Dict[str, Any]:
         raise HTTPException(
             status_code=404,
             detail="No transcripts found to export. Transcribe some lectures first.",
+        )
+    return result
+
+
+@app.post("/api/export/notion-csv")
+def api_export_notion_csv(req: StudyCsvRequest) -> Dict[str, Any]:
+    """Export the transcript library as a Notion-importable study-database CSV."""
+    result = study.write_study_database(OUTPUT_DIR, course=req.course, filename=req.filename)
+    if result["count"] == 0:
+        raise HTTPException(
+            status_code=404,
+            detail="Nothing to export yet. Transcribe or convert some lectures first.",
         )
     return result
 

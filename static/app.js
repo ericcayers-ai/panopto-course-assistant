@@ -377,6 +377,27 @@ $("nlm-export").addEventListener("click", async () => {
   finally { btn.disabled = false; }
 });
 
+// Notion study-database CSV export
+$("studycsv-go").addEventListener("click", async () => {
+  const out = $("studycsv-results");
+  const btn = $("studycsv-go");
+  btn.disabled = true; out.textContent = "Exporting…";
+  try {
+    const data = await api("/api/export/notion-csv", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ course: $("studycsv-course").value.trim() || recall("course") }),
+    });
+    clear(out);
+    out.appendChild(el("p", { class: "ok-text", text: `✓ ${data.count} lecture(s) → ${data.csv}` }));
+    out.appendChild(el("div", {}, [
+      el("button", { class: "tag", text: "view CSV", onclick: () => viewTranscript(data.csv) }),
+    ]));
+    out.appendChild(el("p", { class: "hint", text: "Columns: " + data.columns.join(", ") }));
+    toast(`Exported ${data.count} rows to a Notion CSV.`, "ok");
+  } catch (e) { out.textContent = "Error: " + e.message; toast(e.message, "warn"); }
+  finally { btn.disabled = false; }
+});
+
 // Reorganize
 $("org-go").addEventListener("click", async () => {
   const out = $("org-results");
