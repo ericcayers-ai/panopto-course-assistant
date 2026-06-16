@@ -219,15 +219,33 @@ def parse_moodle_course(path: Path) -> Dict[str, Any]:
         )
     root = Path(path) if Path(path).is_dir() else None
     raw = course_file.read_text(encoding="utf-8", errors="replace")
+    parsed = parse_moodle_html(raw, root=root)
+    parsed["source_file"] = str(course_file)
+    return parsed
+
+
+def parse_moodle_html(raw: str, *, root: Optional[Path] = None,
+                     extra_sections: Optional[List[Dict[str, Any]]] = None,
+                     extra_activities: Optional[List[Dict[str, Any]]] = None) -> Dict[str, Any]:
+    """Parse a Moodle course page from a raw HTML string (file- or web-sourced).
+
+    ``extra_sections``/``extra_activities`` let a multi-page web crawl (the live-URL
+    importer) merge in sections/activities recovered from linked ``section.php``
+    pages before the outline Markdown is rendered.
+    """
     title = _extract_title(raw)
     code = _extract_course_code(title)
     sections = [_section_to_record(n) for n in _extract_sections(raw)]
-    week_topics = {s["week"]: s["topic"] for s in sections if s["week"] is not None and s["topic"]}
     activities = _extract_activities(raw)
+    if extra_sections:
+        sections = _merge_sections(sections, extra_sections)
+    if extra_activities:
+        activities = _merge_activities(activities, extra_activities)
+    week_topics = {s["week"]: s["topic"] for s in sections if s["week"] is not None and s["topic"]}
     resources = _extract_resource_docs(root)
 
     return {
-        "source_file": str(course_file),
+        "source_file": "",
         "root": str(root) if root else "",
         "title": title,
         "code": code,
@@ -238,8 +256,45 @@ def parse_moodle_course(path: Path) -> Dict[str, Any]:
         "activity_count": len(activities),
         "resources": resources,
         "resource_count": len(resources),
+        "panopto_feeds": extract_panopto_feeds(raw),
         "outline_markdown": _outline_markdown(title, code, sections, activities, resources),
     }
+
+
+def _merge_sections(base: List[Dict[str, Any]], extra: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    seen = {s["name"].lower() for s in base}
+    for s in extra:
+        if s.get("name") and s["name"].lower() not in seen:
+            base.append(s); seen.add(s["name"].lower())
+    return base
+
+
+def _merge_activities(base: List[Dict[str, Any]], extra: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    seen = {(a["kind"], a["name"].lower()) for a in base}
+    for a in extra:
+        key = (a.get("kind", ""), a.get("name", "").lower())
+        if a.get("name") and key not in seen:
+            base.append(a); seen.add(key)
+    return base
+
+
+# Panopto exposes per-course podcast RSS feeds; the block embeds them as
+# "Audio podcast(RSS)" / "Video podcast(RSS)" links pointing at .../Podcast/...
+_PANOPTO_FEED_RE = re.compile(
+    r'href="([^"]*Panopto[^"]*Podcast[^"]*(?:\.xml|Rss[^"]*|/[A-Fa-f0-9-]{8,})[^"]*)"', re.I)
+_RSS_GENERIC_RE = re.compile(r'href="([^"]*(?:podcast|/rss|\.rss)[^"]*)"', re.I)
+
+
+def extract_panopto_feeds(raw: str) -> List[str]:
+    """Best-effort discovery of Panopto podcast RSS feeds embedded in a course
+    page, so the existing feed/transcribe flow can consume lecture recordings."""
+    feeds: List[str] = []
+    seen = set()
+    for m in _PANOPTO_FEED_RE.findall(raw) + _RSS_GENERIC_RE.findall(raw):
+        url = html.unescape(m)
+        if "panopto" in url.lower() and url not in seen:
+            seen.add(url); feeds.append(url)
+    return feeds
 
 
 def _outline_markdown(

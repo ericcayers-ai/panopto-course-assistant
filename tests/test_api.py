@@ -125,6 +125,27 @@ def test_assessments_plan_calendar_progress(client):
     assert c.post("/api/quiz-attempts", json={"score": 5, "total": 10}).status_code == 200
 
 
+def test_import_folder_and_preflight(client):
+    c, tmp = client
+    src = tmp / "course_dl"
+    (src / "Week1").mkdir(parents=True)
+    (src / "Week1" / "Lec1.pdf").write_bytes(b"%PDF fake")
+    (src / "Week2.mp4").write_bytes(b"\x00video")
+    pf = c.post("/api/import/preflight", json={"path": str(src)})
+    assert pf.status_code == 200
+    assert pf.json()["expected_output"]["media_to_transcribe"] == 1
+    imp = c.post("/api/import/folder", json={"path": str(src)})
+    assert imp.status_code == 200
+    assert imp.json()["indexed"] == 1
+
+
+def test_moodle_import_url_validates(client):
+    c, _ = client
+    # not a course URL -> 400 (no network involved)
+    r = c.post("/api/moodle/import-url", json={"url": "https://elearn.x/my/"})
+    assert r.status_code == 400
+
+
 def test_feed_upload_and_bad_feed(client):
     c, _ = client
     r = c.post("/api/feed/upload", files={"file": ("feed.xml", FEED, "text/xml")})

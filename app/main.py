@@ -41,6 +41,7 @@ from pydantic import BaseModel
 
 from . import core, transcribe, sources, notion, flashcards, study, database, courses, settings_store, search, llm, ai, study_planner
 from .integrations import notion as notion_sync, anki as anki_sync, state as sync_state
+from .imports import moodle_web, folder as folder_import, preflight as import_preflight
 from .jobs import manager
 
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -326,6 +327,27 @@ class QuizAttemptReq(BaseModel):
 
 class GradeReq(BaseModel):
     quality: int                       # 0–5 recall score (SM-2)
+
+
+# --- Import expansion (§7) -------------------------------------------------
+
+
+class MoodleUrlReq(BaseModel):
+    url: str                           # .../course/view.php?id=NNNNN
+    cookies: str = ""                  # browser session cookies (header/txt)
+    follow_sections: bool = True       # also crawl linked section.php pages
+    save_outline: bool = True          # write the outline as an AI source
+    create_course: bool = False        # create + activate a course from the title
+
+
+class FolderImportReq(BaseModel):
+    path: str
+    include_subfolders: bool = True
+    course_id: Optional[int] = None    # defaults to the active course
+
+
+class PreflightReq(BaseModel):
+    path: str
 
 
 # ---------------------------------------------------------------------------
@@ -1030,6 +1052,52 @@ def api_moodle_parse(req: MoodleRequest) -> Dict[str, Any]:
     if req.save_outline:
         parsed["saved_as"] = sources.save_outline(OUTPUT_DIR, parsed)
     return parsed
+
+
+@app.post("/api/moodle/import-url")
+def api_moodle_import_url(req: MoodleUrlReq) -> Dict[str, Any]:
+    """Import a Moodle course from its live URL using the browser's session
+    cookies (§7). Crawls linked section pages, recovers the outline + activities
+    + Panopto feeds, and can create/activate a course from the page title."""
+    try:
+        parsed = moodle_web.import_course(req.url, req.cookies,
+                                         follow_sections=req.follow_sections)
+    except moodle_web.MoodleWebError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"Could not import course: {e}")
+    if req.save_outline:
+        parsed["saved_as"] = sources.save_outline(OUTPUT_DIR, parsed)
+    if req.create_course and (parsed.get("title") or parsed.get("code")):
+        course = courses.create_course(db, name=parsed.get("title") or parsed["code"],
+                                      code=parsed.get("code", ""))
+        courses.set_active(db, course["id"])
+        parsed["course"] = course
+    return parsed
+
+
+@app.post("/api/import/preflight")
+def api_import_preflight(req: PreflightReq) -> Dict[str, Any]:
+    """Validate a folder import before running it: counts, expected output, and
+    dependency/size warnings (§7). Pure inspection — writes nothing."""
+    try:
+        return import_preflight.preflight_folder(Path(req.path).expanduser())
+    except (NotADirectoryError, FileNotFoundError) as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@app.post("/api/import/folder")
+def api_import_folder(req: FolderImportReq) -> Dict[str, Any]:
+    """Recursively import a folder of mixed course material into the index (§7).
+    Documents/subtitles are indexed; media files are listed for a later
+    transcription job rather than processed inline."""
+    cid = req.course_id if req.course_id is not None else settings_store.get_active_course(db)
+    try:
+        return folder_import.import_folder(db, OUTPUT_DIR, Path(req.path).expanduser(),
+                                          course_id=cid,
+                                          include_subfolders=req.include_subfolders)
+    except (NotADirectoryError, FileNotFoundError) as e:
+        raise HTTPException(status_code=400, detail=str(e))
 
 
 @app.post("/api/notion/convert")

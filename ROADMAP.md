@@ -318,6 +318,8 @@ GET  /api/progress?course=
 
 ## §7 — Import Expansion
 
+**Status:** ✅ **Shipped (core).** New `app/imports/` package: `moodle_web.py` imports a course straight from its **live URL** using the browser's session cookies — fetches the main page, crawls linked `section.php` pages, merges sections/activities, and discovers Panopto podcast RSS feeds (fetcher injected → fully offline-tested; `sources.parse_moodle_html` refactored out for string input); `folder.py` does recursive, structure-preserving folder import (categorises document/media/subtitle, infers week/topic, skips our own outputs, indexes docs/subs, lists media for a later transcription job); `preflight.py` validates before running (counts, expected output, dependency + size warnings). Routes: `POST /api/moodle/import-url`, `/api/import/preflight`, `/api/import/folder`. `tests/test_imports.py` green. (Broader LMS shapes (Canvas/Blackboard), OCR, and subtitle-reuse-in-transcription remain for a later pass.)
+
 **Goal:** Ingest more real-world sources into the same index.
 **Depends:** §1/§2 (write to index); reuses `app/sources.py`, `app/transcribe.py`, `app/core.py` docs→MD.
 **Files:** extend `app/transcribe.py` (video sources), `app/core.py` (doc types), `app/sources.py` (LMS), + `app/imports/` helpers as needed.
