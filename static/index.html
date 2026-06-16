@@ -282,6 +282,29 @@
             </div>
           </div>
 
+          <div class="card">
+            <h3>🧭 Filter &amp; sort</h3>
+            <div class="row">
+              <select id="lib-type" title="Filter by type">
+                <option value="">All types</option>
+                <option value="transcript">Transcripts</option>
+                <option value="document">Documents</option>
+                <option value="notion">Notion</option>
+                <option value="export">Exports</option>
+                <option value="other">Other</option>
+              </select>
+              <input type="number" id="lib-week" min="1" placeholder="Week #" style="max-width:110px" />
+              <select id="lib-sort" title="Sort by">
+                <option value="date">Newest first</option>
+                <option value="name">Name (A–Z)</option>
+                <option value="week">Week</option>
+              </select>
+              <input type="text" id="lib-tag" placeholder="Tag or keyword…" autocomplete="off" />
+              <button id="lib-apply">Apply</button>
+              <button id="lib-clear" class="ghost">Clear</button>
+            </div>
+          </div>
+
           <div class="split">
             <div id="transcripts-list" class="list"></div>
             <pre id="transcript-view" class="viewer">Select an item on the left to view it here.</pre>

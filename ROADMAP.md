@@ -154,6 +154,8 @@ GET/PUT /api/settings            persistent prefs (active_course, theme, export 
 
 ## §2 — Library & Search System
 
+**Status:** ✅ **Shipped (on-demand index).** `search.py` flattens the library into an index with inferred week/topic/type/tags/mtime; `/api/index` does filter (week/type/tag) + sort (date/name/week); `/api/search` adds metadata filters + a fuzzy title fallback; `/api/related` surfaces same-week/topic/type; saved views (7 built-ins + DB-persisted user views). Library tab gained a filter/sort bar. (Durable DB-index reindex + semantic/embedding search remain for a later pass.)
+
 **Goal:** Turn file storage into a searchable knowledge base with a durable index, auto metadata, and saved/related views.
 **Depends:** §1.
 **Files:** `app/index.py` [NEW], `app/search.py` [NEW], `app/core.py` [reuse listing/summary], `app/main.py` [+routes], `static/app.js` [filters/views].

@@ -39,7 +39,7 @@ from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from . import core, transcribe, sources, notion, flashcards, study, database, courses, settings_store
+from . import core, transcribe, sources, notion, flashcards, study, database, courses, settings_store, search
 from .jobs import manager
 
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -233,6 +233,11 @@ class SettingsUpdate(BaseModel):
     values: Dict[str, Any]
 
 
+class SavedViewCreate(BaseModel):
+    name: str
+    query: Dict[str, Any] = {}
+
+
 # ---------------------------------------------------------------------------
 # API
 # ---------------------------------------------------------------------------
@@ -387,8 +392,60 @@ def api_transcript(path: str) -> Dict[str, Any]:
 
 
 @app.get("/api/search")
-def api_search(q: str) -> Dict[str, Any]:
-    return {"query": q, "results": core.search_transcripts(OUTPUT_DIR, q)}
+def api_search(q: str, week: Optional[int] = None, type: str = "",
+               fuzzy: bool = True) -> Dict[str, Any]:
+    """Full-text search with optional metadata filters + a fuzzy title fallback (§2)."""
+    return {"query": q, "results": search.search(OUTPUT_DIR, q, week=week, ftype=type,
+                                                 fuzzy=fuzzy)}
+
+
+@app.get("/api/index")
+def api_index(week: Optional[int] = None, type: str = "", tag: str = "",
+              q: str = "", sort: str = "date") -> Dict[str, Any]:
+    """Unified, filterable/sortable library index (§2): sort by date/name/week,
+    filter by week/type/tag, tag-aware search."""
+    return search.library_view(OUTPUT_DIR, week=week, ftype=type, tag=tag, q=q, sort=sort)
+
+
+@app.get("/api/related")
+def api_related(path: str) -> Dict[str, Any]:
+    return {"path": path, "related": search.related(OUTPUT_DIR, path)}
+
+
+@app.get("/api/views")
+def api_views_list() -> Dict[str, Any]:
+    active = settings_store.get_active_course(db)
+    saved = [
+        {"id": v["id"], "name": v["name"], "builtin": False,
+         "query": _json_loads(v["query_json"])}
+        for v in db.list_saved_views(active)
+    ]
+    return {"views": search.BUILTIN_VIEWS + saved}
+
+
+@app.post("/api/views")
+def api_views_create(req: SavedViewCreate) -> Dict[str, Any]:
+    if not req.name.strip():
+        raise HTTPException(status_code=400, detail="View name is required.")
+    import json as _json
+    vid = db.create_saved_view(req.name.strip(), _json.dumps(req.query or {}),
+                              course_id=settings_store.get_active_course(db))
+    return {"id": vid, "name": req.name.strip(), "builtin": False, "query": req.query or {}}
+
+
+@app.delete("/api/views/{view_id}")
+def api_views_delete(view_id: int) -> Dict[str, Any]:
+    if not db.delete_saved_view(view_id):
+        raise HTTPException(status_code=404, detail="Saved view not found")
+    return {"deleted": view_id}
+
+
+def _json_loads(raw: str) -> Dict[str, Any]:
+    import json as _json
+    try:
+        return _json.loads(raw) if raw else {}
+    except Exception:
+        return {}
 
 
 @app.post("/api/export/notebooklm")

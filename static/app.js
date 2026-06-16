@@ -513,6 +513,42 @@ async function viewTranscript(relPath) {
 
 $("transcripts-refresh").addEventListener("click", loadTranscripts);
 
+// ---- library filter / sort (§2) ------------------------------------------
+async function applyLibraryFilters() {
+  const list = $("transcripts-list");
+  const params = new URLSearchParams();
+  const type = $("lib-type").value;
+  const week = $("lib-week").value.trim();
+  const tag = $("lib-tag").value.trim();
+  const sort = $("lib-sort").value;
+  if (type) params.set("type", type);
+  if (week) params.set("week", week);
+  if (tag) params.set("q", tag);
+  if (sort) params.set("sort", sort);
+  list.textContent = "Filtering…";
+  try {
+    const data = await api("/api/index?" + params.toString());
+    clear(list);
+    librarySection(list, "🔎 Filtered (" + data.count + ")", data.count);
+    if (!data.count) { list.appendChild(el("p", { class: "empty", text: "No items match these filters." })); return; }
+    data.items.forEach((it) => {
+      list.appendChild(el("div", { class: "list-item clickable", onclick: () => viewTranscript(it.path) }, [
+        el("div", { class: "li-label", text: (it.folder ? it.folder + "/" : "") + it.title }),
+        el("div", { class: "formats" }, [
+          el("span", { class: "tag", text: it.type }),
+          it.week != null ? el("span", { class: "tag", text: "wk " + it.week }) : null,
+        ]),
+      ]));
+    });
+  } catch (e) { list.textContent = "Error: " + e.message; }
+}
+$("lib-apply").addEventListener("click", applyLibraryFilters);
+$("lib-tag").addEventListener("keydown", (e) => { if (e.key === "Enter") applyLibraryFilters(); });
+$("lib-clear").addEventListener("click", () => {
+  $("lib-type").value = ""; $("lib-week").value = ""; $("lib-tag").value = ""; $("lib-sort").value = "date";
+  loadTranscripts();
+});
+
 // Export everything (transcripts + documents + Notion) for NotebookLM / any AI
 $("export-all").addEventListener("click", async () => {
   const out = $("export-all-results");

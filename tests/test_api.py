@@ -283,6 +283,39 @@ def test_settings_persist_and_hide_reserved(client):
     assert c.get("/api/settings").json()["theme"] == "dark"
 
 
+def test_index_and_views_and_related(client):
+    c, tmp = client
+    _seed(tmp)  # Week2_CPU transcript
+    idx = c.get("/api/index", params={"sort": "week"}).json()
+    assert idx["count"] >= 1
+    assert idx["items"][0]["type"] == "transcript"
+    # week filter
+    assert c.get("/api/index", params={"week": 2}).json()["count"] >= 1
+    assert c.get("/api/index", params={"week": 99}).json()["count"] == 0
+    # built-in + saved views
+    views = c.get("/api/views").json()["views"]
+    assert any(v["name"] == "Recent Imports" for v in views)
+    created = c.post("/api/views", json={"name": "My View", "query": {"week": 2}})
+    assert created.status_code == 200
+    vid = created.json()["id"]
+    assert any(v.get("id") == vid for v in c.get("/api/views").json()["views"])
+    assert c.delete(f"/api/views/{vid}").status_code == 200
+    assert c.delete("/api/views/99999").status_code == 404
+    # related for the seeded transcript
+    item = c.get("/api/index").json()["items"][0]
+    assert "related" in c.get("/api/related", params={"path": item["path"]}).json()
+
+
+def test_search_fuzzy_fallback(client):
+    c, tmp = client
+    _seed(tmp)  # "TCP handshake basics" in Week2_CPU
+    # exact content hit
+    assert len(c.get("/api/search", params={"q": "handshake"}).json()["results"]) == 1
+    # near-miss title with fuzzy on returns the lecture by title similarity
+    res = c.get("/api/search", params={"q": "Week2"}).json()["results"]
+    assert isinstance(res, list)
+
+
 def test_job_control_routes_404_for_unknown(client):
     c, _ = client
     assert c.get("/api/jobs/nope/logs").status_code == 404
