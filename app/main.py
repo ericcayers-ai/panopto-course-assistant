@@ -509,28 +509,54 @@ def api_transcribe(req: TranscribeRequest) -> Dict[str, Any]:
     if not item.url:
         raise HTTPException(status_code=400, detail="Lecture has no media URL")
 
+    payload = req.model_dump()
+    work = _make_transcribe_work(payload)
+    job = manager.submit(item.title, work, type="transcribe", payload=payload,
+                         course_id=settings_store.get_active_course(db))
+    return job.to_dict()
+
+
+# --- Job factories: rebuild a job's work fn from its persisted payload so §3
+# retry can re-run it after a restart, when the original closure is long gone.
+
+
+def _make_transcribe_work(payload: Dict[str, Any]):
+    lecture = payload.get("lecture", {})
+    item = core.LectureItem(
+        title=lecture.get("title", "lecture"),
+        url=lecture.get("url", ""),
+        size=int(lecture.get("size", 0) or 0),
+        duration=int(lecture.get("duration", 0) or 0),
+        pub_date=lecture.get("pub_date", ""),
+        author=lecture.get("author", ""),
+        guid=lecture.get("guid", ""),
+    )
+
     def work(progress) -> Dict[str, Any]:
         return transcribe.transcribe_lecture(
-            item,
-            OUTPUT_DIR,
-            engine=req.engine,
-            model=req.model,
-            language=req.language,
-            device=req.device,
-            organize=req.organize,
-            outputs=req.outputs,
-            interval=req.interval,
-            keep_media=req.keep_media,
-            audio_only=req.audio_only,
-            skip_existing=req.skip_existing,
-            force=req.force,
-            cookies=req.cookies,
-            course=req.course,
+            item, OUTPUT_DIR,
+            engine=payload.get("engine", "faster-whisper"),
+            model=payload.get("model", "small"),
+            language=payload.get("language", "en"),
+            device=payload.get("device", "auto"),
+            organize=payload.get("organize", "auto"),
+            outputs=payload.get("outputs", ["txt", "md", "json", "summary"]),
+            interval=payload.get("interval", 30),
+            keep_media=payload.get("keep_media", False),
+            audio_only=payload.get("audio_only", False),
+            skip_existing=payload.get("skip_existing", True),
+            force=payload.get("force", False),
+            cookies=payload.get("cookies", ""),
+            course=payload.get("course", ""),
             progress=progress,
         )
 
-    job = manager.submit(item.title, work)
-    return job.to_dict()
+    return work
+
+
+# type -> factory(payload) -> work(progress). Extend as new long-running job
+# types are added (imports, exports, sync, …).
+JOB_FACTORIES = {"transcribe": _make_transcribe_work}
 
 
 @app.post("/api/organize")
@@ -553,6 +579,41 @@ def api_job(job_id: str) -> Dict[str, Any]:
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
     return job.to_dict()
+
+
+@app.get("/api/jobs/{job_id}/logs")
+def api_job_logs(job_id: str) -> Dict[str, Any]:
+    logs = manager.logs(job_id)
+    if logs is None:
+        raise HTTPException(status_code=404, detail="Job not found")
+    return {"id": job_id, "logs": logs}
+
+
+@app.post("/api/jobs/{job_id}/cancel")
+def api_job_cancel(job_id: str) -> Dict[str, Any]:
+    if not manager.get(job_id):
+        raise HTTPException(status_code=404, detail="Job not found")
+    if not manager.cancel(job_id):
+        raise HTTPException(status_code=409, detail="Job already finished — nothing to cancel.")
+    return {"id": job_id, "canceled": True}
+
+
+@app.post("/api/jobs/{job_id}/retry")
+def api_job_retry(job_id: str) -> Dict[str, Any]:
+    job = manager.get(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+    factory = JOB_FACTORIES.get(job.type)
+    if not factory:
+        raise HTTPException(status_code=400,
+                            detail=f"Don't know how to retry a '{job.type}' job.")
+    if not job.payload:
+        raise HTTPException(status_code=400,
+                            detail="This job has no saved inputs to retry from.")
+    retried = manager.retry(job_id, factory(job.payload))
+    if retried is None:
+        raise HTTPException(status_code=409, detail="Job is not in a retryable state.")
+    return retried.to_dict()
 
 
 @app.post("/api/pdf/convert")

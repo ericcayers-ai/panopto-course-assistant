@@ -772,7 +772,31 @@ async function loadJobs() {
           card.appendChild(el("div", { class: "hint", text: "wrote: " + Object.keys(j.result.outputs).join(", ") }));
         }
       }
-      if (j.status === "error") card.appendChild(el("pre", { class: "error", text: j.error }));
+      if (j.status === "error") {
+        if (j.failure_category) {
+          card.appendChild(el("div", { class: "hint", text: "failure type: " + j.failure_category }));
+        }
+        card.appendChild(el("pre", { class: "error", text: j.error }));
+      }
+      // §3 controls: cancel a live job; retry a failed/canceled/interrupted one; view logs.
+      const actions = el("div", { class: "job-actions" });
+      if (j.status === "queued" || j.status === "running") {
+        actions.appendChild(el("button", {
+          class: "ghost small", text: "Cancel",
+          onclick: () => jobAction(j.id, "cancel"),
+        }));
+      }
+      if (j.retryable) {
+        actions.appendChild(el("button", {
+          class: "ghost small", text: "Retry",
+          onclick: () => jobAction(j.id, "retry"),
+        }));
+      }
+      actions.appendChild(el("button", {
+        class: "ghost small", text: "Logs",
+        onclick: () => showJobLogs(j.id),
+      }));
+      card.appendChild(actions);
       out.appendChild(card);
     });
     if (active) startJobsPolling(); else { stopJobsPolling(); refreshTranscribedSet().then(renderLectures); }
@@ -781,6 +805,22 @@ async function loadJobs() {
 function startJobsPolling() { if (!State.jobsTimer) State.jobsTimer = setInterval(loadJobs, 2000); }
 function stopJobsPolling() { if (State.jobsTimer) { clearInterval(State.jobsTimer); State.jobsTimer = null; } }
 $("jobs-refresh").addEventListener("click", loadJobs);
+
+async function jobAction(id, action) {
+  try {
+    await postJSON("/api/jobs/" + id + "/" + action, {});
+    toast(action === "retry" ? "Retrying job…" : "Job canceled.", "ok");
+    if (action === "retry") startJobsPolling();
+    loadJobs();
+  } catch (e) { toast(e.message, "err"); }
+}
+
+async function showJobLogs(id) {
+  try {
+    const data = await api("/api/jobs/" + id + "/logs");
+    window.alert(data.logs || "(no logs yet)");
+  } catch (e) { toast(e.message, "err"); }
+}
 
 // ---- materials ------------------------------------------------------------
 

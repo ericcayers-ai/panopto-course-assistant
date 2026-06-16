@@ -182,6 +182,8 @@ GET  /api/collections?course=&lecture=       all assets linked to a lecture/week
 
 ## §3 — Reliability & Job Infrastructure
 
+**Status:** ✅ **Shipped (core).** Cooperative cancel, retry-from-payload (job-factory registry), classified failures (`network|authentication|dependency|filesystem|invalid_source|unknown`), persisted per-job logs, dead-letter via `status='error'` listing; Jobs panel gained Cancel/Retry/Logs controls. (Pause/duplicate + backoff scheduler remain for a later pass.)
+
 **Goal:** Make long-running operations (transcription, conversion, AI) resilient and controllable.
 **Depends:** §1 (DB queue).
 **Files:** `app/jobs.py` [extend], `app/main.py` [+controls].

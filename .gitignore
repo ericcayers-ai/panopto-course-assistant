@@ -13,6 +13,9 @@ transcripts/
 *.mp3
 *.wav
 
+# Test scratch output
+_test_out.txt
+
 # Editors / OS
 .vscode/
 .idea/

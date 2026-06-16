@@ -283,6 +283,13 @@ def test_settings_persist_and_hide_reserved(client):
     assert c.get("/api/settings").json()["theme"] == "dark"
 
 
+def test_job_control_routes_404_for_unknown(client):
+    c, _ = client
+    assert c.get("/api/jobs/nope/logs").status_code == 404
+    assert c.post("/api/jobs/nope/cancel").status_code == 404
+    assert c.post("/api/jobs/nope/retry").status_code == 404
+
+
 def test_startup_backfills_existing_transcripts(tmp_path, monkeypatch):
     """A transcripts/ folder that predates persistence is indexed on startup
     rather than orphaned (roadmap §Conventions)."""

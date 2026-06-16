@@ -86,6 +86,7 @@ body {
 .course-name { font-weight: 600; }
 
 /* global course field in the top bar */
+.job-actions { display: flex; gap: 8px; margin-top: 10px; flex-wrap: wrap; }
 .course-switcher { font: inherit; font-weight: 600; color: var(--ink); background: var(--surface-2); border: 1px solid var(--border); border-radius: 999px; padding: 6px 10px; max-width: 220px; }
 .course-switcher:focus { outline: none; border-color: var(--brand); }
 .course-field { display: inline-flex; align-items: center; gap: 8px; background: var(--surface-2); border: 1px solid var(--border); border-radius: 999px; padding: 4px 6px 4px 12px; }

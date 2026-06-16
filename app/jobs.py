@@ -33,6 +33,37 @@ from .core import now_iso
 from .database import Database
 
 
+class JobCancelled(Exception):
+    """Raised inside a job's progress callback when a cancel was requested, so the
+    work unwinds cooperatively rather than being killed mid-write."""
+
+
+def classify_failure(exc: BaseException) -> str:
+    """Bucket an exception into a §3 failure category (drives UI hints + retry).
+
+    Heuristic: exception *type* first, then keywords in the message — good enough
+    to tell a flaky network apart from a missing dependency or a bad input."""
+    name = type(exc).__name__
+    msg = str(exc).lower()
+    if isinstance(exc, (ImportError, ModuleNotFoundError)) or "not installed" in msg \
+            or "ffmpeg" in msg:
+        return "dependency"
+    if isinstance(exc, (FileNotFoundError, PermissionError, IsADirectoryError)) \
+            or "no space" in msg or "disk full" in msg or "permission denied" in msg:
+        return "filesystem"
+    if any(k in msg for k in ("unauthorized", "forbidden", "401", "403",
+                              "authentication", "cookie")):
+        return "authentication"
+    if any(k in name.lower() for k in ("timeout", "connection")) \
+            or any(k in msg for k in ("timed out", "connection", "network",
+                                      "temporarily unavailable", "max retries")):
+        return "network"
+    if isinstance(exc, ValueError) or "could not parse" in msg or "no media url" in msg \
+            or "invalid" in msg:
+        return "invalid_source"
+    return "unknown"
+
+
 def _lower_process_priority() -> None:
     """Best-effort: drop to below-normal priority so the GUI stays responsive
     while a job pegs the CPU/GPU. No-op off Windows or if it isn't permitted."""
@@ -54,7 +85,7 @@ class Job:
     id: str
     title: str
     type: str = "job"
-    status: str = "queued"  # queued | running | done | error | interrupted
+    status: str = "queued"  # queued | running | done | error | interrupted | canceled
     stage: str = ""
     progress: float = 0.0
     result: Dict[str, Any] = field(default_factory=dict)
@@ -62,6 +93,8 @@ class Job:
     attempts: int = 0
     course_id: Optional[int] = None
     payload: Dict[str, Any] = field(default_factory=dict)
+    failure_category: str = ""
+    logs: str = ""
     created_at: str = field(default_factory=now_iso)
     updated_at: str = field(default_factory=now_iso)
 
@@ -77,6 +110,8 @@ class Job:
             "error": self.error,
             "attempts": self.attempts,
             "course_id": self.course_id,
+            "failure_category": self.failure_category,
+            "retryable": self.status in ("error", "interrupted", "canceled"),
             "created_at": self.created_at,
             "updated_at": self.updated_at,
         }
@@ -89,12 +124,15 @@ class Job:
             except Exception:
                 return {}
 
+        keys = row.keys()
         return cls(
             id=row["id"], title=row["title"], type=row["type"], status=row["status"],
             stage=row["stage"] or "", progress=float(row["progress"] or 0.0),
             result=_load(row["result_json"]), error=row["error"] or "",
             attempts=int(row["attempts"] or 0), course_id=row["course_id"],
             payload=_load(row["payload_json"]),
+            failure_category=(row["failure_category"] if "failure_category" in keys else "") or "",
+            logs=(row["logs"] if "logs" in keys else "") or "",
             created_at=row["created_at"], updated_at=row["updated_at"],
         )
 
@@ -109,7 +147,8 @@ def _worker_count() -> int:
 class JobManager:
     def __init__(self, workers: int | None = None, db: Optional[Database] = None) -> None:
         self._jobs: Dict[str, Job] = {}
-        self._lock = threading.Lock()
+        # Reentrant: progress_cb holds the lock and calls _log(), which re-acquires it.
+        self._lock = threading.RLock()
         self._queue: "queue.Queue[Tuple[Job, Callable]]" = queue.Queue()
         self._workers = workers if workers is not None else _worker_count()
         self._nice = os.environ.get("PANOPTO_NICE", "1").lower() not in ("0", "false", "no")
@@ -150,10 +189,30 @@ class JobManager:
             self._db.update_job(
                 job.id, status=job.status, stage=job.stage, progress=job.progress,
                 result_json=json.dumps(job.result or {}), error=job.error,
-                attempts=job.attempts, updated_at=job.updated_at,
+                attempts=job.attempts, failure_category=job.failure_category,
+                updated_at=job.updated_at,
             )
         except Exception:
             pass
+
+    def _log(self, job: Job, line: str) -> None:
+        """Append a human-readable log line (persisted per job for §3)."""
+        stamped = f"[{now_iso()}] {line}"
+        with self._lock:
+            job.logs = (job.logs + "\n" + stamped) if job.logs else stamped
+        if self._db is not None:
+            try:
+                self._db.append_job_log(job.id, line)
+            except Exception:
+                pass
+
+    def _is_cancelled(self, job: Job) -> bool:
+        if self._db is not None:
+            try:
+                return self._db.cancel_requested(job.id)
+            except Exception:
+                pass
+        return getattr(job, "_cancel", False)
 
     # -- worker pool --------------------------------------------------------
 
@@ -198,16 +257,34 @@ class JobManager:
 
     def _run(self, job: Job, fn: Callable) -> None:
         def progress_cb(stage: str, frac: float) -> None:
+            # Cooperative cancellation: each progress tick is a checkpoint where we
+            # can bail out cleanly instead of being killed mid-write.
+            if self._is_cancelled(job):
+                raise JobCancelled()
             with self._lock:
+                if stage and stage != job.stage:
+                    self._log(job, f"stage: {stage}")
                 job.stage = stage
                 job.progress = float(frac)
                 job.updated_at = now_iso()
             self._persist_update(job)
 
+        # A queued job that was cancelled before a worker picked it up never runs.
+        if self._is_cancelled(job):
+            with self._lock:
+                job.status = "canceled"
+                job.updated_at = now_iso()
+            self._log(job, "canceled before start")
+            self._persist_update(job)
+            return
+
         with self._lock:
             job.status = "running"
             job.attempts += 1
+            job.failure_category = ""
+            job.error = ""
             job.updated_at = now_iso()
+        self._log(job, f"started (attempt {job.attempts})")
         self._persist_update(job)
         try:
             result = fn(progress_cb)
@@ -217,11 +294,20 @@ class JobManager:
                 job.stage = "done"
                 job.result = result or {}
                 job.updated_at = now_iso()
+            self._log(job, "done")
+        except JobCancelled:
+            with self._lock:
+                job.status = "canceled"
+                job.updated_at = now_iso()
+            self._log(job, "canceled")
         except Exception as e:
+            category = classify_failure(e)
             with self._lock:
                 job.status = "error"
+                job.failure_category = category
                 job.error = f"{e}\n{traceback.format_exc()}"
                 job.updated_at = now_iso()
+            self._log(job, f"error [{category}]: {e}")
         self._persist_update(job)
 
     # -- reads --------------------------------------------------------------
@@ -246,6 +332,64 @@ class JobManager:
             return [j.to_dict() for j in sorted(
                 self._jobs.values(), key=lambda j: j.created_at, reverse=True
             )]
+
+    def logs(self, job_id: str) -> Optional[str]:
+        with self._lock:
+            live = self._jobs.get(job_id)
+        if live is not None:
+            return live.logs
+        if self._db is not None:
+            row = self._db.get_job(job_id)
+            if row is not None and "logs" in row.keys():
+                return row["logs"] or ""
+        return None
+
+    # -- controls (§3) ------------------------------------------------------
+
+    def cancel(self, job_id: str) -> bool:
+        """Request cooperative cancellation. A running job stops at its next
+        progress checkpoint; a queued job is skipped when its worker reaches it."""
+        job = self.get(job_id)
+        if job is None or job.status in ("done", "error", "canceled"):
+            return False
+        with self._lock:
+            live = self._jobs.get(job_id)
+            if live is not None:
+                live._cancel = True  # type: ignore[attr-defined]
+        if self._db is not None:
+            try:
+                self._db.request_cancel(job_id)
+            except Exception:
+                pass
+        return True
+
+    def retry(self, job_id: str, fn: Callable) -> Optional[Job]:
+        """Re-run a finished/failed/canceled job under its existing id, keeping its
+        history and logs. ``fn`` is rebuilt by the caller from the job's payload."""
+        job = self.get(job_id)
+        if job is None or job.status not in ("error", "interrupted", "canceled", "done"):
+            return None
+        with self._lock:
+            job.status = "queued"
+            job.error = ""
+            job.failure_category = ""
+            job.stage = ""
+            job.progress = 0.0
+            if hasattr(job, "_cancel"):
+                job._cancel = False  # type: ignore[attr-defined]
+            job.updated_at = now_iso()
+            self._jobs[job.id] = job
+        if self._db is not None:
+            try:
+                self._db.update_job(job.id, status="queued", error="", failure_category="",
+                                    stage="", progress=0.0, updated_at=now_iso())
+                self._db.execute("UPDATE jobs SET cancel_requested=0 WHERE id=?", (job.id,))
+            except Exception:
+                pass
+        self._log(job, "retry requested")
+        self._ensure_workers()
+        self._queue.put((job, fn))
+        return job
 
 
 manager = JobManager()
