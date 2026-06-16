@@ -38,33 +38,41 @@ runs fine for feed parsing, search, viewing, PDF conversion, export and browsing
 without it — the **Lectures** tab simply shows that no engine is installed and
 disables the transcribe buttons.
 
-## Quick start
+## Quick start (no terminal needed)
+
+You only need **[Python 3.10+](https://www.python.org/downloads/)** installed
+(on Windows, tick *“Add python.exe to PATH”* in the installer).
+
+| Your computer | Double-click |
+| --- | --- |
+| **Windows** | `start-windows.bat` |
+| **macOS** | `start-unix.sh` (rename to `start-unix.command` to double-click) |
+| **Linux** | `./start-unix.sh` |
+
+The first run creates a private environment and installs the core dependencies
+(about a minute); after that it just starts the app and opens your browser at
+**http://127.0.0.1:8000**. Leave the little window open while you use the app;
+close it to stop.
+
+### Optional add-ons (transcription + full document conversion)
+
+For Whisper transcription and PDF/PowerPoint/Word/Excel → Markdown, run once:
+
+| Windows | macOS / Linux |
+| --- | --- |
+| `install-extras-windows.bat` | `./install-extras-unix.sh` |
+
+This adds `faster-whisper` (CPU int8 or CUDA GPU), `yt-dlp`, and
+`markitdown[all]`. The first transcription downloads the chosen Whisper model.
+
+### Manual start (for developers)
 
 ```bash
-# 1. (recommended) create a virtual environment
 python -m venv .venv
-# Windows:
-.venv\Scripts\activate
-# macOS/Linux:
-source .venv/bin/activate
-
-# 2. install the core dependencies
+.venv\Scripts\activate            # Windows  (macOS/Linux: source .venv/bin/activate)
 pip install -r requirements.txt
-
-# 3. run it
-python run.py
-# open http://127.0.0.1:8000
+python run.py                     # http://127.0.0.1:8000
 ```
-
-### Enable transcription (optional)
-
-```bash
-pip install -r requirements-transcribe.txt
-```
-
-This adds `faster-whisper` (recommended; runs on CPU with int8, or GPU if you
-have CUDA), `yt-dlp` (download fallback for auth-gated media), and `markitdown`
-(PDF → Markdown). The first transcription downloads the chosen Whisper model.
 
 ## Exporting to NotebookLM
 
