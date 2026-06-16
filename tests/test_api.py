@@ -167,6 +167,18 @@ def test_course_archive_export_route(client):
     assert r.status_code == 200 and r.json()["file_count"] >= 1
 
 
+def test_environment_and_backup(client):
+    c, tmp = client
+    _seed(tmp)
+    env = c.get("/api/environment").json()
+    assert env["ready_for_core"] is True and "optional" in env
+    bk = c.post("/api/backup").json()
+    assert bk["file_count"] >= 1
+    # restore the backup into the same library (safe merge -> nothing overwritten)
+    rs = c.post("/api/restore", json={"path": bk["path"]}).json()
+    assert "restored" in rs and "skipped" in rs
+
+
 def test_analytics_and_diagnostics(client):
     c, _ = client
     r = c.get("/api/analytics")

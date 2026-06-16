@@ -43,6 +43,7 @@ from . import core, transcribe, sources, notion, flashcards, study, database, co
 from . import secrets as secret_store
 from . import exports as export_engine
 from . import analytics
+from . import backup as backup_mod
 from .integrations import notion as notion_sync, anki as anki_sync, state as sync_state
 from .imports import moodle_web, folder as folder_import, preflight as import_preflight
 from .jobs import manager
@@ -841,6 +842,42 @@ def api_analytics_export() -> Dict[str, Any]:
     """User-initiated, anonymised diagnostics JSON (no secrets/PII, never auto-sent)."""
     return analytics.diagnostics_export(db, OUTPUT_DIR,
                                        settings_store.get_active_course(db))
+
+
+# ---------------------------------------------------------------------------
+# Packaging & recovery (§11) — environment checker + portable backup/restore.
+# ---------------------------------------------------------------------------
+
+
+class RestoreReq(BaseModel):
+    path: str
+    overwrite: bool = False
+
+
+@app.get("/api/environment")
+def api_environment() -> Dict[str, Any]:
+    """What this machine can do (present/missing engines + deps + disk)."""
+    return backup_mod.environment_report(OUTPUT_DIR)
+
+
+@app.post("/api/backup")
+def api_backup() -> Dict[str, Any]:
+    """Zip the DB + whole library into one portable file (secrets excluded)."""
+    return backup_mod.create_backup(OUTPUT_DIR)
+
+
+@app.post("/api/restore")
+def api_restore(req: RestoreReq) -> Dict[str, Any]:
+    """Unpack a backup into the library (safe merge unless overwrite=true)."""
+    try:
+        result = backup_mod.restore_backup(Path(req.path).expanduser(), OUTPUT_DIR,
+                                          overwrite=req.overwrite)
+    except FileNotFoundError as e:
+        raise HTTPException(status_code=400, detail=f"Backup not found: {e}")
+    # The DB file is held open here; a full DB replace (overwrite=true) only takes
+    # effect on the next launch, which migrates it forward automatically.
+    result["restart_required_for_db"] = req.overwrite
+    return result
 
 
 @app.post("/api/feed")

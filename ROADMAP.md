@@ -337,6 +337,8 @@ GET  /api/progress?course=
 
 ## §8 — Frontend Modernization
 
+**Status:** 🟡 **Partial.** Course switcher, library filter/sort, jobs panel with controls, and toast notifications already shipped in earlier passes. This pass added the **window/mode launcher**: pick *Full workspace* vs *Just my Moodle course*, each with *Simple* vs *Advanced*; the choice persists (localStorage + `/api/settings`) and reflows the UI (the Moodle window hides the course/import tabs and drives a guided quick-import → auto-transcribe → one-click export flow; Simple mode hides advanced transcription knobs in favour of best defaults). Remaining for a later pass: full dashboard metric tiles, drag-and-drop import zones, an automated axe a11y check, and deeper mobile layouts.
+
 **Goal:** Better usability with **no frontend framework / no build step** (preserve vanilla SPA).
 **Depends:** §1 (course switcher), §2 (filters), §3 (job stages), §6 (dashboard metrics).
 **Files:** `static/index.html`, `static/app.js`, `static/style.css`.
@@ -395,6 +397,8 @@ GET  /api/export/{id}
 ---
 
 ## §11 — Packaging & Distribution
+
+**Status:** 🟡 **Partial.** `backup.py` ships the recovery essentials: `environment_report` (one snapshot of Python/platform/engines/optional-deps/free-disk for the first-run wizard + "why is X disabled?" panel) and a portable `create_backup`/`restore_backup` pair (zip of DB + whole library, **secrets excluded**, path-traversal-guarded, safe-merge by default; restored DB migrates forward on next launch). Routes: `GET /api/environment`, `POST /api/backup`, `POST /api/restore`. `run.py` already auto-selects a free port. `tests/test_backup.py` green. Remaining: PyInstaller one-click bundles, lite/full guided installers, auto-update with changelog.
 
 **Goal:** Non-technical, double-click deployment.
 **Depends:** §1–§9 stable.
