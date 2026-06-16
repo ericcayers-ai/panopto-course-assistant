@@ -56,6 +56,8 @@ h3 { margin: 0 0 6px; font-size: 15px; }
 .row { display: flex; gap: 8px; align-items: center; margin: 8px 0; flex-wrap: wrap; }
 input[type=text], input[type=number] { flex: 1; min-width: 200px; padding: 8px; border: 1px solid #bcc6d8; border-radius: 6px; font: inherit; }
 select { padding: 7px; border: 1px solid #bcc6d8; border-radius: 6px; font: inherit; background: #fff; }
+textarea { width: 100%; padding: 8px; border: 1px solid #bcc6d8; border-radius: 6px; font: inherit; resize: vertical; }
+.flashcard { background: #fbfcfe; }
 button {
   padding: 8px 14px; border: 1px solid var(--brand); background: var(--brand); color: #fff;
   border-radius: 6px; cursor: pointer; font: inherit;

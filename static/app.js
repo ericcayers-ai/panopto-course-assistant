@@ -421,6 +421,68 @@ async function doSearch() {
 $("search-go").addEventListener("click", doSearch);
 $("search-q").addEventListener("keydown", (e) => { if (e.key === "Enter") doSearch(); });
 
+// ---- flashcards -----------------------------------------------------------
+
+function renderDeckResult(out, data, label) {
+  clear(out);
+  out.appendChild(el("p", { class: "ok-text", text: `✓ ${data.count} card(s) — ${label}` }));
+  out.appendChild(el("div", { class: "row" }, [
+    el("button", { class: "tag", text: "view Anki .txt", onclick: () => { viewTranscript(data.anki_tsv); showTab("transcripts"); } }),
+    el("button", { class: "tag", text: "view .csv", onclick: () => { viewTranscript(data.csv); showTab("transcripts"); } }),
+  ]));
+  out.appendChild(el("p", { class: "hint", text: "In Anki: File → Import → pick the .txt (tags map to column 3)." }));
+  (data.preview || []).forEach((c) => {
+    out.appendChild(el("div", { class: "card flashcard" }, [
+      el("div", {}, [el("strong", { text: "Q: " }), c.front]),
+      el("div", {}, [el("span", { class: "muted", text: "A: " }), c.back]),
+      el("div", { class: "hint", text: "tags: " + (c.tags || []).join(" ") }),
+    ]));
+  });
+}
+
+$("fc-generate").addEventListener("click", async () => {
+  const out = $("fc-gen-results");
+  const btn = $("fc-generate");
+  btn.disabled = true; out.textContent = "Generating…";
+  try {
+    const data = await api("/api/flashcards/generate", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        deck: $("fc-deck").value.trim() || "flashcards",
+        course: $("fc-course").value.trim() || recall("course"),
+        prefer: $("fc-prefer").value,
+        max_per_lecture: parseInt($("fc-max").value, 10) || 15,
+      }),
+    });
+    renderDeckResult(out, data, "generated from transcripts");
+    toast(`Generated ${data.count} flashcard(s).`, "ok");
+  } catch (e) { out.textContent = "Error: " + e.message; toast(e.message, "warn"); }
+  finally { btn.disabled = false; }
+});
+
+$("fc-categorize").addEventListener("click", async () => {
+  const out = $("fc-cat-results");
+  const btn = $("fc-categorize");
+  const text = $("fc-cat-text").value.trim();
+  const path = $("fc-cat-path").value.trim();
+  if (!text && !path) { toast("Paste a deck or give a file path.", "warn"); return; }
+  btn.disabled = true; out.textContent = "Categorizing…";
+  try {
+    const data = await api("/api/flashcards/categorize", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        text, path,
+        course: $("fc-cat-course").value.trim() || recall("course"),
+        extra_keywords: $("fc-cat-kw").value.split(",").map((s) => s.trim()).filter(Boolean),
+        deck: $("fc-cat-deck").value.trim() || "categorized",
+      }),
+    });
+    renderDeckResult(out, data, "tagged");
+    toast(`Categorized ${data.count} card(s).`, "ok");
+  } catch (e) { out.textContent = "Error: " + e.message; toast(e.message, "warn"); }
+  finally { btn.disabled = false; }
+});
+
 // ---- pdf ------------------------------------------------------------------
 
 $("pdf-go").addEventListener("click", async () => {

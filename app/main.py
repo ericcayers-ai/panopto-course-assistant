@@ -11,6 +11,8 @@ GET  /api/transcripts      -> list transcripts in the output directory
 GET  /api/transcript       -> read one transcript file (?path=)
 GET  /api/search           -> full-text search across transcripts (?q=)
 POST /api/export/notebooklm -> render transcripts into NotebookLM-friendly Markdown
+POST /api/flashcards/generate -> Anki-importable flashcards from transcripts
+POST /api/flashcards/categorize -> tag/categorise an existing flashcard deck
 POST /api/transcribe       -> queue a transcription job (needs whisper installed)
 POST /api/organize         -> reorganize existing transcripts into folders
 POST /api/moodle/parse     -> parse a Moodle course HTML export into an outline
@@ -32,7 +34,7 @@ from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from . import core, transcribe, sources, notion
+from . import core, transcribe, sources, notion, flashcards
 from .jobs import manager
 
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -105,6 +107,22 @@ class NotebookLMRequest(BaseModel):
     selection: Optional[List[str]] = None  # ["folder/stem", ...]; None = all
     combined: bool = False                 # also write a single course_pack.md
     course: str = ""                       # optional course name for headers
+
+
+class FlashcardGenRequest(BaseModel):
+    selection: Optional[List[str]] = None  # limit to these lecture stems; None = all
+    course: str = ""
+    deck: str = "flashcards"
+    prefer: str = "summary"                # "summary" | "text"
+    max_per_lecture: int = 15
+
+
+class FlashcardCatRequest(BaseModel):
+    text: str = ""                         # pasted CSV/TSV deck (front, back[, tags])
+    path: str = ""                         # …or a path to a .csv/.tsv/.txt deck
+    course: str = ""
+    extra_keywords: Optional[List[str]] = None
+    deck: str = "categorized"
 
 
 # ---------------------------------------------------------------------------
@@ -180,6 +198,47 @@ def api_export_notebooklm(req: NotebookLMRequest) -> Dict[str, Any]:
             status_code=404,
             detail="No transcripts found to export. Transcribe some lectures first.",
         )
+    return result
+
+
+@app.post("/api/flashcards/generate")
+def api_flashcards_generate(req: FlashcardGenRequest) -> Dict[str, Any]:
+    """Generate Anki-importable flashcards (auto-tagged) from existing transcripts."""
+    cards = flashcards.generate_from_library(
+        OUTPUT_DIR,
+        selection=req.selection,
+        course=req.course,
+        prefer=req.prefer,
+        max_per_lecture=max(1, min(req.max_per_lecture, 50)),
+    )
+    if not cards:
+        raise HTTPException(
+            status_code=404,
+            detail="No flashcards could be generated. Transcribe or convert some "
+            "lectures first (summaries give the best cards).",
+        )
+    result = flashcards.write_deck(OUTPUT_DIR, cards, req.deck)
+    result["course"] = req.course
+    return result
+
+
+@app.post("/api/flashcards/categorize")
+def api_flashcards_categorize(req: FlashcardCatRequest) -> Dict[str, Any]:
+    """Add study tags to an existing deck (pasted text or a file path)."""
+    text = req.text
+    if not text and req.path:
+        try:
+            text = core.read_any_text(Path(req.path).expanduser())
+        except Exception as e:
+            raise HTTPException(status_code=400, detail=str(e))
+    cards = flashcards.parse_cards_text(text)
+    if not cards:
+        raise HTTPException(status_code=400, detail="No flashcards found in the input "
+                            "(expected CSV/TSV with front, back[, tags]).")
+    vocab = flashcards.build_vocabulary(OUTPUT_DIR, req.course, req.extra_keywords)
+    cards = flashcards.categorise_cards(cards, vocab, req.course)
+    result = flashcards.write_deck(OUTPUT_DIR, cards, req.deck)
+    result["course"] = req.course
     return result
 
 

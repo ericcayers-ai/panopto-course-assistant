@@ -19,6 +19,7 @@
     <button class="tab active" data-tab="lectures">📡 Lectures</button>
     <button class="tab" data-tab="transcripts">📄 Transcripts</button>
     <button class="tab" data-tab="search">🔎 Search</button>
+    <button class="tab" data-tab="flashcards">🃏 Flashcards</button>
     <button class="tab" data-tab="pdf">📑 Documents → MD</button>
     <button class="tab" data-tab="jobs">⚙️ Jobs <span id="jobs-badge" class="count-badge hidden">0</span></button>
     <button class="tab" data-tab="materials">📂 Materials</button>
@@ -149,6 +150,48 @@
         <button id="search-go">Search</button>
       </div>
       <div id="search-results" class="results"></div>
+    </section>
+
+    <!-- FLASHCARDS -->
+    <section id="flashcards" class="panel">
+      <h2>Flashcards (Anki-ready)</h2>
+
+      <div class="card">
+        <h3>✨ Generate from your transcripts</h3>
+        <p class="hint">Pulls definitions and acronyms out of your transcripts and auto-tags them by
+          course · week · topic. Exports an Anki-importable <code>.txt</code> and a <code>.csv</code>
+          under <code>_flashcards/</code>. Summaries make the cleanest cards.</p>
+        <div class="grid">
+          <label>Deck name <input type="text" id="fc-deck" value="flashcards" /></label>
+          <label>Course <input type="text" id="fc-course" placeholder="e.g. COMPX234" /></label>
+          <label>Source
+            <select id="fc-prefer">
+              <option value="summary" selected>summaries (cleanest)</option>
+              <option value="text">full transcript text</option>
+            </select>
+          </label>
+          <label>Max cards / lecture <input type="number" id="fc-max" value="15" min="1" max="50" /></label>
+        </div>
+        <div class="row"><button id="fc-generate">Generate flashcards</button></div>
+        <div id="fc-gen-results" class="results"></div>
+      </div>
+
+      <div class="card">
+        <h3>🏷️ Categorize an existing deck</h3>
+        <p class="hint">Paste a deck (CSV or tab-separated: <code>front, back[, tags]</code>) — or give a file
+          path — and it adds course/week/topic tags by matching your lectures' vocabulary.</p>
+        <textarea id="fc-cat-text" rows="5" placeholder="What is TCP?,A reliable transport protocol&#10;What is a router?,Forwards packets between networks"></textarea>
+        <div class="row">
+          <input type="text" id="fc-cat-path" placeholder="…or a path to a .csv/.tsv/.txt deck" />
+        </div>
+        <div class="grid">
+          <label>Course <input type="text" id="fc-cat-course" placeholder="e.g. COMPX234" /></label>
+          <label>Extra keywords <input type="text" id="fc-cat-kw" placeholder="comma,separated,terms" /></label>
+          <label>Deck name <input type="text" id="fc-cat-deck" value="categorized" /></label>
+        </div>
+        <div class="row"><button id="fc-categorize">Categorize &amp; tag</button></div>
+        <div id="fc-cat-results" class="results"></div>
+      </div>
     </section>
 
     <!-- DOCUMENTS -->

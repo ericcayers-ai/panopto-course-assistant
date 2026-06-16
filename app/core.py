@@ -555,6 +555,14 @@ def write_outputs(
 TEXT_EXTS = {".txt", ".md", ".srt", ".vtt", ".json"}
 
 
+def read_any_text(path: Path) -> str:
+    """Read an arbitrary local text file (user-supplied path, e.g. a deck CSV)."""
+    path = Path(path)
+    if not path.is_file():
+        raise FileNotFoundError(str(path))
+    return path.read_text(encoding="utf-8", errors="replace")
+
+
 def _is_internal(f: Path, output_dir: Path) -> bool:
     """True for manifests, error logs, and anything under an export folder (_*)."""
     rel = f.relative_to(output_dir)
