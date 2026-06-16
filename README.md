@@ -16,7 +16,7 @@ FastAPI** backend with a plain **HTML + JavaScript** frontend (no build step).
 | **Search** | Full-text search across every transcript — one result per lecture, ranked by hit count, with snippets and a jump-to-transcript button. |
 | **PDF → Markdown** | Point at a folder of lecture-slide PDFs and convert them all to Markdown (mirrors the folder structure into a `*_copy` folder), via [MarkItDown](https://github.com/microsoft/markitdown). |
 | **Jobs** | Live progress of running transcription jobs (download → transcribe → write) with a polling progress bar and a count badge; finished jobs refresh the lecture badges automatically. |
-| **Materials** | Browse any local folder (e.g. the course slides / source code), and **parse a Moodle course export** (any saved Moodle course HTML) to pull the course title, code and week/topic outline — then set it as the course name or save the outline as an AI source. |
+| **Materials** | Browse any local folder; **parse a Moodle course export** (any saved Moodle course HTML) for the course title/outline; and **convert a Notion HTML export** (page or folder) into clean Markdown sources. |
 
 ### Transcription options
 
@@ -116,6 +116,7 @@ The frontend is a thin client over a JSON API (see `app/main.py`):
 - `POST /api/transcribe` – queue a transcription job
 - `POST /api/organize` `{by}` – reorganize existing transcripts into folders
 - `POST /api/moodle/parse` `{path, save_outline?}` – parse a Moodle course export
+- `POST /api/notion/convert` `{path, combined?}` – Notion HTML export → Markdown
 - `GET  /api/jobs` / `GET /api/jobs/{id}` – job status
 - `POST /api/pdf/convert` `{input_path, ...}` – convert a PDF folder
 - `GET  /api/materials?path=` – list a local folder
@@ -142,6 +143,7 @@ panopto-course-assistant/
 ├── app/
 │   ├── core.py         # feed parsing, organisation, writers, search, summary, PDF→MD, NotebookLM
 │   ├── sources.py      # course-material parsers (Moodle course HTML export)
+│   ├── notion.py       # Notion HTML export -> Markdown converter (stdlib only)
 │   ├── transcribe.py   # optional download + whisper engines (lazy imports)
 │   ├── jobs.py         # in-memory background job manager
 │   └── main.py         # FastAPI app + routes

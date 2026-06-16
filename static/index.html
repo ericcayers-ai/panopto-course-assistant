@@ -190,6 +190,18 @@
       </div>
 
       <div class="card">
+        <h3>🗒️ Convert a Notion HTML export</h3>
+        <p class="hint">Point at a Notion page exported as HTML (a single <code>.html</code> file or the
+          export folder). Produces clean Markdown under <code>_notion/</code> — great as NotebookLM / AI sources.</p>
+        <div class="row">
+          <input type="text" id="notion-path" placeholder="Path to a Notion .html file or export folder" />
+          <label class="toggle"><input type="checkbox" id="notion-combined" /> combined <code>notion_pack.md</code></label>
+          <button id="notion-go">Convert</button>
+        </div>
+        <div id="notion-results" class="results"></div>
+      </div>
+
+      <div class="card">
         <h3>📂 Browse a local folder</h3>
         <div class="row">
           <input type="text" id="materials-path" placeholder="Folder path to browse (e.g. ..\Slides-20260615)" />

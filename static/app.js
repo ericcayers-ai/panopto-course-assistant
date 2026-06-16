@@ -535,6 +535,33 @@ async function saveMoodleOutline(path) {
   } catch (e) { toast(e.message, "warn"); }
 }
 
+// Notion export converter
+$("notion-go").addEventListener("click", async () => {
+  const out = $("notion-results");
+  const path = $("notion-path").value.trim();
+  if (!path) { toast("Enter a Notion .html file or export folder.", "warn"); return; }
+  remember("notionpath", path);
+  const btn = $("notion-go");
+  btn.disabled = true; out.textContent = "Converting…";
+  try {
+    const d = await api("/api/notion/convert", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ path, combined: $("notion-combined").checked }),
+    });
+    clear(out);
+    out.appendChild(el("p", { class: "ok-text", text: `✓ Converted ${d.count} page(s) → ${d.dest}` }));
+    if (d.combined) out.appendChild(el("div", {}, [
+      el("button", { class: "tag", text: "view notion_pack.md", onclick: () => { viewTranscript(d.combined); showTab("transcripts"); } }),
+    ]));
+    d.files.forEach((f) => out.appendChild(el("div", { class: "list-item" }, [
+      el("span", { class: "li-label", text: f }),
+      el("button", { class: "tag", text: "view", onclick: () => { viewTranscript(f); showTab("transcripts"); } }),
+    ])));
+    toast(`Converted ${d.count} Notion page(s).`, "ok");
+  } catch (e) { out.textContent = "Error: " + e.message; toast(e.message, "warn"); }
+  finally { btn.disabled = false; }
+});
+
 $("materials-go").addEventListener("click", () => browse($("materials-path").value.trim()));
 $("materials-up").addEventListener("click", () => {
   const p = $("materials-path").value.trim().replace(/[\\/]+$/, "");
@@ -549,6 +576,7 @@ function restore() {
   $("pdf-path").value = recall("pdfpath");
   $("materials-path").value = recall("matpath");
   $("moodle-path").value = recall("moodlepath");
+  $("notion-path").value = recall("notionpath");
   const course = recall("course");
   if (course) { $("course-name").textContent = course; $("opt-course").value = course; $("nlm-course").value = course; }
   try {

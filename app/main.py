@@ -14,6 +14,7 @@ POST /api/export/notebooklm -> render transcripts into NotebookLM-friendly Markd
 POST /api/transcribe       -> queue a transcription job (needs whisper installed)
 POST /api/organize         -> reorganize existing transcripts into folders
 POST /api/moodle/parse     -> parse a Moodle course HTML export into an outline
+POST /api/notion/convert   -> convert a Notion HTML export into Markdown
 GET  /api/jobs             -> list jobs
 GET  /api/jobs/{job_id}    -> one job's status
 POST /api/pdf/convert      -> convert a folder of PDFs to Markdown
@@ -30,7 +31,7 @@ from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from . import core, transcribe, sources
+from . import core, transcribe, sources, notion
 from .jobs import manager
 
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -76,6 +77,11 @@ class OrganizeRequest(BaseModel):
 class MoodleRequest(BaseModel):
     path: str                        # mirror folder or course/view_php.html
     save_outline: bool = False       # also write the outline as a source file
+
+
+class NotionRequest(BaseModel):
+    path: str                        # a Notion .html page or an export folder
+    combined: bool = False           # also write a single notion_pack.md
 
 
 class PdfRequest(BaseModel):
@@ -268,6 +274,20 @@ def api_moodle_parse(req: MoodleRequest) -> Dict[str, Any]:
     if req.save_outline:
         parsed["saved_as"] = sources.save_outline(OUTPUT_DIR, parsed)
     return parsed
+
+
+@app.post("/api/notion/convert")
+def api_notion_convert(req: NotionRequest) -> Dict[str, Any]:
+    """Convert a Notion HTML export (page or folder) into clean Markdown."""
+    try:
+        result = notion.convert_notion_export(
+            Path(req.path).expanduser(), OUTPUT_DIR, combined=req.combined
+        )
+    except FileNotFoundError:
+        raise HTTPException(status_code=400, detail=f"Path not found: {req.path}")
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    return result
 
 
 @app.get("/api/materials")
