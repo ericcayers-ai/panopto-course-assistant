@@ -4,7 +4,7 @@ REM  Panopto Course Assistant - one-click launcher (Windows)
 REM  Double-click this file. On first run it sets up everything; after that it
 REM  just starts the app and opens your browser.
 REM ============================================================================
-setlocal enableextensions
+setlocal enableextensions enabledelayedexpansion
 cd /d "%~dp0"
 title Panopto Course Assistant
 
@@ -32,6 +32,23 @@ if not exist ".venv\Scripts\python.exe" (
 )
 
 set "VENV_PY=.venv\Scripts\python.exe"
+
+REM --- check for app updates (best-effort; skipped if offline / no git) -----
+where git >nul 2>nul && if exist ".git" (
+  echo Checking for updates...
+  git -C "%~dp0." fetch --quiet origin 2>nul
+  if not errorlevel 1 (
+    set "BEHIND=0"
+    for /f %%L in ('git -C "%~dp0." rev-list --count HEAD..@{u} 2^>nul') do set "BEHIND=%%L"
+    if not "!BEHIND!"=="0" (
+      REM only update when there are no local changes to avoid conflicts
+      git -C "%~dp0." diff --quiet && git -C "%~dp0." diff --cached --quiet && (
+        echo   Update found ^(!BEHIND! new commit^(s^)^) - updating...
+        git -C "%~dp0." merge --ff-only @{u} --quiet && echo   Updated to the latest version. || echo   Could not auto-update; continuing on current version.
+      ) || echo   Local changes present - skipping auto-update.
+    )
+  )
+)
 
 REM --- install / update dependencies ---------------------------------------
 echo Installing dependencies ^(first run only, quick after that^)...
