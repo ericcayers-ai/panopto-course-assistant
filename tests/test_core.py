@@ -153,6 +153,47 @@ def test_channel_title():
     assert core.channel_title(b"not xml") == ""
 
 
+# Panopto's audio-podcast feed: the itunes namespace is declared as *https* and
+# enclosure URLs carry a ?mediaTargetType=audioPodcast query. Both must work.
+AUDIO_FEED = b"""<?xml version="1.0" encoding="utf-8"?>
+<rss xmlns:itunes="https://www.itunes.com/dtds/podcast-1.0.dtd" version="2.0">
+  <channel>
+    <title>COMPX234-26A &amp; (TGA) - Systems and Networks</title>
+    <item>
+      <title>Week_1_OS_Basics_Processes</title>
+      <itunes:author>elearn\\vkumar</itunes:author>
+      <itunes:summary>Teams Meeting</itunes:summary>
+      <enclosure url="https://waikato.au.panopto.com/Panopto/Podcast/Syndication/abc.mp4?mediaTargetType=audioPodcast" length="40604986" type="video/mp4" />
+      <guid>https://waikato.au.panopto.com/Panopto/Podcast/Syndication/abc.mp4</guid>
+      <pubDate>Mon, 02 Mar 2026 02:14:43 GMT</pubDate>
+      <itunes:duration>5552</itunes:duration>
+    </item>
+    <item>
+      <title>Week3_semaphore_usage</title>
+      <enclosure url="https://waikato.au.panopto.com/Panopto/Podcast/Syndication/def.mp4?mediaTargetType=audioPodcast" length="13679611" type="video/mp4" />
+      <guid>https://waikato.au.panopto.com/Panopto/Podcast/Syndication/def.mp4</guid>
+      <pubDate>Tue, 07 Apr 2026 04:09:49 GMT</pubDate>
+      <itunes:duration>857</itunes:duration>
+    </item>
+  </channel>
+</rss>"""
+
+
+def test_parse_audio_podcast_feed():
+    assert "Systems and Networks" in core.channel_title(AUDIO_FEED)
+    items = core.parse_feed_bytes(AUDIO_FEED)
+    assert len(items) == 2
+    first = items[0]
+    # the audioPodcast query must be preserved on the media URL we download from
+    assert first.url.endswith("?mediaTargetType=audioPodcast")
+    assert first.week == 1 and first.duration == 5552 and first.size == 40604986
+    # https itunes namespace still resolves author/summary
+    assert first.author == "elearn\\vkumar"
+    assert first.summary == "Teams Meeting"
+    # an item with no itunes:summary must still parse
+    assert items[1].week == 3 and items[1].summary == ""
+
+
 def test_parse_feed_bytes_no_channel():
     assert core.parse_feed_bytes(b"<rss></rss>") == []
 
