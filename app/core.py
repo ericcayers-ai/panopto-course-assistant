@@ -721,6 +721,7 @@ def convert_documents(
     target: str = "ai",          # "ai" -> output_dir/_docs ; "copy" -> sibling *_copy
     suffix: str = "_copy",
     combined: bool = False,
+    keep_images: bool = True,    # extract embedded images so diagrams aren't lost
     converter=None,              # injectable for testing; defaults to MarkItDown
 ) -> Dict[str, Any]:
     """Convert a document (or a folder of documents) to Markdown.
@@ -766,13 +767,39 @@ def convert_documents(
         if out_file.exists() and not overwrite:
             converted.append({"src": str(src), "md": _relto(out_file, output_dir, out_root, target)})
             continue
+        text, convert_error = "", ""
         try:
             text = convert(str(src))
         except Exception as e:
-            converted.append({"src": str(src), "md": "", "error": str(e)})
+            convert_error = str(e)
+        # Preserve diagrams/figures markitdown drops: extract embedded images next
+        # to the .md and reference them so no visual information is lost. This runs
+        # even when text conversion fails, so a doc markitdown can't read still
+        # keeps its images.
+        n_images = 0
+        if keep_images:
+            from . import imageextract
+            if imageextract.supports(src):
+                assets_name = f"{safe_name(rel.stem)}_assets"
+                images = imageextract.extract_images(src, target_dir / assets_name)
+                if images:
+                    if convert_error:
+                        text = (f"# {_title_from_stem(rel.stem)}\n\n"
+                                f"_Text could not be extracted ({convert_error}); "
+                                "images below are preserved from the original._\n")
+                    text = text.rstrip() + "\n" + imageextract.images_markdown(
+                        images, assets_name, rel.stem)
+                    n_images = len(images)
+        if not text.strip():
+            converted.append({"src": str(src), "md": "", "error": convert_error or "empty"})
             continue
         out_file.write_text(text, encoding="utf-8")
-        converted.append({"src": str(src), "md": _relto(out_file, output_dir, out_root, target)})
+        rec = {"src": str(src), "md": _relto(out_file, output_dir, out_root, target)}
+        if n_images:
+            rec["images"] = n_images
+        if convert_error:
+            rec["text_error"] = convert_error
+        converted.append(rec)
         docs.append((rel.stem, text))
 
     combined_path = None

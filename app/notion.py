@@ -35,6 +35,7 @@ class _NotionToMarkdown(HTMLParser):
         super().__init__(convert_charrefs=True)
         self.blocks: List[str] = []     # finished markdown blocks
         self.title: str = ""
+        self.images: List[str] = []     # image srcs encountered (for asset copy)
         self._inline: str = ""          # current inline text buffer
         self._wrap_stack: List[Tuple[int, str]] = []  # (start_index, kind)
         self._href: Optional[str] = None
@@ -96,6 +97,15 @@ class _NotionToMarkdown(HTMLParser):
             self._flush_inline()
         elif tag == "br":
             self._inline += "\n"
+        elif tag == "img":
+            # Preserve figures/diagrams instead of dropping them. Keep the alt as a
+            # caption and record the src so the asset can travel with the markdown.
+            src = a.get("src", "")
+            if src:
+                self.images.append(src)
+                self._flush_inline()
+                alt = a.get("alt") or "image"
+                self._emit(f"![{alt}]({src})")
         elif tag in ("ul", "ol"):
             self._flush_inline()
             self._list_stack.append({"type": tag, "n": 0})
@@ -279,6 +289,14 @@ def html_to_markdown(raw_html: str) -> Tuple[str, str]:
     return parser.markdown(), parser.title
 
 
+def html_to_markdown_with_images(raw_html: str) -> Tuple[str, str, List[str]]:
+    """Like :func:`html_to_markdown` but also returns the image srcs referenced,
+    so the caller can copy those assets next to the output Markdown."""
+    parser = _NotionToMarkdown()
+    parser.feed(raw_html)
+    return parser.markdown(), parser.title, parser.images
+
+
 def _looks_like_asset(p: Path) -> bool:
     return p.suffix.lower() not in (".html", ".htm")
 
@@ -353,6 +371,33 @@ def convert_notion_export(
             shutil.rmtree(tmp_dir, ignore_errors=True)
 
 
+def _copy_notion_assets(md: str, images: List[str], src_dir: Path,
+                       target_dir: Path, stem: str) -> str:
+    """Copy locally-referenced images into ``<stem>_assets/`` and rewrite their
+    Markdown links. Remote (http) images are left as-is. Returns the new markdown."""
+    from urllib.parse import unquote
+    assets_rel = f"{stem}_assets"
+    assets_dir = target_dir / assets_rel
+    n = 0
+    for src in images:
+        if src.startswith(("http://", "https://", "data:")):
+            continue
+        local = (src_dir / unquote(src)).resolve()
+        if not local.is_file():
+            continue
+        n += 1
+        dest_name_ = f"image{n:02d}{local.suffix.lower()}"
+        assets_dir.mkdir(parents=True, exist_ok=True)
+        try:
+            shutil.copy2(local, assets_dir / dest_name_)
+        except OSError:
+            continue
+        # rewrite both the raw and URL-encoded forms of the original src
+        new_rel = f"{assets_rel}/{dest_name_}"
+        md = md.replace(f"]({src})", f"]({new_rel})")
+    return md
+
+
 def _convert_notion_tree(
     input_path: Path,
     output_dir: Path,
@@ -374,7 +419,8 @@ def _convert_notion_tree(
 
     for f in files:
         try:
-            md, title = html_to_markdown(f.read_text(encoding="utf-8", errors="replace"))
+            md, title, images = html_to_markdown_with_images(
+                f.read_text(encoding="utf-8", errors="replace"))
         except Exception:
             continue
         if not md.strip():
@@ -393,6 +439,11 @@ def _convert_notion_tree(
         sub = Path(*clean_parts) if clean_parts else Path(".")
         target_dir = core.ensure_dir(dest_root / sub) if str(sub) != "." else dest_root
         out_file = target_dir / f"{core.safe_name(clean_stem)}.md"
+        # Copy any local images this page references next to the .md and rewrite
+        # the links, so Notion diagrams/screenshots survive the conversion.
+        if images:
+            md = _copy_notion_assets(md, images, f.parent, target_dir,
+                                    core.safe_name(clean_stem))
         out_file.write_text(md, encoding="utf-8")
         written.append(out_file.relative_to(output_dir).as_posix())
         docs.append((title or clean_stem, md))
