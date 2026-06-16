@@ -493,6 +493,40 @@ def test_export_all_sources_nothing(tmp_path):
     assert res["combined"] is None
 
 
+def test_export_formats_generates_from_json(tmp_path):
+    _seed(tmp_path, title="Week2_CPU_Scheduling", formats=("json",))
+    res = core.export_formats(tmp_path, ["srt", "vtt"])
+    assert res["count"] == 2
+    assert sorted(res["formats"]) == ["srt", "vtt"]
+    # files now appear in the library as extra formats on the lecture
+    fmts = core.list_transcripts(tmp_path)[0]["formats"]
+    assert "srt" in fmts and "vtt" in fmts
+
+
+def test_export_formats_ignores_json_and_unknown(tmp_path):
+    _seed(tmp_path, formats=("json",))
+    res = core.export_formats(tmp_path, ["json", "bogus"])
+    assert res["count"] == 0
+
+
+def test_list_library_categorises_everything(tmp_path):
+    _seed(tmp_path, title="Week2_CPU_Scheduling", formats=("txt", "json"))
+    core.ensure_dir(tmp_path / core.DOCS_DIRNAME).joinpath("Slides.md").write_text("x", encoding="utf-8")
+    core.ensure_dir(tmp_path / core.NOTION_DIRNAME).joinpath("Notes.md").write_text("y", encoding="utf-8")
+    core.ensure_dir(tmp_path / core.NOTEBOOKLM_DIRNAME).joinpath("pack.md").write_text("z", encoding="utf-8")
+    (tmp_path / "COMPX_outline.md").write_text("# outline", encoding="utf-8")
+
+    lib = core.list_library(tmp_path)
+    c = lib["counts"]
+    assert c["transcripts"] == 1
+    assert c["documents"] == 1
+    assert c["notion"] == 1
+    assert c["exports"] == 1
+    # the top-level outline (not part of a transcript group) shows under "others"
+    assert any(f["name"] == "COMPX_outline.md" for f in lib["categories"]["others"])
+    assert c["total"] >= 5
+
+
 def test_export_excluded_from_listing_and_search(tmp_path):
     _seed(tmp_path, formats=("txt", "json"))
     core.export_notebooklm(tmp_path, combined=True, course="C")

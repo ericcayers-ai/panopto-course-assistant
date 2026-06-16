@@ -110,3 +110,35 @@ def test_notion_output_excluded_from_transcripts(tmp_path: Path):
     notion.convert_notion_export(src, tmp_path)
     # _notion/ is internal -> not listed as a transcript
     assert core.list_transcripts(tmp_path) == []
+
+
+def _make_zip(path: Path, members: dict) -> Path:
+    import zipfile
+    with zipfile.ZipFile(path, "w") as zf:
+        for name, data in members.items():
+            zf.writestr(name, data)
+    return path
+
+
+def test_convert_notion_zip(tmp_path: Path):
+    z = _make_zip(tmp_path / "export.zip", {
+        "Study Notes 3174904e8e2080d4b094fa0d5ce3c8dc.html": PAGE,
+        "image.png": b"\x89PNG fake",
+    })
+    res = notion.convert_notion_export(z, tmp_path / "out", combined=True)
+    assert res["count"] == 1
+    # the 32-char Notion hash and any wrapper folders are stripped from the path
+    assert res["files"][0] == "_notion/Study_Notes.md"
+    assert "Study Notes" in (tmp_path / "out" / res["files"][0]).read_text(encoding="utf-8")
+
+
+def test_convert_notion_nested_zip(tmp_path: Path):
+    # Notion wraps big exports: outer.zip -> ExportBlock-*.zip -> page.html
+    inner = _make_zip(tmp_path / "ExportBlock-abc-Part-1.zip", {"Page.html": PAGE})
+    outer = tmp_path / "compx.zip"
+    import zipfile
+    with zipfile.ZipFile(outer, "w") as zf:
+        zf.write(inner, arcname="ExportBlock-abc-Part-1.zip")
+    res = notion.convert_notion_export(outer, tmp_path / "out2")
+    assert res["count"] == 1
+    assert res["files"][0] == "_notion/Page.md"   # wrapper + _unzipped stripped

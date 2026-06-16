@@ -20,24 +20,27 @@ every import and export automatically), then move through four steps:
 | --- | --- |
 | 🏠 **Home** | Overview: how the flow works, environment status, and at-a-glance counts for the current course. |
 | 🎓 **1 · Course** | Name your course, or **grab its real title + week/topic outline from a Moodle export** (any Moodle course) and use it as the course name in one click. |
-| 📥 **2 · Import** | One hub to **keep importing whatever you have**, with a sub-switch: **Lectures** (load a Panopto RSS feed — URL, local `.xml`, or upload — then transcribe one, a selection, or all pending), **Documents** (PDF / PowerPoint / Word / Excel / HTML / EPUB / CSV… → Markdown via [MarkItDown](https://github.com/microsoft/markitdown)), **Notion** (an HTML export → clean Markdown), and **Browse files** (find a folder path on disk). Everything lands in your Library. |
-| 📚 **3 · Library** | Everything you've imported, in one searchable place: full-text **search** across transcripts, a **viewer**, and **reorganize** into auto/week/lecture/module/date/topic folders. |
-| 📤 **4 · Export** | Turn the library into study material. **Export everything for AI** brings *all* your imported sources (transcripts + documents + Notion pages) together into one combined `everything_pack.md` for NotebookLM or any other AI; or export one kind at a time — **NotebookLM** sources, an **Anki** flashcard deck (auto-tagged by course·week·topic, plus categorize-an-existing-deck), and a **Notion study-database CSV** — all tagged with your course name. |
+| 📥 **2 · Import** | One hub to **keep importing whatever you have**, with a sub-switch: **Lectures** (load a Panopto RSS feed — URL, local `.xml`, or upload — then transcribe one, a selection, or all pending), **Documents** (PDF / PowerPoint / Word / Excel / HTML / EPUB / CSV… → Markdown via [MarkItDown](https://github.com/microsoft/markitdown)), **Notion** (upload the export **`.zip`** — nested `ExportBlock` zips and all — or a single `.html`/folder → clean Markdown), and **Browse files** (find a folder path on disk). Everything lands in your Library. |
+| 📚 **3 · Library** | **Everything** you've imported, in one place and fully categorised — transcripts (with format chips), converted documents, Notion pages, generated exports and any other source files — with full-text **search**, a **viewer**, and **reorganize** into auto/week/lecture/module/date/topic folders. |
+| 📤 **4 · Export** | Turn the library into study material. **Export everything for AI** brings *all* your imported sources (transcripts + documents + Notion pages) together into one combined `everything_pack.md` for NotebookLM or any other AI; or export one kind at a time — **NotebookLM** sources, **subtitles & extra formats** (SRT/VTT/TXT/MD generated on demand), an **Anki** flashcard deck (auto-tagged by course·week·topic, plus categorize-an-existing-deck), and a **Notion study-database CSV** — all tagged with your course name. |
 | ⚙️ **Jobs** | Live progress of transcription jobs with a count badge; finished jobs refresh the lecture badges. |
 
 ### Transcription options
 
-When an engine is installed, the **Transcription settings** panel exposes:
-engine, model, language, device (auto/cuda/cpu), folder organisation
-(**auto**/week/lecture/module/date/topic/none — `auto` detects whichever of
-Week/Lecture/Module/Unit/Session/Lab a title uses, so non-"Week N" courses
-still organise sensibly), the TXT timestamp interval, and the output formats —
-`txt`, `srt`, `vtt`, `md`, `json`, **`notebooklm`** (clean prose), and
-**`summary`** (an extractive key-points study summary, no LLM required). Toggles
-cover **audio-only download** (saves bandwidth), **keep media**, **skip
-already-transcribed**, and **force re-transcribe**. A cookies-file path lets you
-reach auth-gated feeds. Your settings, feed URL and course name are remembered in
-the browser between visits.
+The **Transcription settings** panel is intentionally minimal — engine, model,
+language and device (auto/cuda/cpu), plus **skip already-transcribed** and
+**audio-only download** (saves bandwidth) toggles, and an optional cookies-file
+path for auth-gated feeds. Every transcription writes a sensible **canonical
+set** — clean text, Markdown, rich JSON, and an extractive **study summary** (no
+LLM required) — which is enough to power the Library, search and every export.
+Lectures are auto-organised into folders (`auto` detects whichever of
+Week/Lecture/Module/Unit/Session/Lab a title uses, so non-"Week N" courses still
+organise sensibly); you can re-sort any time from the Library.
+
+**Subtitles and other formats** (`srt`, `vtt`, extra `txt`/`md`) are generated on
+demand from the **Export** step rather than cluttering the transcribe screen —
+they're rebuilt from the stored JSON whenever you want them. Your settings, feed
+URL and course name are remembered in the browser between visits.
 
 The transcription engine ([faster-whisper](https://github.com/SYSTRAN/faster-whisper)
 or [openai-whisper](https://github.com/openai/whisper)) is **optional**. The app
@@ -128,18 +131,21 @@ The frontend is a thin client over a JSON API (see `app/main.py`):
 - `POST /api/feed` `{source, cookies?}` – parse a feed URL/path
 - `POST /api/feed/upload` – parse an uploaded RSS `.xml`
 - `GET  /api/transcripts` – list generated transcripts
+- `GET  /api/library` – comprehensive, categorised listing of every file
 - `GET  /api/transcript?path=` – read one transcript file
 - `GET  /api/search?q=` – full-text search
 - `POST /api/export/notebooklm` `{selection?, combined?, course?}` – NotebookLM export
 - `POST /api/export/all` `{combined?, course?}` – combine transcripts + documents + Notion into one AI export
+- `POST /api/export/formats` `{formats, interval?}` – generate subtitles / alternate formats
 - `POST /api/export/notion-csv` `{course?, filename?}` – Notion study-database CSV
 - `POST /api/flashcards/generate` `{selection?, course?, deck?, prefer?, max_per_lecture?}` – Anki cards
 - `POST /api/flashcards/categorize` `{text|path, course?, extra_keywords?, deck?}` – tag a deck
 - `POST /api/docs/convert` `{input_path, exts?, target, combined?, ...}` – documents → Markdown
 - `POST /api/transcribe` – queue a transcription job
 - `POST /api/organize` `{by}` – reorganize existing transcripts into folders
-- `POST /api/moodle/parse` `{path, save_outline?}` – parse a Moodle course export
-- `POST /api/notion/convert` `{path, combined?}` – Notion HTML export → Markdown
+- `POST /api/moodle/parse` `{path, save_outline?}` – parse a whole Moodle course export (sections, activities, resources)
+- `POST /api/notion/convert` `{path, combined?}` – Notion export (.zip/.html/folder) → Markdown
+- `POST /api/notion/upload` – convert an uploaded Notion export (.zip/.html)
 - `GET  /api/jobs` / `GET /api/jobs/{id}` – job status
 - `GET  /api/materials?path=` – list a local folder
 

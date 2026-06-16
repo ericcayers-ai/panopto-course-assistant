@@ -211,6 +211,8 @@ button.tag:hover { background: var(--brand); color: #fff; }
 .list-item.clickable:hover { background: var(--surface-2); }
 .li-label { word-break: break-word; font-size: 13.5px; }
 .formats { display: flex; gap: 4px; flex-wrap: wrap; }
+.lib-section { position: sticky; top: 0; background: var(--surface-2); border-bottom: 1px solid var(--border); padding: 7px 12px; font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); z-index: 1; }
+.lib-meta { display: flex; gap: 8px; align-items: center; }
 
 /* ---- results / search / jobs / flashcards ------------------------------- */
 .results { margin-top: 10px; }

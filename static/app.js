@@ -147,8 +147,6 @@ async function loadStatus() {
     else sel.appendChild(el("option", { text: "(none installed)" }));
     if (s.default_engine) sel.value = s.default_engine;
 
-    // output-format checkboxes
-    buildOutputChecks(s.output_choices || ["txt", "srt", "md", "json"]);
     // document-type checkboxes (for the Documents → Markdown tab)
     buildDocExtChecks(s.doc_exts || [".pdf"]);
 
@@ -165,22 +163,6 @@ async function loadStatus() {
     bar.textContent = "could not reach backend: " + e.message;
     bar.className = "status-bar warn";
   }
-}
-
-const DEFAULT_OUTPUTS = new Set(["txt", "srt", "md", "json"]);
-function buildOutputChecks(choices) {
-  const box = $("opt-outputs");
-  clear(box);
-  choices.forEach((fmt) => {
-    const id = "out-" + fmt;
-    box.appendChild(el("label", { class: "chk" }, [
-      el("input", { type: "checkbox", id, value: fmt, checked: DEFAULT_OUTPUTS.has(fmt) }),
-      " " + fmt,
-    ]));
-  });
-}
-function selectedOutputs() {
-  return [...document.querySelectorAll("#opt-outputs input:checked")].map((i) => i.value);
 }
 
 function buildDocExtChecks(exts) {
@@ -201,18 +183,15 @@ function selectedDocExts() {
 // ---- settings persistence -------------------------------------------------
 
 function gatherSettings() {
+  // Output formats / organisation are no longer chosen here — transcription
+  // writes a sensible canonical set and the Export step owns the rest.
   return {
     engine: $("opt-engine").value,
     model: $("opt-model").value,
     language: $("opt-language").value.trim() || "en",
     device: $("opt-device").value,
-    organize: $("opt-organize").value,
-    outputs: selectedOutputs(),
-    interval: parseInt($("opt-interval").value, 10) || 30,
     audio_only: $("opt-audio").checked,
-    keep_media: $("opt-keep").checked,
     skip_existing: $("opt-skip").checked,
-    force: $("opt-force").checked,
     cookies: $("opt-cookies").value.trim(),
     course: currentCourse(),
   };
@@ -319,7 +298,6 @@ async function transcribeLectures(indexes, allowReTranscribe = false) {
   if (!indexes.length) { toast("No lectures selected.", "warn"); return; }
   const settings = gatherSettings();
   if (allowReTranscribe) settings.force = true;
-  if (!settings.outputs.length) { toast("Select at least one output format.", "warn"); return; }
   remember("settings", JSON.stringify(settings));
 
   let queued = 0;
@@ -394,22 +372,42 @@ $("transcribe-selected").addEventListener("click", () => transcribeLectures(chec
 $("transcribe-pending").addEventListener("click", () =>
   transcribeLectures(State.lectures.map((l, i) => i).filter((i) => !lectureDone(State.lectures[i]))));
 
-// ---- transcripts ----------------------------------------------------------
+// ---- library (comprehensive: transcripts + documents + notion + exports) --
 
 const FORMAT_ORDER = ["txt", "md", "notebooklm", "summary", "srt", "vtt", "json"];
 
-async function loadTranscripts() {
+function librarySection(list, title, count) {
+  if (!count) return;
+  list.appendChild(el("div", { class: "lib-section", text: `${title} · ${count}` }));
+}
+
+function fileRow(f) {
+  const row = el("div", { class: "list-item" }, [
+    el("span", { class: "li-label", text: f.path },),
+    el("span", { class: "lib-meta" }, [
+      f.size_human ? el("span", { class: "muted", text: f.size_human }) : null,
+      f.viewable !== false ? el("button", { class: "tag", text: "view", onclick: () => viewTranscript(f.path) }) : null,
+    ]),
+  ]);
+  return row;
+}
+
+async function loadTranscripts() {  // loads the whole Library
   const list = $("transcripts-list");
   list.textContent = "Loading…";
   try {
-    const data = await api("/api/transcripts");
-    State.transcribedStems = new Set(data.items.map((i) => i.stem));
+    const data = await api("/api/library");
+    const cats = data.categories;
+    State.transcribedStems = new Set(cats.transcripts.map((i) => i.stem));
     clear(list);
-    if (!data.items.length) {
-      list.appendChild(el("p", { class: "empty", text: "No transcripts yet. Transcribe a lecture first." }));
+    if (!data.counts.total) {
+      list.appendChild(el("p", { class: "empty", text: "Nothing imported yet. Add lectures, documents or a Notion export in step 2." }));
       return;
     }
-    data.items.forEach((it) => {
+
+    // Transcripts (grouped per lecture, with format chips)
+    librarySection(list, "🎙️ Transcripts", cats.transcripts.length);
+    cats.transcripts.forEach((it) => {
       const label = (it.folder ? it.folder + "/" : "") + it.stem;
       const fmts = Object.keys(it.formats).sort(
         (a, b) => FORMAT_ORDER.indexOf(a) - FORMAT_ORDER.indexOf(b));
@@ -420,6 +418,16 @@ async function loadTranscripts() {
         )),
       ]));
     });
+
+    // Everything else, file by file
+    librarySection(list, "📑 Documents", cats.documents.length);
+    cats.documents.forEach((f) => list.appendChild(fileRow(f)));
+    librarySection(list, "🗒️ Notion pages", cats.notion.length);
+    cats.notion.forEach((f) => list.appendChild(fileRow(f)));
+    librarySection(list, "📂 Other sources", cats.others.length);
+    cats.others.forEach((f) => list.appendChild(fileRow(f)));
+    librarySection(list, "📤 Generated exports", cats.exports.length);
+    cats.exports.forEach((f) => list.appendChild(fileRow(f)));
   } catch (e) { list.textContent = "Error: " + e.message; }
 }
 
@@ -498,6 +506,25 @@ $("studycsv-go").addEventListener("click", async () => {
     ]));
     out.appendChild(el("p", { class: "hint", text: "Columns: " + data.columns.join(", ") }));
     toast(`Exported ${data.count} rows to a Notion CSV.`, "ok");
+  } catch (e) { out.textContent = "Error: " + e.message; toast(e.message, "warn"); }
+  finally { btn.disabled = false; }
+});
+
+// Subtitles & extra formats (generated from existing transcripts)
+$("formats-go").addEventListener("click", async () => {
+  const out = $("formats-results");
+  const formats = [...document.querySelectorAll("#export .checks input:checked")].map((i) => i.value);
+  if (!formats.length) { toast("Pick at least one format.", "warn"); return; }
+  const btn = $("formats-go");
+  btn.disabled = true; out.textContent = "Generating…";
+  try {
+    const data = await api("/api/export/formats", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ formats }),
+    });
+    clear(out);
+    out.appendChild(el("p", { class: "ok-text", text: `✓ Wrote ${data.count} file(s) (${data.formats.join(", ")})` }));
+    toast(`Generated ${data.count} file(s).`, "ok");
   } catch (e) { out.textContent = "Error: " + e.message; toast(e.message, "warn"); }
   finally { btn.disabled = false; }
 });
@@ -730,7 +757,12 @@ $("moodle-go").addEventListener("click", async () => {
         onclick: () => saveMoodleOutline(path) }),
     ]);
     out.appendChild(actions);
-    out.appendChild(el("p", { class: "muted", text: `${d.section_count} section(s):` }));
+    const summary = [
+      `${d.section_count} section(s)`,
+      d.activity_count ? `${d.activity_count} activity(ies)` : null,
+      d.resource_count ? `${d.resource_count} document(s)` : null,
+    ].filter(Boolean).join(" · ");
+    out.appendChild(el("p", { class: "muted", text: summary }));
     d.sections.forEach((s) => {
       const tag = s.week != null ? `Week ${s.week}` : "";
       out.appendChild(el("div", { class: "list-item" }, [
@@ -738,6 +770,13 @@ $("moodle-go").addEventListener("click", async () => {
         el("span", { class: "muted", text: tag }),
       ]));
     });
+    if (d.activities && d.activities.length) {
+      out.appendChild(el("p", { class: "muted", text: "Activities & resources:" }));
+      d.activities.forEach((a) => out.appendChild(el("div", { class: "list-item" }, [
+        el("span", { class: "li-label", text: a.name }),
+        el("span", { class: "badge", text: a.kind_label }),
+      ])));
+    }
   } catch (e) { out.textContent = "Error: " + e.message; toast(e.message, "warn"); }
 });
 async function saveMoodleOutline(path) {
@@ -750,11 +789,42 @@ async function saveMoodleOutline(path) {
   } catch (e) { toast(e.message, "warn"); }
 }
 
+// Notion export — render a conversion result into #notion-results
+function renderNotionResult(d) {
+  const out = $("notion-results");
+  clear(out);
+  out.appendChild(el("p", { class: "ok-text", text: `✓ Converted ${d.count} page(s) → ${d.dest}` }));
+  if (d.combined) out.appendChild(el("div", {}, [
+    el("button", { class: "tag", text: "view notion_pack.md", onclick: () => { viewTranscript(d.combined); showTab("library"); } }),
+  ]));
+  d.files.forEach((f) => out.appendChild(el("div", { class: "list-item" }, [
+    el("span", { class: "li-label", text: f }),
+    el("button", { class: "tag", text: "view", onclick: () => { viewTranscript(f); showTab("library"); } }),
+  ])));
+  toast(`Converted ${d.count} Notion page(s).`, "ok");
+}
+
+// Notion export — upload a .zip / .html directly
+$("notion-file").addEventListener("change", async (ev) => {
+  const file = ev.target.files[0];
+  if (!file) return;
+  const out = $("notion-results");
+  out.textContent = `Importing ${file.name}…`;
+  const fd = new FormData();
+  fd.append("file", file);
+  try {
+    const d = await api("/api/notion/upload?combined=" + ($("notion-combined").checked ? "true" : "false"),
+      { method: "POST", body: fd });
+    renderNotionResult(d);
+  } catch (e) { out.textContent = "Error: " + e.message; toast(e.message, "warn"); }
+  finally { ev.target.value = ""; }
+});
+
 // Notion export converter
 $("notion-go").addEventListener("click", async () => {
   const out = $("notion-results");
   const path = $("notion-path").value.trim();
-  if (!path) { toast("Enter a Notion .html file or export folder.", "warn"); return; }
+  if (!path) { toast("Enter a Notion .zip, .html file or export folder.", "warn"); return; }
   remember("notionpath", path);
   const btn = $("notion-go");
   btn.disabled = true; out.textContent = "Converting…";
@@ -763,16 +833,7 @@ $("notion-go").addEventListener("click", async () => {
       method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ path, combined: $("notion-combined").checked }),
     });
-    clear(out);
-    out.appendChild(el("p", { class: "ok-text", text: `✓ Converted ${d.count} page(s) → ${d.dest}` }));
-    if (d.combined) out.appendChild(el("div", {}, [
-      el("button", { class: "tag", text: "view notion_pack.md", onclick: () => { viewTranscript(d.combined); showTab("library"); } }),
-    ]));
-    d.files.forEach((f) => out.appendChild(el("div", { class: "list-item" }, [
-      el("span", { class: "li-label", text: f }),
-      el("button", { class: "tag", text: "view", onclick: () => { viewTranscript(f); showTab("library"); } }),
-    ])));
-    toast(`Converted ${d.count} Notion page(s).`, "ok");
+    renderNotionResult(d);
   } catch (e) { out.textContent = "Error: " + e.message; toast(e.message, "warn"); }
   finally { btn.disabled = false; }
 });
@@ -804,10 +865,8 @@ function restore() {
     if (s.model) $("opt-model").value = s.model;
     if (s.language) $("opt-language").value = s.language;
     if (s.device) $("opt-device").value = s.device;
-    if (s.organize) $("opt-organize").value = s.organize;
-    if (s.interval) $("opt-interval").value = s.interval;
     if (typeof s.audio_only === "boolean") $("opt-audio").checked = s.audio_only;
-    if (typeof s.keep_media === "boolean") $("opt-keep").checked = s.keep_media;
+    if (typeof s.skip_existing === "boolean") $("opt-skip").checked = s.skip_existing;
   } catch (_) {}
 }
 

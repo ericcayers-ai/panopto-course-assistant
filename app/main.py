@@ -8,17 +8,20 @@ GET  /api/status           -> which optional engines/deps are installed
 POST /api/feed             -> parse an RSS feed (URL or local path) -> lectures
 POST /api/feed/upload      -> parse an uploaded RSS .xml file -> lectures
 GET  /api/transcripts      -> list transcripts in the output directory
+GET  /api/library          -> comprehensive, categorised listing of every file
 GET  /api/transcript       -> read one transcript file (?path=)
 GET  /api/search           -> full-text search across transcripts (?q=)
 POST /api/export/notebooklm -> render transcripts into NotebookLM-friendly Markdown
 POST /api/export/all        -> combine transcripts + documents + Notion into one AI export
+POST /api/export/formats    -> generate subtitles / alternate formats from transcripts
 POST /api/flashcards/generate -> Anki-importable flashcards from transcripts
 POST /api/flashcards/categorize -> tag/categorise an existing flashcard deck
 POST /api/export/notion-csv -> export a Notion-importable study-database CSV
 POST /api/transcribe       -> queue a transcription job (needs whisper installed)
 POST /api/organize         -> reorganize existing transcripts into folders
-POST /api/moodle/parse     -> parse a Moodle course HTML export into an outline
-POST /api/notion/convert   -> convert a Notion HTML export into Markdown
+POST /api/moodle/parse     -> parse a whole Moodle course export into an outline
+POST /api/notion/convert   -> convert a Notion export (.zip/.html/folder) into Markdown
+POST /api/notion/upload    -> convert an uploaded Notion export (.zip/.html)
 POST /api/docs/convert     -> convert documents (pdf/pptx/docx/…) to Markdown for AI
 GET  /api/jobs             -> list jobs
 GET  /api/jobs/{job_id}    -> one job's status
@@ -41,7 +44,7 @@ from .jobs import manager
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 STATIC_DIR = BASE_DIR / "static"
-APP_VERSION = "1.1.0"
+APP_VERSION = "1.2.0"
 # Where transcripts are written/read. Override with PANOPTO_OUTPUT.
 OUTPUT_DIR = Path(os.environ.get("PANOPTO_OUTPUT", BASE_DIR / "transcripts")).resolve()
 core.ensure_dir(OUTPUT_DIR)
@@ -82,8 +85,11 @@ class TranscribeRequest(BaseModel):
     model: str = "small"
     language: str = "en"
     device: str = "auto"
-    organize: str = "week"
-    outputs: List[str] = ["txt", "srt", "md", "json"]
+    organize: str = "auto"
+    # Canonical set written for every transcription: clean text, Markdown, rich
+    # JSON (everything else is derived from it), and a study summary. Subtitles
+    # and other formats are generated on demand from the Export step.
+    outputs: List[str] = ["txt", "md", "json", "summary"]
     interval: int = 30
     keep_media: bool = False
     audio_only: bool = False
@@ -132,6 +138,11 @@ class NotebookLMRequest(BaseModel):
 class ExportAllRequest(BaseModel):
     combined: bool = True                  # write a single everything_pack.md
     course: str = ""                       # optional course name for headers
+
+
+class FormatsRequest(BaseModel):
+    formats: List[str] = ["srt"]           # srt | vtt | txt | md | notebooklm | summary
+    interval: int = 30
 
 
 class FlashcardGenRequest(BaseModel):
@@ -198,6 +209,13 @@ def api_transcripts() -> Dict[str, Any]:
     return {"output_dir": str(OUTPUT_DIR), "items": core.list_transcripts(OUTPUT_DIR)}
 
 
+@app.get("/api/library")
+def api_library() -> Dict[str, Any]:
+    """Everything in the library, categorised (transcripts, documents, Notion,
+    generated exports, and any other source files)."""
+    return core.list_library(OUTPUT_DIR)
+
+
 @app.get("/api/transcript")
 def api_transcript(path: str) -> Dict[str, Any]:
     try:
@@ -241,6 +259,19 @@ def api_export_all(req: ExportAllRequest) -> Dict[str, Any]:
             status_code=404,
             detail="Nothing to export yet. Import some lectures, documents or "
             "Notion pages first.",
+        )
+    return result
+
+
+@app.post("/api/export/formats")
+def api_export_formats(req: FormatsRequest) -> Dict[str, Any]:
+    """Generate subtitles / alternate output formats from existing transcripts."""
+    result = core.export_formats(OUTPUT_DIR, req.formats, interval=req.interval)
+    if result["count"] == 0:
+        raise HTTPException(
+            status_code=404,
+            detail="Nothing to generate. Transcribe some lectures first, and pick "
+            "at least one format.",
         )
     return result
 
@@ -404,7 +435,7 @@ def api_moodle_parse(req: MoodleRequest) -> Dict[str, Any]:
 
 @app.post("/api/notion/convert")
 def api_notion_convert(req: NotionRequest) -> Dict[str, Any]:
-    """Convert a Notion HTML export (page or folder) into clean Markdown."""
+    """Convert a Notion HTML export (page, folder, or .zip) into clean Markdown."""
     try:
         result = notion.convert_notion_export(
             Path(req.path).expanduser(), OUTPUT_DIR, combined=req.combined
@@ -413,6 +444,27 @@ def api_notion_convert(req: NotionRequest) -> Dict[str, Any]:
         raise HTTPException(status_code=400, detail=f"Path not found: {req.path}")
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
+    return result
+
+
+@app.post("/api/notion/upload")
+async def api_notion_upload(file: UploadFile = File(...), combined: bool = False) -> Dict[str, Any]:
+    """Convert an uploaded Notion export (.zip or a single .html) into Markdown."""
+    import tempfile
+
+    suffix = Path(file.filename or "export.zip").suffix or ".zip"
+    raw = await file.read()
+    tmp = Path(tempfile.mkdtemp(prefix="notion_up_")) / f"upload{suffix}"
+    tmp.write_bytes(raw)
+    try:
+        result = notion.convert_notion_export(tmp, OUTPUT_DIR, combined=combined)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Could not read export: {e}")
+    finally:
+        import shutil
+        shutil.rmtree(tmp.parent, ignore_errors=True)
     return result
 
 

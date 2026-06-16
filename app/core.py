@@ -999,6 +999,126 @@ def export_all_sources(output_dir: Path, combined: bool = True, course: str = ""
     }
 
 
+def export_formats(output_dir: Path, formats: List[str], interval: int = 30) -> Dict[str, Any]:
+    """(Re)generate output formats (srt/vtt/txt/md/notebooklm/summary) for every
+    transcribed lecture from its stored ``.json``, written next to the lecture.
+
+    This is how subtitles and alternate formats are produced — transcription
+    itself just keeps a clean canonical set, and anything else is generated here
+    on demand from the rich JSON.
+    """
+    formats = [f for f in formats if f in OUTPUT_CHOICES and f != "json"]
+    if not formats:
+        return {"count": 0, "files": [], "formats": []}
+
+    written: List[str] = []
+    for g in list_transcripts(output_dir):
+        fmts = g["formats"]
+        if "json" not in fmts:
+            continue
+        data = json.loads((output_dir / fmts["json"]).read_text(encoding="utf-8", errors="replace"))
+        item = LectureItem(
+            title=data.get("title") or _title_from_stem(g["stem"]),
+            url=data.get("url", ""),
+            size=int(data.get("size", 0) or 0),
+            duration=int(data.get("duration", 0) or 0),
+            pub_date=data.get("pub_date", ""),
+            author=data.get("author", ""),
+            guid=data.get("guid", ""),
+        )
+        segments = data.get("segments") or [{"text": data.get("text", "")}]
+        out_dir = (output_dir / fmts["json"]).parent
+        w = write_outputs(item, segments, data.get("text", ""), out_dir, formats, interval, data)
+        for path in w.values():
+            try:
+                written.append(Path(path).relative_to(output_dir).as_posix())
+            except ValueError:
+                written.append(path)
+    return {"count": len(written), "files": written, "formats": formats}
+
+
+# ---------------------------------------------------------------------------
+# Comprehensive library listing (everything in the output dir)
+# ---------------------------------------------------------------------------
+
+FLASHCARDS_DIRNAME = "_flashcards"
+_VIEWABLE_EXTS = TEXT_EXTS | {".csv", ".tsv"}
+
+
+def _file_entry(output_dir: Path, f: Path) -> Dict[str, Any]:
+    try:
+        size = f.stat().st_size
+    except OSError:
+        size = 0
+    return {
+        "name": f.name,
+        "path": f.relative_to(output_dir).as_posix(),
+        "size": size,
+        "size_human": human_size(size),
+        "viewable": f.suffix.lower() in _VIEWABLE_EXTS,
+    }
+
+
+def _collect_dir_files(output_dir: Path, subdir: str) -> List[Dict[str, Any]]:
+    d = output_dir / subdir
+    if not d.is_dir():
+        return []
+    return [_file_entry(output_dir, f) for f in sorted(d.rglob("*")) if f.is_file()]
+
+
+# A lecture group counts as a real transcript only if it has one of these
+# outputs; a lone ``.md`` (a Moodle outline or stray source dropped in the
+# folder) is shown under "other sources" instead of masquerading as a lecture.
+_TRANSCRIPT_FMTS = {"txt", "json", "srt", "vtt", "summary", "notebooklm"}
+
+
+def list_library(output_dir: Path) -> Dict[str, Any]:
+    """A comprehensive, categorised view of *everything* in the library — not just
+    transcripts, but converted documents, Notion pages, generated exports and any
+    other source files — so nothing the user imported is hidden."""
+    all_groups = list_transcripts(output_dir)
+    transcripts = [g for g in all_groups if _TRANSCRIPT_FMTS & set(g["formats"])]
+    in_groups = {p for g in all_groups for p in g["formats"].values()}
+
+    others: List[Dict[str, Any]] = []
+    # markdown-only groups (e.g. a saved course outline) are sources, not lectures
+    for g in all_groups:
+        if not (_TRANSCRIPT_FMTS & set(g["formats"])):
+            for rel in g["formats"].values():
+                others.append(_file_entry(output_dir, output_dir / rel))
+    if output_dir.is_dir():
+        for f in sorted(output_dir.glob("*")):
+            if (
+                f.is_file()
+                and f.suffix.lower() in _VIEWABLE_EXTS
+                and f.relative_to(output_dir).as_posix() not in in_groups
+            ):
+                others.append(_file_entry(output_dir, f))
+
+    documents = _collect_dir_files(output_dir, DOCS_DIRNAME)
+    notion_pages = _collect_dir_files(output_dir, NOTION_DIRNAME)
+    exports = _collect_dir_files(output_dir, NOTEBOOKLM_DIRNAME) + _collect_dir_files(
+        output_dir, FLASHCARDS_DIRNAME
+    )
+
+    categories = {
+        "transcripts": transcripts,
+        "documents": documents,
+        "notion": notion_pages,
+        "exports": exports,
+        "others": others,
+    }
+    counts = {
+        "transcripts": len(transcripts),
+        "documents": len(documents),
+        "notion": len(notion_pages),
+        "exports": len(exports),
+        "others": len(others),
+    }
+    counts["total"] = sum(counts.values())
+    return {"output_dir": str(output_dir), "categories": categories, "counts": counts}
+
+
 # ---------------------------------------------------------------------------
 # Extractive summary (no LLM required)
 # ---------------------------------------------------------------------------

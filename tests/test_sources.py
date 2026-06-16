@@ -150,6 +150,41 @@ def test_find_course_file_in_folder(tmp_path: Path):
     assert p["code"] == "COMPX201-26A"
 
 
+# A course page with named activities + a resource document elsewhere in the folder.
+ACTIVITIES_HTML = """<html><head><title>Paper: COMPX234-26A - Systems | Moodle</title></head>
+<body><h1 class="h2">COMPX234-26A - Systems and Networks</h1>
+<div data-sectionname="Week 1: Intro"></div>
+<a class="aalink" href="../mod/forum/view_php.html?id=1"><span class="instancename">Announcements<span class="accesshide"> Forum</span></span></a>
+<a class="aalink" href="../mod/resource/view_php.html?id=2"><span class="instancename">Week 1 slides</span></a>
+<a class="aalink" href="../mod/assign/view_php.html?id=3"><span class="instancename">A1: Concurrency</span></a>
+<a class="aalink" href="../mod/resource/view_php.html?id=2"><span class="instancename">Week 1 slides</span></a>
+</body></html>"""
+
+
+def test_moodle_extracts_activities_and_resources(tmp_path: Path):
+    root = tmp_path / "course-export"
+    (root / "course").mkdir(parents=True)
+    (root / "course" / "view_php.html").write_text(ACTIVITIES_HTML, encoding="utf-8")
+    # a resource document embedded in the export (block_html/content)
+    block = root / "pluginfile.php" / "1" / "block_html" / "content"
+    block.mkdir(parents=True)
+    (block / "GenAI_Guidelines_pdf.html").write_text(
+        "<html><head><title>GenAI Guidelines | Moodle</title></head><body>x</body></html>",
+        encoding="utf-8")
+
+    p = sources.parse_moodle_course(root)
+    names = [a["name"] for a in p["activities"]]
+    assert names == ["Announcements", "Week 1 slides", "A1: Concurrency"]  # deduped
+    kinds = {a["name"]: a["kind_label"] for a in p["activities"]}
+    assert kinds["A1: Concurrency"] == "Assignment"
+    assert kinds["Week 1 slides"] == "Resource"
+    assert p["resource_count"] == 1
+    assert p["resources"][0]["name"] == "GenAI Guidelines"
+    # outline includes the new sections
+    assert "## Activities & resources" in p["outline_markdown"]
+    assert "## Course documents" in p["outline_markdown"]
+
+
 def test_parse_missing_file(tmp_path: Path):
     with pytest.raises(FileNotFoundError):
         sources.parse_moodle_course(tmp_path)

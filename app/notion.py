@@ -3,16 +3,20 @@ notion.py — convert a Notion page exported as HTML into clean Markdown.
 
 Notion's "Export → HTML" produces, per page, an `<article>` with an
 `<h1 class="page-title">` and a `<div class="page-body">` of well-structured
-blocks (headings, paragraphs, lists, tables, callouts, code, quotes). A whole
-workspace export is a folder of such `.html` files (plus asset subfolders).
+blocks (headings, paragraphs, lists, tables, callouts, code, quotes). The export
+download is a `.zip` (sometimes wrapping nested `ExportBlock-*.zip` parts); this
+module accepts that `.zip` directly, a single `.html` page, or an unzipped folder.
 
-This module turns that into Markdown — usable as a NotebookLM / AI source or as
-study notes — using only the standard library (html.parser), so it needs no
-extra dependencies and behaves predictably on Notion's clean output.
+It turns the export into Markdown — usable as a NotebookLM / AI source or as
+study notes — using only the standard library (html.parser + zipfile), so it
+needs no extra dependencies and behaves predictably on Notion's clean output.
 """
 from __future__ import annotations
 
 import re
+import shutil
+import tempfile
+import zipfile
 from html.parser import HTMLParser
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
@@ -279,6 +283,32 @@ def _looks_like_asset(p: Path) -> bool:
     return p.suffix.lower() not in (".html", ".htm")
 
 
+def _extract_zip_tree(zip_path: Path, dest: Path) -> None:
+    """Extract a Notion export zip into ``dest``, recursively unpacking any nested
+    zips (Notion wraps big exports as an outer zip containing
+    ``ExportBlock-*.zip`` parts). Skips entries that would escape ``dest``."""
+    with zipfile.ZipFile(zip_path) as zf:
+        for member in zf.namelist():
+            target = (dest / member).resolve()
+            if not str(target).startswith(str(dest.resolve())):
+                continue  # zip-slip guard
+            if member.endswith("/"):
+                target.mkdir(parents=True, exist_ok=True)
+                continue
+            target.parent.mkdir(parents=True, exist_ok=True)
+            with zf.open(member) as src, open(target, "wb") as out:
+                shutil.copyfileobj(src, out)
+    # recurse into any nested zips that were just written
+    for nested in list(dest.rglob("*.zip")):
+        sub = nested.parent / (nested.stem + "_unzipped")
+        sub.mkdir(parents=True, exist_ok=True)
+        try:
+            _extract_zip_tree(nested, sub)
+            nested.unlink()  # tidy: drop the inner archive once expanded
+        except zipfile.BadZipFile:
+            pass
+
+
 def convert_notion_export(
     input_path: Path,
     output_dir: Path,
@@ -291,6 +321,27 @@ def convert_notion_export(
     if not input_path.exists():
         raise FileNotFoundError(str(input_path))
 
+    # A Notion "Export → HTML" download is a .zip (often wrapping nested
+    # ExportBlock-*.zip parts). Unpack it to a temp dir and convert that.
+    tmp_dir: Optional[Path] = None
+    if input_path.is_file() and input_path.suffix.lower() == ".zip":
+        tmp_dir = Path(tempfile.mkdtemp(prefix="notion_"))
+        _extract_zip_tree(input_path, tmp_dir)
+        input_path = tmp_dir
+
+    try:
+        return _convert_notion_tree(input_path, output_dir, dest_name, combined)
+    finally:
+        if tmp_dir is not None:
+            shutil.rmtree(tmp_dir, ignore_errors=True)
+
+
+def _convert_notion_tree(
+    input_path: Path,
+    output_dir: Path,
+    dest_name: str,
+    combined: bool,
+) -> Dict[str, Any]:
     dest_root = core.ensure_dir(output_dir / dest_name)
     written: List[str] = []
     docs: List[Tuple[str, str]] = []  # (title, markdown)
@@ -314,7 +365,16 @@ def convert_notion_export(
         rel = f.relative_to(base) if input_path.is_dir() else Path(f.name)
         # Notion appends a 32-char hash to filenames; strip it for readability.
         clean_stem = re.sub(r"\s+[0-9a-f]{32}$", "", rel.stem)
-        target_dir = core.ensure_dir(dest_root / rel.parent) if input_path.is_dir() else dest_root
+        # Drop temp extraction wrappers and Notion's hashed folder names so the
+        # library path stays clean (e.g. "_notion/COMPX234.md", not
+        # "_notion/ExportBlock-…_unzipped/…").
+        clean_parts = [
+            re.sub(r"\s+[0-9a-f]{32}$", "", p)
+            for p in rel.parent.parts
+            if not (p.endswith("_unzipped") or p.startswith("ExportBlock-"))
+        ]
+        sub = Path(*clean_parts) if clean_parts else Path(".")
+        target_dir = core.ensure_dir(dest_root / sub) if str(sub) != "." else dest_root
         out_file = target_dir / f"{core.safe_name(clean_stem)}.md"
         out_file.write_text(md, encoding="utf-8")
         written.append(out_file.relative_to(output_dir).as_posix())

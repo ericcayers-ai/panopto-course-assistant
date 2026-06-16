@@ -149,31 +149,106 @@ def _section_to_record(name: str) -> Dict[str, Any]:
     return {"name": name, "week": week, "topic": topic}
 
 
+# Friendly labels for Moodle activity/resource module types.
+_ACTIVITY_KIND = {
+    "assign": "Assignment", "quiz": "Quiz", "forum": "Forum", "resource": "Resource",
+    "folder": "Folder", "url": "Link", "page": "Page", "book": "Book",
+    "lti": "External tool", "choice": "Choice", "lesson": "Lesson", "glossary": "Glossary",
+    "wiki": "Wiki", "workshop": "Workshop", "feedback": "Feedback", "label": "Label",
+    "data": "Database", "scorm": "SCORM", "h5pactivity": "Interactive", "chat": "Chat",
+}
+
+_ANCHOR_MOD_RE = re.compile(
+    r'<a\b[^>]*href="[^"]*/mod/(\w+)/view[^"]*"[^>]*>(.*?)</a>', re.S | re.I)
+_INSTANCENAME_RE = re.compile(
+    r'class="instancename">(.*?)(?:<span class="accesshide|</span>|<)', re.S | re.I)
+
+
+def _extract_activities(raw: str) -> List[Dict[str, Any]]:
+    """Recover the named activities/resources Moodle renders inside the course
+    page (forums, assignments, resources, quizzes, folders, links, …). Each is an
+    ``<a href=".../mod/<kind>/view…">`` whose visible text is the activity name."""
+    out: List[Dict[str, Any]] = []
+    seen = set()
+    for kind, inner in _ANCHOR_MOD_RE.findall(raw):
+        m = _INSTANCENAME_RE.search(inner)
+        name = _clean(m.group(1) if m else inner)
+        if not name or name.lower() in _CHROME_HEADINGS or len(name) > 140:
+            continue
+        key = (kind.lower(), name.lower())
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append({"name": name, "kind": kind.lower(),
+                    "kind_label": _ACTIVITY_KIND.get(kind.lower(), kind.title())})
+    return out
+
+
+def _extract_resource_docs(root: Optional[Path]) -> List[Dict[str, Any]]:
+    """Course documents embedded in the export (Moodle stores HTML-block content
+    and some resources under ``…/block_html/content/*.html``)."""
+    docs: List[Dict[str, Any]] = []
+    if not root or not root.is_dir():
+        return docs
+    seen = set()
+    for p in sorted(root.rglob("*.htm*")):
+        if "block_html/content" not in p.as_posix():
+            continue
+        raw = p.read_text(encoding="utf-8", errors="replace")
+        title = _extract_title(raw) or re.sub(r"_(?:pdf|docx?|pptx?)$", "", p.stem)
+        title = _clean(title)
+        if not title or title.lower() in seen:
+            continue
+        seen.add(title.lower())
+        docs.append({"name": title, "path": str(p)})
+    return docs
+
+
 def parse_moodle_course(path: Path) -> Dict[str, Any]:
-    """Parse a Moodle course export into a structured outline."""
+    """Parse a Moodle course export into a structured outline.
+
+    Uses the whole export folder when given one: the main course page provides
+    the title/code/section outline and the list of named activities, and any
+    embedded resource documents elsewhere in the folder are picked up too — not
+    just ``course/view_php.html``.
+    """
     course_file = find_moodle_course_file(path)
     if not course_file:
         raise FileNotFoundError(
-            "Could not find a Moodle course page (course/view_php.html) under that path."
+            "Could not find a Moodle course page (course/view*.html) under that path."
         )
+    root = Path(path) if Path(path).is_dir() else None
     raw = course_file.read_text(encoding="utf-8", errors="replace")
     title = _extract_title(raw)
     code = _extract_course_code(title)
     sections = [_section_to_record(n) for n in _extract_sections(raw)]
     week_topics = {s["week"]: s["topic"] for s in sections if s["week"] is not None and s["topic"]}
+    activities = _extract_activities(raw)
+    resources = _extract_resource_docs(root)
 
     return {
         "source_file": str(course_file),
+        "root": str(root) if root else "",
         "title": title,
         "code": code,
         "section_count": len(sections),
         "sections": sections,
         "week_topics": week_topics,
-        "outline_markdown": _outline_markdown(title, code, sections),
+        "activities": activities,
+        "activity_count": len(activities),
+        "resources": resources,
+        "resource_count": len(resources),
+        "outline_markdown": _outline_markdown(title, code, sections, activities, resources),
     }
 
 
-def _outline_markdown(title: str, code: str, sections: List[Dict[str, Any]]) -> str:
+def _outline_markdown(
+    title: str,
+    code: str,
+    sections: List[Dict[str, Any]],
+    activities: Optional[List[Dict[str, Any]]] = None,
+    resources: Optional[List[Dict[str, Any]]] = None,
+) -> str:
     lines = [f"# {title or code or 'Course outline'}", ""]
     if code:
         lines.append(f"*Course code: {code}*")
@@ -186,6 +261,26 @@ def _outline_markdown(title: str, code: str, sections: List[Dict[str, Any]]) -> 
         prefix = f"Week {s['week']}: " if s["week"] is not None else ""
         label = s["name"]
         lines.append(f"- {prefix}{label}" if prefix and not label.lower().startswith("week") else f"- {label}")
+
+    if activities:
+        lines += ["", "## Activities & resources", ""]
+        # group by friendly kind label, preserving first-seen order
+        order: List[str] = []
+        grouped: Dict[str, List[str]] = {}
+        for a in activities:
+            grouped.setdefault(a["kind_label"], [])
+            if a["kind_label"] not in order:
+                order.append(a["kind_label"])
+            grouped[a["kind_label"]].append(a["name"])
+        for label in order:
+            lines.append(f"**{label}**")
+            lines += [f"- {n}" for n in grouped[label]]
+            lines.append("")
+
+    if resources:
+        lines += ["## Course documents", ""]
+        lines += [f"- {r['name']}" for r in resources]
+
     return "\n".join(lines).rstrip() + "\n"
 
 

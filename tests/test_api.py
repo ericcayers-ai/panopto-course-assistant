@@ -115,6 +115,38 @@ def test_export_empty_then_success(client):
     assert r.json()["combined"]
 
 
+def test_library_endpoint(client):
+    c, tmp = client
+    _seed(tmp)
+    from app import core
+    core.ensure_dir(tmp / core.DOCS_DIRNAME).joinpath("Slides.md").write_text("x", encoding="utf-8")
+    body = c.get("/api/library").json()
+    assert body["counts"]["transcripts"] == 1
+    assert body["counts"]["documents"] == 1
+    assert "categories" in body and "transcripts" in body["categories"]
+
+
+def test_export_formats_endpoint(client):
+    c, tmp = client
+    assert c.post("/api/export/formats", json={"formats": ["srt"]}).status_code == 404
+    _seed(tmp)  # writes txt + json
+    r = c.post("/api/export/formats", json={"formats": ["srt", "vtt"]})
+    assert r.status_code == 200
+    assert r.json()["count"] == 2
+
+
+def test_notion_upload_zip(client):
+    c, _ = client
+    import io, zipfile
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w") as zf:
+        zf.writestr("Page.html", "<html><body><h1 class='page-title'>Notes</h1><p>Hi</p></body></html>")
+    buf.seek(0)
+    r = c.post("/api/notion/upload", files={"file": ("export.zip", buf.read(), "application/zip")})
+    assert r.status_code == 200
+    assert r.json()["count"] == 1
+
+
 def test_organize(client):
     c, tmp = client
     from app import core

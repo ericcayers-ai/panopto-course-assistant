@@ -139,7 +139,7 @@
             </div>
 
             <details id="settings" class="card hidden" open>
-              <summary><strong>2 · Transcription settings</strong> <span class="muted">(click to collapse)</span></summary>
+              <summary><strong>2 · Transcription settings</strong> <span class="muted">(sensible defaults — tweak only if needed)</span></summary>
               <div id="engine-warning" class="banner warn hidden"></div>
               <div class="grid">
                 <label>Engine <select id="opt-engine"></select></label>
@@ -154,31 +154,14 @@
                 <label>Device
                   <select id="opt-device"><option>auto</option><option>cuda</option><option>cpu</option></select>
                 </label>
-                <label>Organize by
-                  <select id="opt-organize">
-                    <option value="auto" selected>auto</option>
-                    <option value="week">week</option>
-                    <option value="lecture">lecture</option>
-                    <option value="module">module</option>
-                    <option value="date">date</option>
-                    <option value="topic">topic</option>
-                    <option value="none">none</option>
-                  </select>
-                </label>
-                <label>TXT timestamp interval (s)
-                  <input type="number" id="opt-interval" value="30" min="1" max="600" />
-                </label>
-              </div>
-              <div class="outputs-row">
-                <span class="muted">Output formats:</span>
-                <span id="opt-outputs" class="checks"></span>
               </div>
               <div class="toggles">
-                <label class="toggle"><input type="checkbox" id="opt-audio" /> audio-only download <span class="muted">(saves bandwidth, needs yt-dlp+ffmpeg)</span></label>
-                <label class="toggle"><input type="checkbox" id="opt-keep" /> keep media file</label>
                 <label class="toggle"><input type="checkbox" id="opt-skip" checked /> skip already-transcribed</label>
-                <label class="toggle"><input type="checkbox" id="opt-force" /> force re-transcribe</label>
+                <label class="toggle"><input type="checkbox" id="opt-audio" /> audio-only download <span class="muted">(saves bandwidth, needs yt-dlp+ffmpeg)</span></label>
               </div>
+              <p class="hint">Transcripts are saved in clean text, Markdown, JSON and a study summary —
+                enough for everything in the <strong>Library</strong> and <strong>Export</strong> steps.
+                Subtitles and other formats are available under <strong>Export</strong>.</p>
               <div class="row">
                 <input type="text" id="opt-cookies" placeholder="cookies.txt path (optional, for auth-gated feeds)" />
               </div>
@@ -230,12 +213,18 @@
           <!-- NOTION -->
           <div id="import-notion" class="import-pane">
             <div class="card">
-              <h3>🗒️ Convert a Notion HTML export</h3>
-              <p class="hint">Point at a Notion page exported as HTML (a single <code>.html</code> file or the
-                export folder). Produces clean Markdown in your Library — great as NotebookLM / AI sources.</p>
+              <h3>🗒️ Import a Notion export</h3>
+              <p class="hint">In Notion: <em>••• → Export → Markdown &amp; HTML</em>. Upload the
+                <code>.zip</code> you get (nested <code>ExportBlock</code> zips are handled automatically) —
+                or point at a single <code>.html</code> file or an unzipped export folder. Produces clean
+                Markdown in your Library, great as NotebookLM / AI sources.</p>
               <div class="row">
-                <input type="text" id="notion-path" placeholder="Path to a Notion .html file or export folder" />
+                <span class="muted">Upload export:</span>
+                <input type="file" id="notion-file" accept=".zip,.html,.htm" />
                 <label class="toggle"><input type="checkbox" id="notion-combined" /> combined <code>notion_pack.md</code></label>
+              </div>
+              <div class="row">
+                <input type="text" id="notion-path" placeholder="…or paste a path to a .zip / .html / export folder" />
                 <button id="notion-go">Convert</button>
               </div>
               <div id="notion-results" class="results"></div>
@@ -338,6 +327,23 @@
                 <button id="studycsv-go">Export CSV</button>
               </div>
               <div id="studycsv-results" class="results"></div>
+            </div>
+
+            <div class="card">
+              <h3>🎬 Subtitles &amp; extra formats</h3>
+              <p class="hint">Generate captions and other formats from your transcripts — saved next to
+                each lecture and shown in your Library.</p>
+              <div class="outputs-row">
+                <span class="muted">Formats:</span>
+                <span class="checks">
+                  <label class="chk"><input type="checkbox" value="srt" checked /> srt</label>
+                  <label class="chk"><input type="checkbox" value="vtt" /> vtt</label>
+                  <label class="chk"><input type="checkbox" value="txt" /> txt</label>
+                  <label class="chk"><input type="checkbox" value="md" /> md</label>
+                </span>
+              </div>
+              <div class="row"><button id="formats-go">Generate</button></div>
+              <div id="formats-results" class="results"></div>
             </div>
           </div>
 
