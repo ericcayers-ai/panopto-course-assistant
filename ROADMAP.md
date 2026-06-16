@@ -354,6 +354,8 @@ GET  /api/progress?course=
 
 ## §9 — Export Engine
 
+**Status:** ✅ **Shipped (core).** `exports.py` aggregates the existing exporters behind presets (`revision | ai | exam | notion | anki | archive`) and a shared scope rule (`lecture | week | topic | course | all`, computed from the §2 index). `preview()` lists every artifact that *would* be written and touches nothing (asserted by test). `course_archive()` writes a portable `.zip` (course metadata + every library file + manifest) that backs the §1 `POST /api/courses/{id}/export` (was a 501 stub) and round-trips for §11. Routes: `/api/export/presets`, `/api/export/preview`, `/api/export/run`. `tests/test_exports.py` green. (Diff-based re-export + per-course naming templates remain for a later pass.)
+
 **Goal:** Exports become reusable, scoped, preset-driven workflows.
 **Depends:** §1 (scope = multi-course), §4 (AI packs). Builds on existing NotebookLM/Anki/Notion-CSV/formats exporters.
 **Files:** `app/core.py` exporters [extend], `app/study.py`, `app/flashcards.py` [reuse]; consider `app/exports.py` aggregator.

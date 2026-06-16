@@ -41,6 +41,7 @@ from pydantic import BaseModel
 
 from . import core, transcribe, sources, notion, flashcards, study, database, courses, settings_store, search, llm, ai, study_planner
 from . import secrets as secret_store
+from . import exports as export_engine
 from .integrations import notion as notion_sync, anki as anki_sync, state as sync_state
 from .imports import moodle_web, folder as folder_import, preflight as import_preflight
 from .jobs import manager
@@ -358,6 +359,17 @@ class SecretReq(BaseModel):
     value: str
 
 
+# --- Export engine (§9) ----------------------------------------------------
+
+
+class ExportReq(BaseModel):
+    preset: str = ""                   # revision|ai|exam|notion|anki|archive
+    target: str = ""                   # …or a single target directly
+    scope: str = "course"              # lecture|week|topic|course|all
+    scope_target: str = ""             # path/week/topic for narrowed scopes
+    course: str = ""
+
+
 # ---------------------------------------------------------------------------
 # API
 # ---------------------------------------------------------------------------
@@ -454,11 +466,12 @@ def api_courses_activate(course_id: int) -> Dict[str, Any]:
 
 @app.post("/api/courses/{course_id}/export")
 def api_courses_export(course_id: int) -> Dict[str, Any]:
-    # Course-archive export is owned by the Export Engine (roadmap §9); this
-    # endpoint is the stable entry point that §9 will fill in.
-    if not db.get_course(course_id):
+    """Portable course archive (metadata + library + settings) — §9 Export Engine."""
+    row = db.get_course(course_id)
+    if not row:
         raise HTTPException(status_code=404, detail="Course not found")
-    raise HTTPException(status_code=501, detail="Course archive export arrives with §9 (Export Engine).")
+    return export_engine.course_archive(OUTPUT_DIR, db=db, course_id=course_id,
+                                       course=row["code"] or row["name"])
 
 
 # ---------------------------------------------------------------------------
@@ -768,6 +781,39 @@ def api_audit(limit: int = 200) -> Dict[str, Any]:
 @app.post("/api/audit/clear")
 def api_audit_clear() -> Dict[str, Any]:
     return {"cleared": db.clear_audit()}
+
+
+# ---------------------------------------------------------------------------
+# Export engine (§9) — preset-driven, scoped, preview-first.
+# ---------------------------------------------------------------------------
+
+
+@app.get("/api/export/presets")
+def api_export_presets() -> Dict[str, Any]:
+    return {"presets": export_engine.PRESET_TARGETS, "targets": export_engine.ALL_TARGETS,
+            "scopes": list(export_engine.SCOPES)}
+
+
+@app.post("/api/export/preview")
+def api_export_preview(req: ExportReq) -> Dict[str, Any]:
+    try:
+        return export_engine.preview(OUTPUT_DIR, preset=req.preset, target=req.target,
+                                     scope=req.scope, scope_target=req.scope_target,
+                                     course=req.course)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@app.post("/api/export/run")
+def api_export_run(req: ExportReq) -> Dict[str, Any]:
+    try:
+        out = export_engine.export(OUTPUT_DIR, preset=req.preset, target=req.target,
+                                  scope=req.scope, scope_target=req.scope_target,
+                                  course=req.course, db=db,
+                                  course_id=settings_store.get_active_course(db))
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    return out
 
 
 @app.post("/api/feed")

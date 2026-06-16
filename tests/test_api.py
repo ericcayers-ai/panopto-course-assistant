@@ -146,6 +146,27 @@ def test_moodle_import_url_validates(client):
     assert r.status_code == 400
 
 
+def test_export_presets_preview_run(client):
+    c, tmp = client
+    _seed(tmp)
+    assert c.get("/api/export/presets").json()["scopes"]
+    pv = c.post("/api/export/preview", json={"preset": "revision", "scope": "course"})
+    assert pv.status_code == 200 and pv.json()["writes_nothing"] is True
+    run = c.post("/api/export/run", json={"target": "notebooklm", "course": "COMPX234"})
+    assert run.status_code == 200
+    assert run.json()["results"]["notebooklm"]["count"] == 1
+    # bad preset -> 400
+    assert c.post("/api/export/preview", json={"preset": "bogus"}).status_code == 400
+
+
+def test_course_archive_export_route(client):
+    c, tmp = client
+    _seed(tmp)
+    cid = c.post("/api/courses", json={"name": "COMPX234", "code": "COMPX234"}).json()["id"]
+    r = c.post(f"/api/courses/{cid}/export")
+    assert r.status_code == 200 and r.json()["file_count"] >= 1
+
+
 def test_secrets_privacy_and_audit(client):
     c, _ = client
     # store a secret -> only the name is ever returned
@@ -362,10 +383,12 @@ def test_course_validation_and_404s(client):
     assert c.post("/api/courses/9999/activate").status_code == 404
 
 
-def test_course_export_is_stubbed_until_phase9(client):
+def test_course_export_produces_archive(client):
+    # §9 shipped: the course export now returns a portable archive, not a 501.
     c, _ = client
     cid = c.post("/api/courses", json={"name": "X"}).json()["id"]
-    assert c.post(f"/api/courses/{cid}/export").status_code == 501
+    r = c.post(f"/api/courses/{cid}/export")
+    assert r.status_code == 200 and "file_count" in r.json()
 
 
 def test_settings_persist_and_hide_reserved(client):
