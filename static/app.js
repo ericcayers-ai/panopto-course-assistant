@@ -1019,3 +1019,129 @@ function restore() {
 restore();
 loadStatus().then(loadDashboard);   // home is the default panel
 loadCourses();                       // populate the multi-course switcher (§1)
+
+// ===========================================================================
+// Window + Simple/Advanced mode launcher (custom UX layer)
+// ===========================================================================
+const Mode = {
+  get window() { return recall("ui.window", ""); },
+  get level() { return recall("ui.level", "simple"); },
+  set(win, level) {
+    remember("ui.window", win); remember("ui.level", level);
+    // Best-effort persist to the server so it survives a localStorage clear (§1).
+    postJSON("/api/settings", { values: { ui_window: win, ui_level: level } }).catch(() => {});
+    applyMode();
+  },
+};
+
+function applyMode() {
+  const win = Mode.window || "full";
+  const level = Mode.level || "simple";
+  document.body.dataset.window = win;
+  document.body.dataset.level = level;
+  document.querySelectorAll(".moodle-only").forEach((n) => n.classList.toggle("hidden", win !== "moodle"));
+  const label = $("mode-label");
+  if (label) label.textContent = `${win === "moodle" ? "Moodle" : "Full"} · ${level === "simple" ? "Simple" : "Advanced"}`;
+  if (win === "moodle") { showTab("moodle-quick"); initMoodleQuick(); }
+}
+
+function openLauncher() { $("launcher").classList.remove("hidden"); }
+function closeLauncher() { $("launcher").classList.add("hidden"); }
+
+document.querySelectorAll("#launcher [data-window][data-level]").forEach((btn) =>
+  btn.addEventListener("click", () => {
+    Mode.set(btn.dataset.window, btn.dataset.level);
+    closeLauncher();
+    toast(`Switched to ${btn.dataset.window === "moodle" ? "Moodle course" : "Full"} · ${btn.dataset.level}.`, "ok");
+  })
+);
+$("mode-btn").addEventListener("click", openLauncher);
+
+// First run (no stored window) shows the launcher; otherwise apply silently.
+(function bootMode() {
+  if (!Mode.window) openLauncher();
+  applyMode();
+})();
+
+// ---- Moodle "Simple" guided flow ------------------------------------------
+let mqRecommend = null, mqInited = false;
+async function initMoodleQuick() {
+  if (mqInited) return; mqInited = true;
+  try {
+    mqRecommend = await api("/api/transcribe/recommend");
+    const r = $("mq-recommend");
+    if (r) r.textContent = mqRecommend.ready
+      ? `Best settings: ${mqRecommend.rationale}`
+      : `⚠ ${mqRecommend.reason} You can still import documents.`;
+  } catch (_) {}
+}
+
+$("mq-import")?.addEventListener("click", async () => {
+  const url = $("mq-url").value.trim();
+  if (!url) { toast("Paste your course link first.", "warn"); return; }
+  const cookies = $("mq-cookies").value.trim();
+  const btn = $("mq-import"); btn.disabled = true; btn.textContent = "Importing…";
+  const out = $("mq-import-result"); clear(out);
+  try {
+    const data = await postJSON("/api/moodle/import-url",
+      { url, cookies, follow_sections: true, save_outline: true, create_course: true });
+    if (data.course) setCourse(data.course.code || data.course.name);
+    out.appendChild(el("div", { class: "ok-box", html:
+      `Imported <strong>${data.title || data.code || "course"}</strong> — `
+      + `${data.section_count} sections, ${data.activity_count} activities, `
+      + `${(data.panopto_feeds || []).length} lecture feed(s), `
+      + `${data.pages_fetched} page(s) read.` }));
+    window.__mqFeeds = data.panopto_feeds || [];
+    renderMqFeeds();
+    $("mq-step-transcribe").classList.remove("hidden");
+    $("mq-step-export").classList.remove("hidden");
+    toast("Course imported.", "ok");
+  } catch (e) {
+    out.appendChild(el("div", { class: "warn-box", text: "Import failed: " + e.message }));
+  } finally { btn.disabled = false; btn.textContent = "Import course →"; }
+});
+
+function renderMqFeeds() {
+  const box = $("mq-feeds"); if (!box) return; clear(box);
+  const feeds = window.__mqFeeds || [];
+  if (!feeds.length) {
+    box.appendChild(el("p", { class: "muted small", text:
+      "No Panopto feed auto-detected. You can still export documents, or use the Full workspace to add a feed." }));
+    return;
+  }
+  feeds.forEach((f, i) => box.appendChild(el("div", { class: "row small muted", text: `🎬 Feed ${i + 1}: ${f}` })));
+}
+
+$("mq-autotranscribe")?.addEventListener("click", async () => {
+  const feeds = window.__mqFeeds || [];
+  if (!feeds.length) { toast("No lecture feed to transcribe.", "warn"); return; }
+  if (!mqRecommend || !mqRecommend.ready) { toast(mqRecommend?.reason || "No transcription engine.", "warn"); return; }
+  const settings = { engine: mqRecommend.engine, model: mqRecommend.model,
+    device: mqRecommend.device, language: mqRecommend.language, interval: mqRecommend.interval };
+  let queued = 0;
+  for (const feed of feeds) {
+    try {
+      const fd = await postJSON("/api/feed", { source: feed });
+      for (const lec of (fd.lectures || [])) {
+        await postJSON("/api/transcribe", { ...settings, lecture: lec });
+        queued++;
+      }
+    } catch (e) { toast("Feed error: " + e.message, "warn"); }
+  }
+  if (queued) { toast(`Queued ${queued} lecture(s) — progress updates every 30s.`, "ok"); showTab("jobs"); startJobsPolling(); }
+});
+
+$("mq-export-nblm")?.addEventListener("click", () => mqExport("notebooklm"));
+$("mq-export-ai")?.addEventListener("click", () => mqExport("all"));
+async function mqExport(kind) {
+  const out = $("mq-export-result"); clear(out);
+  try {
+    const path = kind === "notebooklm" ? "/api/export/notebooklm" : "/api/export/all";
+    const body = kind === "notebooklm" ? { combined: true } : { combined: true };
+    const data = await postJSON(path, body);
+    const dest = data.combined || data.dest || data.path || "the library";
+    out.appendChild(el("div", { class: "ok-box", html:
+      `Exported for <strong>${kind === "notebooklm" ? "NotebookLM" : "general AI"}</strong> → <code>${dest}</code>` }));
+    toast("Export ready.", "ok");
+  } catch (e) { out.appendChild(el("div", { class: "warn-box", text: "Export failed: " + e.message })); }
+}

@@ -13,7 +13,8 @@
       <div class="brand">🎓 <span>Course Assistant</span></div>
       <nav class="nav">
         <button class="tab active" data-tab="home"><span class="ico">🏠</span> Home</button>
-        <div class="nav-group">Your course</div>
+        <button class="tab moodle-only hidden" data-tab="moodle-quick"><span class="ico">📘</span> Quick import</button>
+        <div class="nav-group full-only">Your course</div>
         <button class="tab" data-tab="course"><span class="ico">🎓</span> <span class="step-n">1</span> Course</button>
         <button class="tab" data-tab="import"><span class="ico">📥</span> <span class="step-n">2</span> Import</button>
         <button class="tab" data-tab="library"><span class="ico">📚</span> <span class="step-n">3</span> Library</button>
@@ -39,7 +40,10 @@
             <input type="text" id="course-input" placeholder="Name your course…" autocomplete="off" />
           </label>
         </div>
-        <div id="status-bar" class="status-bar">checking environment…</div>
+        <div class="topbar-right">
+          <button id="mode-btn" class="ghost small" title="Switch window / Simple-Advanced">⚙︎ <span id="mode-label">Mode</span></button>
+          <div id="status-bar" class="status-bar">checking environment…</div>
+        </div>
       </header>
 
       <main>
@@ -140,7 +144,7 @@
               <p class="hint">Example feed: <code>../vibecodeapp/ExampleRssFeed.txt</code> — paste its path above and click Load.</p>
             </div>
 
-            <details id="settings" class="card hidden" open>
+            <details id="settings" class="card hidden" open data-adv-only>
               <summary><strong>2 · Transcription settings</strong> <span class="muted">(sensible defaults — tweak only if needed)</span></summary>
               <div id="engine-warning" class="banner warn hidden"></div>
               <div class="grid">
@@ -414,7 +418,86 @@
           <p class="panel-intro">Live progress of transcription jobs.</p>
           <div id="jobs-list" class="results"></div>
         </section>
+
+        <!-- MOODLE QUICK (Simple, course-window flow) -->
+        <section id="moodle-quick" class="panel">
+          <h2>📘 Import your Moodle course</h2>
+          <p class="panel-intro">Paste your course page link. With your browser session
+            it pulls the outline, documents and Panopto lectures — then you pick one export.</p>
+
+          <div class="card">
+            <h3>1 · Your course link</h3>
+            <p class="hint">The main course page, e.g.
+              <code>https://elearn.waikato.ac.nz/course/view.php?id=77547</code></p>
+            <input type="text" id="mq-url" placeholder="https://elearn.waikato.ac.nz/course/view.php?id=…" autocomplete="off" />
+            <details class="sub">
+              <summary>Need to sign in? Paste browser cookies</summary>
+              <p class="hint">Moodle needs you logged in. Paste your site cookies
+                (a <code>Cookie:</code> header or a cookies.txt export). Stored only on this machine.</p>
+              <textarea id="mq-cookies" rows="2" placeholder="MoodleSession=…; …"></textarea>
+            </details>
+            <div class="row"><button id="mq-import" class="primary">Import course →</button></div>
+            <div id="mq-import-result" class="results"></div>
+          </div>
+
+          <div class="card hidden" id="mq-step-transcribe">
+            <h3>2 · Lectures (Panopto)</h3>
+            <p class="hint" id="mq-recommend">Detecting best transcription settings…</p>
+            <div id="mq-feeds" class="results"></div>
+            <div class="row">
+              <button id="mq-autotranscribe" class="primary">Auto-transcribe all lectures</button>
+              <span class="muted small">Uses the best detected settings for your machine.</span>
+            </div>
+          </div>
+
+          <div class="card hidden" id="mq-step-export">
+            <h3>3 · Export</h3>
+            <p class="hint">One click — pick where this course is going.</p>
+            <div class="export-choice">
+              <button id="mq-export-nblm" class="tile">
+                <span class="tile-ico">📓</span><span class="tile-title">For NotebookLM</span>
+                <span class="tile-desc">Clean per-lecture Markdown sources.</span>
+              </button>
+              <button id="mq-export-ai" class="tile">
+                <span class="tile-ico">🤖</span><span class="tile-title">For general AI</span>
+                <span class="tile-desc">One combined pack for ChatGPT/Claude/etc.</span>
+              </button>
+            </div>
+            <div id="mq-export-result" class="results"></div>
+          </div>
+        </section>
       </main>
+    </div>
+  </div>
+
+  <!-- LAUNCHER: choose a window (Full app vs Moodle course) + mode (Simple/Advanced) -->
+  <div id="launcher" class="launcher hidden">
+    <div class="launcher-box">
+      <h1>How do you want to work?</h1>
+      <p class="lead">Pick a window. You can switch any time from the ⚙︎ Mode button.</p>
+      <div class="launcher-grid">
+        <div class="launch-card" data-window="full">
+          <div class="launch-ico">🧰</div>
+          <h3>Full workspace</h3>
+          <p>Everything: courses, every import source, library, study tools and exports.</p>
+          <div class="launch-modes">
+            <button class="primary" data-window="full" data-level="simple">Simple</button>
+            <button class="ghost" data-window="full" data-level="advanced">Advanced</button>
+          </div>
+        </div>
+        <div class="launch-card" data-window="moodle">
+          <div class="launch-ico">📘</div>
+          <h3>Just my Moodle course</h3>
+          <p>Paste a course link and let it pull everything — outline, files and lectures.</p>
+          <div class="launch-modes">
+            <button class="primary" data-window="moodle" data-level="simple">Simple</button>
+            <button class="ghost" data-window="moodle" data-level="advanced">Advanced</button>
+          </div>
+        </div>
+      </div>
+      <div class="launcher-foot">
+        <span class="muted small">Simple = fewest choices, best defaults. Advanced = every knob.</span>
+      </div>
     </div>
   </div>
 

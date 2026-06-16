@@ -245,3 +245,50 @@ button.tag:hover { background: var(--brand); color: #fff; }
   .course-field input { min-width: 110px; }
   .course-label { display: none; }
 }
+
+/* ---- Launcher + Simple/Advanced mode (custom UX layer) ------------------- */
+.topbar-right { display: flex; align-items: center; gap: 10px; }
+#mode-btn { white-space: nowrap; }
+
+.launcher {
+  position: fixed; inset: 0; z-index: 200;
+  background: rgba(10, 16, 28, .55); backdrop-filter: blur(3px);
+  display: flex; align-items: center; justify-content: center; padding: 24px;
+}
+.launcher.hidden { display: none; }
+.launcher-box {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--radius); box-shadow: var(--shadow);
+  max-width: 760px; width: 100%; padding: 28px;
+}
+.launcher-box h1 { margin: 0 0 4px; font-size: 1.5rem; }
+.launcher-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin: 20px 0 8px; }
+.launch-card {
+  border: 1px solid var(--border); border-radius: var(--radius);
+  background: var(--surface-2); padding: 18px; text-align: center;
+}
+.launch-ico { font-size: 2rem; }
+.launch-card h3 { margin: 6px 0; }
+.launch-card p { color: var(--muted); font-size: .9rem; min-height: 2.6em; }
+.launch-modes { display: flex; gap: 8px; justify-content: center; margin-top: 10px; }
+.launcher-foot { text-align: center; margin-top: 12px; }
+@media (max-width: 640px) { .launcher-grid { grid-template-columns: 1fr; } }
+
+.export-choice { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+@media (max-width: 640px) { .export-choice { grid-template-columns: 1fr; } }
+
+/* Simple mode hides the deeper, optional surfaces so there are fewer choices. */
+body[data-level="simple"] [data-adv-only] { display: none !important; }
+body[data-level="simple"] details.sub { /* keep collapsible extras available */ }
+
+/* Moodle window focuses the guided quick-import flow and hides full-app tabs. */
+body[data-window="moodle"] .tab[data-tab="course"],
+body[data-window="moodle"] .tab[data-tab="import"] { display: none; }
+body[data-window="moodle"] .nav-group.full-only { display: none; }
+
+.ok-box { background: var(--ok-soft); color: var(--ok); border: 1px solid var(--ok);
+  border-radius: 8px; padding: 10px 12px; margin: 8px 0; }
+.warn-box { background: var(--warn-soft); color: var(--warn); border: 1px solid var(--warn);
+  border-radius: 8px; padding: 10px 12px; margin: 8px 0; }
+details.sub { margin: 8px 0; }
+details.sub > summary { cursor: pointer; color: var(--brand); font-size: .9rem; }
