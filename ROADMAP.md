@@ -424,6 +424,8 @@ GET  /api/export/{id}
 
 ## §13 — Analytics & Local Feedback (cross-cutting, **no cloud tracking**)
 
+**Status:** ✅ **Shipped.** `analytics.py` derives feature-usage counts, an import→transcribe→export funnel, failed-job counts by §3 category, and job-duration percentiles purely from local `jobs`/`exports`/`study_sessions` rows — a test asserts the module imports no network library. A local-only `feedback_prompt` fires after ≥3 same-category failures (no submission). `diagnostics_export` writes an aggregate-only JSON (a test asserts no paths/titles/secrets leak). Routes: `GET /api/analytics`, `POST /api/analytics/export`. `tests/test_analytics.py` green.
+
 **Goal:** Understand which workflows succeed or stall — entirely from local data, never phoning home. This is privacy-first telemetry: nothing leaves the machine unless the user explicitly exports it.
 **Depends:** §1 (reads `jobs`, `exports`, `study_sessions` rows; optional `events` table).
 **Files:** `app/analytics.py` [NEW]; reads existing tables, writes an optional local `events` table.

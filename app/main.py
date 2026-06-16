@@ -42,6 +42,7 @@ from pydantic import BaseModel
 from . import core, transcribe, sources, notion, flashcards, study, database, courses, settings_store, search, llm, ai, study_planner
 from . import secrets as secret_store
 from . import exports as export_engine
+from . import analytics
 from .integrations import notion as notion_sync, anki as anki_sync, state as sync_state
 from .imports import moodle_web, folder as folder_import, preflight as import_preflight
 from .jobs import manager
@@ -814,6 +815,25 @@ def api_export_run(req: ExportReq) -> Dict[str, Any]:
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     return out
+
+
+# ---------------------------------------------------------------------------
+# Analytics & local feedback (§13) — computed from local rows; never phones home.
+# ---------------------------------------------------------------------------
+
+
+@app.get("/api/analytics")
+def api_analytics(course: Optional[int] = None) -> Dict[str, Any]:
+    stats = analytics.compute(db, course)
+    stats["feedback_prompt"] = analytics.feedback_prompt(stats)
+    return stats
+
+
+@app.post("/api/analytics/export")
+def api_analytics_export() -> Dict[str, Any]:
+    """User-initiated, anonymised diagnostics JSON (no secrets/PII, never auto-sent)."""
+    return analytics.diagnostics_export(db, OUTPUT_DIR,
+                                       settings_store.get_active_course(db))
 
 
 @app.post("/api/feed")

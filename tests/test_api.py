@@ -167,6 +167,15 @@ def test_course_archive_export_route(client):
     assert r.status_code == 200 and r.json()["file_count"] >= 1
 
 
+def test_analytics_and_diagnostics(client):
+    c, _ = client
+    r = c.get("/api/analytics")
+    assert r.status_code == 200
+    assert "usage" in r.json() and "funnel" in r.json()
+    exp = c.post("/api/analytics/export")
+    assert exp.status_code == 200 and exp.json()["anonymised"] is True
+
+
 def test_secrets_privacy_and_audit(client):
     c, _ = client
     # store a secret -> only the name is ever returned

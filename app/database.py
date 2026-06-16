@@ -534,6 +534,14 @@ class Database:
     def delete_saved_view(self, id: int) -> bool:
         return self.execute("DELETE FROM saved_views WHERE id=?", (id,)).rowcount > 0
 
+    # -- exports DAO (§9/§13) ----------------------------------------------
+
+    def list_exports(self, course_id: Optional[int] = None) -> List[sqlite3.Row]:
+        if course_id is None:
+            return self.query("SELECT * FROM exports ORDER BY created_at DESC")
+        return self.query("SELECT * FROM exports WHERE course_id=? ORDER BY created_at DESC",
+                          (course_id,))
+
     # -- audit log DAO (§10) -----------------------------------------------
 
     def add_audit(self, action: str, target: str = "", detail: str = "",
