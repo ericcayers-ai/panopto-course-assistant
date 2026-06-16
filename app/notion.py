@@ -323,11 +323,28 @@ def convert_notion_export(
 
     # A Notion "Export → HTML" download is a .zip (often wrapping nested
     # ExportBlock-*.zip parts). Unpack it to a temp dir and convert that.
+    # A *folder* may hold several such .zip exports (multiple courses/pages) —
+    # extract every one of them into a staging tree and convert the lot together.
     tmp_dir: Optional[Path] = None
     if input_path.is_file() and input_path.suffix.lower() == ".zip":
         tmp_dir = Path(tempfile.mkdtemp(prefix="notion_"))
         _extract_zip_tree(input_path, tmp_dir)
         input_path = tmp_dir
+    elif input_path.is_dir():
+        zips = sorted(input_path.glob("*.zip"))
+        if zips:
+            tmp_dir = Path(tempfile.mkdtemp(prefix="notion_"))
+            for z in zips:
+                _extract_zip_tree(z, tmp_dir / core.safe_name(z.stem))
+            # also carry along any loose .html already sitting in the folder
+            for f in input_path.rglob("*.htm*"):
+                if _looks_like_asset(f):
+                    continue
+                rel = f.relative_to(input_path)
+                target = tmp_dir / "_loose" / rel
+                target.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(f, target)
+            input_path = tmp_dir
 
     try:
         return _convert_notion_tree(input_path, output_dir, dest_name, combined)

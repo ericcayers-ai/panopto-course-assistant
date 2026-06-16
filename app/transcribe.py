@@ -82,6 +82,32 @@ def engine_status() -> Dict[str, Any]:
     }
 
 
+def recommend_settings() -> Dict[str, Any]:
+    """Best transcription settings for the current machine — used by Simple mode's
+    "auto-transcribe with best detected settings". Picks the strongest installed
+    engine, the right device, and a model size that suits CPU-vs-GPU so the user
+    needn't choose. Returns ``ready=False`` with a reason when no engine exists."""
+    st = engine_status()
+    engine = st["default_engine"]
+    if not engine:
+        return {"ready": False,
+                "reason": "No transcription engine installed (faster-whisper / whisper).",
+                "engine": None}
+    cuda = st["cuda"]
+    # On a GPU a larger model is affordable; on CPU keep it responsive.
+    model = "medium" if cuda else "small"
+    return {
+        "ready": True,
+        "engine": engine,
+        "device": "cuda" if cuda else "cpu",
+        "model": model,
+        "language": "en",
+        "interval": 30,           # progress/segment cadence (seconds)
+        "rationale": (f"{engine} on {'GPU (CUDA)' if cuda else 'CPU'} with the "
+                      f"{model} model — best speed/accuracy for this machine."),
+    }
+
+
 def _cuda_backend() -> Optional[str]:
     """Which backend can see a CUDA GPU, or None.
 
@@ -205,7 +231,9 @@ def _download_audio(url: str, dest: Path, cookies: str = "") -> Path:
 
 
 def _transcribe_faster_whisper(media: Path, model_name: str, language: str, device: str,
-                               beam_size: int, vad_filter: bool) -> Dict[str, Any]:
+                               beam_size: int, vad_filter: bool,
+                               progress: Optional[Callable[[float], None]] = None,
+                               progress_period: float = 30.0) -> Dict[str, Any]:
     try:
         model = _faster_whisper_model(model_name, device)
     except Exception:
@@ -223,11 +251,22 @@ def _transcribe_faster_whisper(media: Path, model_name: str, language: str, devi
         vad_filter=vad_filter,
         condition_on_previous_text=True,
     )
+    # faster-whisper yields segments lazily, so we can report how far through the
+    # audio we are (seg.end / total duration). Throttled to ~progress_period
+    # seconds of wall-clock so the percentage advances at least every 30s on a
+    # long lecture without spamming the job store.
+    total_dur = float(getattr(info, "duration", 0.0) or 0.0)
+    last_emit = time.time()
     segments, parts = [], []
     for seg in segments_iter:
         t = seg.text.strip()
         segments.append({"start": float(seg.start), "end": float(seg.end), "text": t})
         parts.append(t)
+        if progress and total_dur:
+            now = time.time()
+            if now - last_emit >= progress_period:
+                progress(min(0.99, float(seg.end) / total_dur))
+                last_emit = now
     return {
         "segments": segments,
         "text": " ".join(p for p in parts if p).strip(),
@@ -324,7 +363,12 @@ def transcribe_lecture(
         res = _transcribe_openai_whisper(media, model, language, device, beam_size)
     else:
         engine = "faster-whisper"
-        res = _transcribe_faster_whisper(media, model, language, device, beam_size, vad_filter)
+        # Map the audio-position fraction into the 0.45–0.9 transcription band so
+        # the job's percentage climbs steadily (refreshed ~every `interval` secs).
+        res = _transcribe_faster_whisper(
+            media, model, language, device, beam_size, vad_filter,
+            progress=lambda f: report("transcribing", 0.45 + f * 0.45),
+            progress_period=float(interval or 30))
     runtime = time.time() - t0
 
     report("writing", 0.9)

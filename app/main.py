@@ -392,7 +392,14 @@ def api_status() -> Dict[str, Any]:
     status["ai"]["config"] = _safe_ai_config(llm.get_config(db, settings_store.get_active_course(db)))
     status["secrets"] = secret_store.backend_status()
     status["privacy"] = secret_store.transparency()
+    status["transcribe_recommended"] = transcribe.recommend_settings()
     return status
+
+
+@app.get("/api/transcribe/recommend")
+def api_transcribe_recommend() -> Dict[str, Any]:
+    """Best transcription settings for this machine (Simple-mode auto-transcribe)."""
+    return transcribe.recommend_settings()
 
 
 def _safe_ai_config(cfg: Dict[str, Any]) -> Dict[str, Any]:
