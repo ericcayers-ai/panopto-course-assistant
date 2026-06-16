@@ -84,6 +84,18 @@ body {
 .topbar-left { display: flex; align-items: center; gap: 10px; }
 #menu-toggle { display: none; }
 .course-name { font-weight: 600; }
+
+/* global course field in the top bar */
+.course-field { display: inline-flex; align-items: center; gap: 8px; background: var(--surface-2); border: 1px solid var(--border); border-radius: 999px; padding: 4px 6px 4px 12px; }
+.course-label { font-size: 12px; color: var(--muted); white-space: nowrap; }
+.course-field input { border: none; background: transparent; padding: 4px 8px; min-width: 160px; font-weight: 600; color: var(--ink); font: inherit; }
+.course-field input:focus { outline: none; }
+
+/* step chips / numbers in nav + headings + flow tiles */
+.step-n { display: inline-flex; align-items: center; justify-content: center; min-width: 17px; height: 17px; padding: 0 4px; border-radius: 999px; background: rgba(255,255,255,.12); color: inherit; font-size: 11px; font-weight: 700; }
+.nav .tab.active .step-n { background: rgba(255,255,255,.28); }
+.step-chip { display: inline-flex; align-items: center; justify-content: center; min-width: 22px; height: 22px; padding: 0 6px; border-radius: 999px; background: var(--brand-soft); color: var(--brand); font-size: 13px; font-weight: 700; margin-right: 8px; vertical-align: middle; }
+.flow-tiles .step-chip { min-width: 20px; height: 20px; margin-right: 6px; }
 .status-bar { font-size: 12px; color: var(--muted); text-align: right; word-break: break-word; }
 .status-bar.ok { color: var(--ok); }
 .status-bar.warn { color: var(--warn); }
@@ -167,6 +179,14 @@ button.tag:hover { background: var(--brand); color: #fff; }
 .toggle { font-size: 13px; }
 .toolbar { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin: 10px 0; }
 
+/* ---- import segmented switch -------------------------------------------- */
+.import-switch { display: inline-flex; flex-wrap: wrap; gap: 4px; background: var(--surface-2); border: 1px solid var(--border); border-radius: 10px; padding: 4px; margin: 4px 0 12px; }
+.import-switch .seg { background: transparent; color: var(--muted); border: none; padding: 7px 14px; border-radius: 7px; font-size: 13.5px; font-weight: 500; }
+.import-switch .seg:hover { background: var(--surface); color: var(--ink); }
+.import-switch .seg.active { background: var(--brand); color: #fff; }
+.import-pane { display: none; }
+.import-pane.active { display: block; animation: fade .15s ease; }
+
 /* ---- lectures ----------------------------------------------------------- */
 .lecture { display: flex; align-items: center; gap: 12px; padding: 12px 14px; }
 .lecture-main { flex: 1; }
@@ -214,4 +234,7 @@ button.tag:hover { background: var(--brand); color: #fff; }
   .app.menu-open .sidebar { transform: translateX(0); }
   #menu-toggle { display: inline-block; }
   main { padding: 16px; }
+  .topbar { flex-wrap: wrap; }
+  .course-field input { min-width: 110px; }
+  .course-label { display: none; }
 }

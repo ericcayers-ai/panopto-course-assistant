@@ -56,7 +56,7 @@ function showTab(name) {
   document.querySelectorAll(".panel").forEach((p) => p.classList.toggle("active", p.id === name));
   document.querySelector(".app").classList.remove("menu-open");  // close mobile drawer
   if (name === "home") loadDashboard();
-  if (name === "transcripts") loadTranscripts();
+  if (name === "library") loadTranscripts();
   if (name === "jobs") loadJobs();
 }
 document.querySelectorAll(".tab").forEach((btn) =>
@@ -65,6 +65,17 @@ document.querySelectorAll(".tab").forEach((btn) =>
 // dashboard tiles + any [data-goto] element jump to a tab
 document.querySelectorAll("[data-goto]").forEach((b) =>
   b.addEventListener("click", () => showTab(b.dataset.goto))
+);
+
+// ---- import sub-switch (lectures / documents / notion / browse) -----------
+
+function showImport(name) {
+  document.querySelectorAll(".seg").forEach((b) => b.classList.toggle("active", b.dataset.import === name));
+  document.querySelectorAll(".import-pane").forEach((p) =>
+    p.classList.toggle("active", p.id === "import-" + name));
+}
+document.querySelectorAll(".seg").forEach((btn) =>
+  btn.addEventListener("click", () => showImport(btn.dataset.import))
 );
 
 // ---- theme + mobile menu --------------------------------------------------
@@ -203,17 +214,38 @@ function gatherSettings() {
     skip_existing: $("opt-skip").checked,
     force: $("opt-force").checked,
     cookies: $("opt-cookies").value.trim(),
-    course: $("opt-course").value.trim(),
+    course: currentCourse(),
   };
+}
+
+// ---- global course context (single source of truth) -----------------------
+// The course name in the top bar tags every import and export automatically.
+
+function currentCourse() {
+  const inp = $("course-input");
+  return inp ? inp.value.trim() : recall("course");
 }
 
 function setCourse(name) {
   if (!name) return;
-  $("course-name").textContent = name;
-  if (!$("opt-course").value) $("opt-course").value = name;
-  if (!$("nlm-course").value) $("nlm-course").value = name;
+  const top = $("course-input");
+  if (top) top.value = name;
+  const main = $("course-name-main");
+  if (main) main.value = name;
   remember("course", name);
 }
+
+// keep the top-bar field and the Course panel field in sync + persisted
+$("course-input").addEventListener("input", () => remember("course", $("course-input").value.trim()));
+$("course-name-set").addEventListener("click", () => {
+  const name = $("course-name-main").value.trim();
+  if (!name) { toast("Type a course name first.", "warn"); return; }
+  setCourse(name);
+  toast("Course set to “" + name + "”.", "ok");
+});
+$("course-name-main").addEventListener("keydown", (e) => {
+  if (e.key === "Enter") $("course-name-set").click();
+});
 
 // ---- lectures -------------------------------------------------------------
 
@@ -308,7 +340,7 @@ async function transcribeLectures(indexes, allowReTranscribe = false) {
 }
 
 function openLectureTranscript(lec) {
-  showTab("transcripts");
+  showTab("library");
   // after the list loads, open the best available format for this lecture
   setTimeout(async () => {
     try {
@@ -356,7 +388,6 @@ $("feed-file").addEventListener("change", async (ev) => {
   } catch (e) { toast("Error: " + e.message, "warn"); }
 });
 
-$("opt-course").addEventListener("change", () => setCourse($("opt-course").value.trim()));
 $("sel-all").addEventListener("click", () => document.querySelectorAll(".lec-check").forEach((c) => (c.checked = true)));
 $("sel-none").addEventListener("click", () => document.querySelectorAll(".lec-check").forEach((c) => (c.checked = false)));
 $("transcribe-selected").addEventListener("click", () => transcribeLectures(checkedIndexes()));
@@ -412,7 +443,7 @@ $("nlm-export").addEventListener("click", async () => {
   try {
     const data = await api("/api/export/notebooklm", {
       method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ course: $("nlm-course").value.trim(), combined: $("nlm-combined").checked }),
+      body: JSON.stringify({ course: currentCourse(), combined: $("nlm-combined").checked }),
     });
     clear(out);
     out.appendChild(el("p", { class: "ok-text", text: `✓ Exported ${data.count} file(s) → ${data.dest}` }));
@@ -436,7 +467,7 @@ $("studycsv-go").addEventListener("click", async () => {
   try {
     const data = await api("/api/export/notion-csv", {
       method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ course: $("studycsv-course").value.trim() || recall("course") }),
+      body: JSON.stringify({ course: currentCourse() }),
     });
     clear(out);
     out.appendChild(el("p", { class: "ok-text", text: `✓ ${data.count} lecture(s) → ${data.csv}` }));
@@ -482,7 +513,7 @@ async function doSearch() {
         el("div", { class: "search-head" }, [
           el("strong", { text: label }),
           el("span", { class: "badge", text: `${r.count} hit${r.count === 1 ? "" : "s"}` }),
-          el("button", { class: "tag", text: "open", onclick: () => viewTranscript(r.file).then(() => showTab("transcripts")) }),
+          el("button", { class: "tag", text: "open", onclick: () => viewTranscript(r.file).then(() => showTab("library")) }),
         ]),
       ]);
       r.snippets.forEach((s) => card.appendChild(el("div", { class: "snippet", text: s })));
@@ -499,8 +530,8 @@ function renderDeckResult(out, data, label) {
   clear(out);
   out.appendChild(el("p", { class: "ok-text", text: `✓ ${data.count} card(s) — ${label}` }));
   out.appendChild(el("div", { class: "row" }, [
-    el("button", { class: "tag", text: "view Anki .txt", onclick: () => { viewTranscript(data.anki_tsv); showTab("transcripts"); } }),
-    el("button", { class: "tag", text: "view .csv", onclick: () => { viewTranscript(data.csv); showTab("transcripts"); } }),
+    el("button", { class: "tag", text: "view Anki .txt", onclick: () => { viewTranscript(data.anki_tsv); showTab("library"); } }),
+    el("button", { class: "tag", text: "view .csv", onclick: () => { viewTranscript(data.csv); showTab("library"); } }),
   ]));
   out.appendChild(el("p", { class: "hint", text: "In Anki: File → Import → pick the .txt (tags map to column 3)." }));
   (data.preview || []).forEach((c) => {
@@ -521,7 +552,7 @@ $("fc-generate").addEventListener("click", async () => {
       method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         deck: $("fc-deck").value.trim() || "flashcards",
-        course: $("fc-course").value.trim() || recall("course"),
+        course: currentCourse(),
         prefer: $("fc-prefer").value,
         max_per_lecture: parseInt($("fc-max").value, 10) || 15,
       }),
@@ -544,7 +575,7 @@ $("fc-categorize").addEventListener("click", async () => {
       method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         text, path,
-        course: $("fc-cat-course").value.trim() || recall("course"),
+        course: currentCourse(),
         extra_keywords: $("fc-cat-kw").value.split(",").map((s) => s.trim()).filter(Boolean),
         deck: $("fc-cat-deck").value.trim() || "categorized",
       }),
@@ -580,11 +611,11 @@ $("pdf-go").addEventListener("click", async () => {
     clear(out);
     out.appendChild(el("p", { class: "ok-text", text: `✓ Converted ${data.count} document(s) → ${data.output_root}` }));
     if (data.combined) out.appendChild(el("div", {}, [
-      el("button", { class: "tag", text: "view documents_pack.md", onclick: () => { viewTranscript(data.combined); showTab("transcripts"); } }),
+      el("button", { class: "tag", text: "view documents_pack.md", onclick: () => { viewTranscript(data.combined); showTab("library"); } }),
     ]));
     data.files.forEach((f) => {
       const row = el("div", { class: "list-item" }, [el("span", { class: "li-label", text: f.error ? `⚠ ${f.src}: ${f.error}` : f.md })]);
-      if (!f.error && target === "ai") row.appendChild(el("button", { class: "tag", text: "view", onclick: () => { viewTranscript(f.md); showTab("transcripts"); } }));
+      if (!f.error && target === "ai") row.appendChild(el("button", { class: "tag", text: "view", onclick: () => { viewTranscript(f.md); showTab("library"); } }));
       out.appendChild(row);
     });
     toast(`Converted ${data.count} document(s).`, "ok");
@@ -713,11 +744,11 @@ $("notion-go").addEventListener("click", async () => {
     clear(out);
     out.appendChild(el("p", { class: "ok-text", text: `✓ Converted ${d.count} page(s) → ${d.dest}` }));
     if (d.combined) out.appendChild(el("div", {}, [
-      el("button", { class: "tag", text: "view notion_pack.md", onclick: () => { viewTranscript(d.combined); showTab("transcripts"); } }),
+      el("button", { class: "tag", text: "view notion_pack.md", onclick: () => { viewTranscript(d.combined); showTab("library"); } }),
     ]));
     d.files.forEach((f) => out.appendChild(el("div", { class: "list-item" }, [
       el("span", { class: "li-label", text: f }),
-      el("button", { class: "tag", text: "view", onclick: () => { viewTranscript(f); showTab("transcripts"); } }),
+      el("button", { class: "tag", text: "view", onclick: () => { viewTranscript(f); showTab("library"); } }),
     ])));
     toast(`Converted ${d.count} Notion page(s).`, "ok");
   } catch (e) { out.textContent = "Error: " + e.message; toast(e.message, "warn"); }
@@ -745,7 +776,7 @@ function restore() {
   $("moodle-path").value = recall("moodlepath");
   $("notion-path").value = recall("notionpath");
   const course = recall("course");
-  if (course) { $("course-name").textContent = course; $("opt-course").value = course; $("nlm-course").value = course; }
+  if (course) { $("course-input").value = course; $("course-name-main").value = course; }
   try {
     const s = JSON.parse(recall("settings") || "{}");
     if (s.model) $("opt-model").value = s.model;

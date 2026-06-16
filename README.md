@@ -10,18 +10,20 @@ courses but **course-agnostic** (validated against 7 different Moodle exports).
 A **Python / FastAPI** backend with a plain **HTML + JavaScript** frontend
 (no build step), a sidebar dashboard, and light/dark themes.
 
-## Features
+## An all-in-one course workflow
 
-| Tab | What it does |
+The app is organised as **one flow around a single course**, not a pile of
+separate tools. You **name your course once** (in the bar at the top — it tags
+every import and export automatically), then move through four steps:
+
+| Step | What it does |
 | --- | --- |
-| **Home** | Dashboard: environment status, quick-action tiles, and at-a-glance counts. |
-| **Lectures** | Load a Panopto RSS feed (URL, local `.xml`, or upload). Lectures show week/date/duration/size and a **transcribed / pending** badge; transcribe one, a selection, or **all pending** in a batch. |
-| **Documents** | Convert **PDF / PowerPoint / Word / Excel / HTML / EPUB / CSV…** to Markdown via [MarkItDown](https://github.com/microsoft/markitdown) — as AI sources (`_docs/`, with an optional combined pack) or a sibling `*_copy` mirror. |
-| **Materials** | **Parse a Moodle course export** for the title + week/topic outline (any Moodle course); **convert a Notion HTML export** (page or folder) to clean Markdown; and browse any local folder. |
-| **Transcripts** | Read transcripts (grouped per lecture, format chips). Export for **NotebookLM**, export a **Notion study-database CSV**, and **reorganize** into auto/week/lecture/module/date/topic folders. |
-| **Search** | Full-text search across every transcript — one ranked result per lecture, with snippets and jump-to-transcript. |
-| **Flashcards** | **Generate Anki-importable flashcards** (definitions + acronyms) from your transcripts, auto-tagged by course·week·topic — or paste an existing deck and **auto-categorize/tag** it. |
-| **Jobs** | Live progress of transcription jobs with a count badge; finished jobs refresh the lecture badges. |
+| 🏠 **Home** | Overview: how the flow works, environment status, and at-a-glance counts for the current course. |
+| 🎓 **1 · Course** | Name your course, or **grab its real title + week/topic outline from a Moodle export** (any Moodle course) and use it as the course name in one click. |
+| 📥 **2 · Import** | One hub to **keep importing whatever you have**, with a sub-switch: **Lectures** (load a Panopto RSS feed — URL, local `.xml`, or upload — then transcribe one, a selection, or all pending), **Documents** (PDF / PowerPoint / Word / Excel / HTML / EPUB / CSV… → Markdown via [MarkItDown](https://github.com/microsoft/markitdown)), **Notion** (an HTML export → clean Markdown), and **Browse files** (find a folder path on disk). Everything lands in your Library. |
+| 📚 **3 · Library** | Everything you've imported, in one searchable place: full-text **search** across transcripts, a **viewer**, and **reorganize** into auto/week/lecture/module/date/topic folders. |
+| 📤 **4 · Export** | Turn the library into study material — **NotebookLM** sources, an **Anki** flashcard deck (auto-tagged by course·week·topic, plus categorize-an-existing-deck), and a **Notion study-database CSV** — all tagged with your course name. |
+| ⚙️ **Jobs** | Live progress of transcription jobs with a count badge; finished jobs refresh the lecture badges. |
 
 ### Transcription options
 
@@ -40,8 +42,8 @@ the browser between visits.
 The transcription engine ([faster-whisper](https://github.com/SYSTRAN/faster-whisper)
 or [openai-whisper](https://github.com/openai/whisper)) is **optional**. The app
 runs fine for feed parsing, search, viewing, PDF conversion, export and browsing
-without it — the **Lectures** tab simply shows that no engine is installed and
-disables the transcribe buttons.
+without it — the **Import → Lectures** view simply shows that no engine is
+installed and disables the transcribe buttons.
 
 ## Quick start (no terminal needed)
 
@@ -83,7 +85,7 @@ python run.py                     # http://127.0.0.1:8000
 
 [NotebookLM](https://notebooklm.google.com/) works best when each source is
 clean, readable prose — per-segment timestamps fragment sentences and add noise.
-The **Transcripts → Export for NotebookLM** button (or `POST /api/export/notebooklm`)
+The **Export → NotebookLM sources** button (or `POST /api/export/notebooklm`)
 turns your existing transcripts into NotebookLM-ready Markdown:
 
 - **One file per lecture** under `transcripts/_notebooklm/`, mirroring the
@@ -97,8 +99,8 @@ How to use it:
 
 1. Transcribe some lectures (or drop existing `.txt`/`.json` transcripts in the
    output folder).
-2. Open the **Transcripts** tab, optionally type a course name, tick *combined*
-   if you want a single file, and click **Export all transcripts**.
+2. Open the **Export** step, tick *combined* if you want a single file, and click
+   **Export all** (the course name from the top bar is applied automatically).
 3. In NotebookLM, click **+ Add source** and upload the `.md` files from
    `transcripts/_notebooklm/` (or just `course_pack.md`).
 

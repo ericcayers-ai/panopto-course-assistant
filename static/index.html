@@ -13,14 +13,11 @@
       <div class="brand">🎓 <span>Course Assistant</span></div>
       <nav class="nav">
         <button class="tab active" data-tab="home"><span class="ico">🏠</span> Home</button>
-        <div class="nav-group">Build</div>
-        <button class="tab" data-tab="lectures"><span class="ico">📡</span> Lectures</button>
-        <button class="tab" data-tab="pdf"><span class="ico">📑</span> Documents</button>
-        <button class="tab" data-tab="materials"><span class="ico">📂</span> Materials</button>
-        <div class="nav-group">Study</div>
-        <button class="tab" data-tab="transcripts"><span class="ico">📄</span> Transcripts</button>
-        <button class="tab" data-tab="search"><span class="ico">🔎</span> Search</button>
-        <button class="tab" data-tab="flashcards"><span class="ico">🃏</span> Flashcards</button>
+        <div class="nav-group">Your course</div>
+        <button class="tab" data-tab="course"><span class="ico">🎓</span> <span class="step-n">1</span> Course</button>
+        <button class="tab" data-tab="import"><span class="ico">📥</span> <span class="step-n">2</span> Import</button>
+        <button class="tab" data-tab="library"><span class="ico">📚</span> <span class="step-n">3</span> Library</button>
+        <button class="tab" data-tab="export"><span class="ico">📤</span> <span class="step-n">4</span> Export</button>
         <div class="nav-group">System</div>
         <button class="tab" data-tab="jobs"><span class="ico">⚙️</span> Jobs <span id="jobs-badge" class="count-badge hidden">0</span></button>
       </nav>
@@ -35,7 +32,10 @@
       <header class="topbar">
         <div class="topbar-left">
           <button id="menu-toggle" class="ghost small" title="Menu">☰</button>
-          <span id="course-name" class="course-name">No course loaded</span>
+          <label class="course-field" title="Everything you import and export is tagged with this course">
+            <span class="course-label">🎓 Course</span>
+            <input type="text" id="course-input" placeholder="Name your course…" autocomplete="off" />
+          </label>
         </div>
         <div id="status-bar" class="status-bar">checking environment…</div>
       </header>
@@ -44,135 +44,267 @@
         <!-- HOME / DASHBOARD -->
         <section id="home" class="panel active">
           <div class="hero">
-            <h1>Turn lectures into study material</h1>
-            <p class="lead">Load a Panopto feed or course documents, transcribe and convert them,
-              then export clean sources for <strong>NotebookLM</strong>, <strong>Anki</strong> and
-              <strong>Notion</strong> — all in one place.</p>
+            <h1>Everything for one course, in one place</h1>
+            <p class="lead">Name your course, <strong>keep importing</strong> whatever you have —
+              Panopto lectures, slides, documents, Moodle and Notion exports — then
+              <strong>export</strong> it as clean study material for
+              <strong>NotebookLM</strong>, <strong>Anki</strong> or <strong>Notion</strong>.</p>
           </div>
 
           <div id="dash-env" class="env-strip"></div>
 
-          <h3 class="section-title">What do you want to do?</h3>
-          <div class="tiles">
-            <button class="tile" data-goto="lectures">
-              <span class="tile-ico">📡</span><span class="tile-title">Transcribe lectures</span>
-              <span class="tile-desc">Load an RSS feed and turn recordings into transcripts.</span>
+          <h3 class="section-title">How it works</h3>
+          <div class="tiles flow-tiles">
+            <button class="tile" data-goto="course">
+              <span class="tile-ico">🎓</span><span class="tile-title"><span class="step-chip">1</span> Set up your course</span>
+              <span class="tile-desc">Name it, or grab its title &amp; outline from a Moodle export.</span>
             </button>
-            <button class="tile" data-goto="pdf">
-              <span class="tile-ico">📑</span><span class="tile-title">Convert documents</span>
-              <span class="tile-desc">PDF / PowerPoint / Word / Excel → Markdown for any AI.</span>
+            <button class="tile" data-goto="import">
+              <span class="tile-ico">📥</span><span class="tile-title"><span class="step-chip">2</span> Import your stuff</span>
+              <span class="tile-desc">Lectures, PDFs, slides, Word/Excel, Notion pages — keep adding.</span>
             </button>
-            <button class="tile" data-goto="transcripts">
-              <span class="tile-ico">📄</span><span class="tile-title">Transcripts & exports</span>
-              <span class="tile-desc">Read, organise, NotebookLM + Notion-CSV exports.</span>
+            <button class="tile" data-goto="library">
+              <span class="tile-ico">📚</span><span class="tile-title"><span class="step-chip">3</span> Browse &amp; search</span>
+              <span class="tile-desc">Everything you've collected, fully searchable in one library.</span>
             </button>
-            <button class="tile" data-goto="flashcards">
-              <span class="tile-ico">🃏</span><span class="tile-title">Make flashcards</span>
-              <span class="tile-desc">Auto-generate &amp; tag Anki cards from your notes.</span>
-            </button>
-            <button class="tile" data-goto="search">
-              <span class="tile-ico">🔎</span><span class="tile-title">Search everything</span>
-              <span class="tile-desc">Full-text search across every transcript.</span>
-            </button>
-            <button class="tile" data-goto="materials">
-              <span class="tile-ico">🏫</span><span class="tile-title">Course materials</span>
-              <span class="tile-desc">Parse Moodle exports, convert Notion pages, browse files.</span>
+            <button class="tile" data-goto="export">
+              <span class="tile-ico">📤</span><span class="tile-title"><span class="step-chip">4</span> Export as…</span>
+              <span class="tile-desc">NotebookLM sources, Anki flashcards, or a Notion study database.</span>
             </button>
           </div>
 
-          <h3 class="section-title">At a glance</h3>
+          <h3 class="section-title">This course at a glance</h3>
           <div id="dash-stats" class="stats"></div>
         </section>
 
-        <!-- LECTURES -->
-        <section id="lectures" class="panel">
-          <h2>Lectures</h2>
-          <p class="panel-intro">Load a Panopto RSS feed, then transcribe recordings into timestamped text.</p>
+        <!-- 1 · COURSE -->
+        <section id="course" class="panel">
+          <h2><span class="step-chip">1</span> Your course</h2>
+          <p class="panel-intro">Give your course a name (used to tag every import and export), or
+            grab its real title and weekly outline straight from a Moodle export.</p>
+
           <div class="card">
-            <h3>1 · Load a feed</h3>
+            <h3>🎓 Course name</h3>
+            <p class="hint">This name flows everywhere automatically — transcripts, flashcards, NotebookLM
+              and Notion exports all get tagged with it. You can change it any time from the bar at the top.</p>
             <div class="row">
-              <input type="text" id="feed-source" placeholder="Panopto RSS feed URL or local .xml path" />
-              <button id="feed-load">Load feed</button>
+              <input type="text" id="course-name-main" placeholder="e.g. COMPX234 — Networks" />
+              <button id="course-name-set">Set course</button>
             </div>
-            <div class="row">
-              <span class="muted">or upload an RSS XML file:</span>
-              <input type="file" id="feed-file" accept=".xml,.rss,.txt" />
-            </div>
-            <p class="hint">Example feed: <code>../vibecodeapp/ExampleRssFeed.txt</code> — paste its path above and click Load.</p>
           </div>
 
-          <details id="settings" class="card hidden" open>
-            <summary><strong>2 · Transcription settings</strong> <span class="muted">(click to collapse)</span></summary>
-            <div id="engine-warning" class="banner warn hidden"></div>
-            <div class="grid">
-              <label>Course name
-                <input type="text" id="opt-course" placeholder="e.g. your course name" />
-              </label>
-              <label>Engine <select id="opt-engine"></select></label>
-              <label>Model
-                <select id="opt-model">
-                  <option>tiny</option><option>base</option>
-                  <option selected>small</option><option>medium</option>
-                  <option>large-v3</option>
-                </select>
-              </label>
-              <label>Language <input type="text" id="opt-language" value="en" /></label>
-              <label>Device
-                <select id="opt-device"><option>auto</option><option>cuda</option><option>cpu</option></select>
-              </label>
-              <label>Organize by
-                <select id="opt-organize">
-                  <option value="auto" selected>auto</option>
-                  <option value="week">week</option>
-                  <option value="lecture">lecture</option>
-                  <option value="module">module</option>
-                  <option value="date">date</option>
-                  <option value="topic">topic</option>
-                  <option value="none">none</option>
-                </select>
-              </label>
-              <label>TXT timestamp interval (s)
-                <input type="number" id="opt-interval" value="30" min="1" max="600" />
-              </label>
-            </div>
-            <div class="outputs-row">
-              <span class="muted">Output formats:</span>
-              <span id="opt-outputs" class="checks"></span>
-            </div>
-            <div class="toggles">
-              <label class="toggle"><input type="checkbox" id="opt-audio" /> audio-only download <span class="muted">(saves bandwidth, needs yt-dlp+ffmpeg)</span></label>
-              <label class="toggle"><input type="checkbox" id="opt-keep" /> keep media file</label>
-              <label class="toggle"><input type="checkbox" id="opt-skip" checked /> skip already-transcribed</label>
-              <label class="toggle"><input type="checkbox" id="opt-force" /> force re-transcribe</label>
-            </div>
+          <div class="card">
+            <h3>🏫 Grab course info from Moodle</h3>
+            <p class="hint">Point at a saved Moodle course folder (or its <code>course/view_php.html</code>)
+              to pull the course title and week/topic outline — then use it as your course name in one click.
+              Works with any Moodle course.</p>
             <div class="row">
-              <input type="text" id="opt-cookies" placeholder="cookies.txt path (optional, for auth-gated feeds)" />
+              <input type="text" id="moodle-path" placeholder="Path to the Moodle course folder or HTML file" />
+              <button id="moodle-go">Grab</button>
             </div>
-          </details>
-
-          <div id="lectures-heading" class="hidden"><h3>3 · Choose lectures</h3></div>
-          <div id="lectures-toolbar" class="toolbar hidden">
-            <button id="sel-all" class="ghost">Select all</button>
-            <button id="sel-none" class="ghost">Clear</button>
-            <button id="transcribe-selected">Transcribe selected</button>
-            <button id="transcribe-pending" class="ghost">Transcribe all pending</button>
-            <span id="lectures-summary" class="muted"></span>
+            <div id="moodle-results" class="results"></div>
           </div>
-          <div id="lectures-list"></div>
         </section>
 
-        <!-- TRANSCRIPTS -->
-        <section id="transcripts" class="panel">
-          <h2>Transcripts <button id="transcripts-refresh" class="small ghost">↻ refresh</button></h2>
-          <p class="panel-intro">Read your transcripts and export them as study sources.</p>
+        <!-- 2 · IMPORT -->
+        <section id="import" class="panel">
+          <h2><span class="step-chip">2</span> Import your stuff</h2>
+          <p class="panel-intro">Keep adding whatever you have for this course. Everything lands in your
+            <strong>Library</strong>, ready to export. Pick a source below.</p>
+
+          <div class="import-switch">
+            <button class="seg active" data-import="lectures">📡 Lectures</button>
+            <button class="seg" data-import="documents">📑 Documents</button>
+            <button class="seg" data-import="notion">🗒️ Notion</button>
+            <button class="seg" data-import="browse">📂 Browse files</button>
+          </div>
+
+          <!-- LECTURES -->
+          <div id="import-lectures" class="import-pane active">
+            <div class="card">
+              <h3>1 · Load a Panopto feed</h3>
+              <div class="row">
+                <input type="text" id="feed-source" placeholder="Panopto RSS feed URL or local .xml path" />
+                <button id="feed-load">Load feed</button>
+              </div>
+              <div class="row">
+                <span class="muted">or upload an RSS XML file:</span>
+                <input type="file" id="feed-file" accept=".xml,.rss,.txt" />
+              </div>
+              <p class="hint">Example feed: <code>../vibecodeapp/ExampleRssFeed.txt</code> — paste its path above and click Load.</p>
+            </div>
+
+            <details id="settings" class="card hidden" open>
+              <summary><strong>2 · Transcription settings</strong> <span class="muted">(click to collapse)</span></summary>
+              <div id="engine-warning" class="banner warn hidden"></div>
+              <div class="grid">
+                <label>Engine <select id="opt-engine"></select></label>
+                <label>Model
+                  <select id="opt-model">
+                    <option>tiny</option><option>base</option>
+                    <option selected>small</option><option>medium</option>
+                    <option>large-v3</option>
+                  </select>
+                </label>
+                <label>Language <input type="text" id="opt-language" value="en" /></label>
+                <label>Device
+                  <select id="opt-device"><option>auto</option><option>cuda</option><option>cpu</option></select>
+                </label>
+                <label>Organize by
+                  <select id="opt-organize">
+                    <option value="auto" selected>auto</option>
+                    <option value="week">week</option>
+                    <option value="lecture">lecture</option>
+                    <option value="module">module</option>
+                    <option value="date">date</option>
+                    <option value="topic">topic</option>
+                    <option value="none">none</option>
+                  </select>
+                </label>
+                <label>TXT timestamp interval (s)
+                  <input type="number" id="opt-interval" value="30" min="1" max="600" />
+                </label>
+              </div>
+              <div class="outputs-row">
+                <span class="muted">Output formats:</span>
+                <span id="opt-outputs" class="checks"></span>
+              </div>
+              <div class="toggles">
+                <label class="toggle"><input type="checkbox" id="opt-audio" /> audio-only download <span class="muted">(saves bandwidth, needs yt-dlp+ffmpeg)</span></label>
+                <label class="toggle"><input type="checkbox" id="opt-keep" /> keep media file</label>
+                <label class="toggle"><input type="checkbox" id="opt-skip" checked /> skip already-transcribed</label>
+                <label class="toggle"><input type="checkbox" id="opt-force" /> force re-transcribe</label>
+              </div>
+              <div class="row">
+                <input type="text" id="opt-cookies" placeholder="cookies.txt path (optional, for auth-gated feeds)" />
+              </div>
+            </details>
+
+            <div id="lectures-heading" class="hidden"><h3>3 · Choose lectures to transcribe</h3></div>
+            <div id="lectures-toolbar" class="toolbar hidden">
+              <button id="sel-all" class="ghost">Select all</button>
+              <button id="sel-none" class="ghost">Clear</button>
+              <button id="transcribe-selected">Transcribe selected</button>
+              <button id="transcribe-pending" class="ghost">Transcribe all pending</button>
+              <span id="lectures-summary" class="muted"></span>
+            </div>
+            <div id="lectures-list"></div>
+          </div>
+
+          <!-- DOCUMENTS -->
+          <div id="import-documents" class="import-pane">
+            <div class="card">
+              <h3>📑 Documents → Markdown</h3>
+              <p class="hint">Convert <strong>PDF, PowerPoint, Word, Excel, HTML, EPUB, CSV…</strong> into
+                Markdown sources for NotebookLM or any other AI. Powered by
+                <a href="https://github.com/microsoft/markitdown" target="_blank" rel="noopener">MarkItDown</a>.</p>
+              <div class="row">
+                <input type="text" id="pdf-path" placeholder="Folder path or a single document (e.g. C:\Users\…\Slides-20260615)" />
+                <button id="pdf-go">Convert</button>
+              </div>
+              <div class="outputs-row">
+                <span class="muted">File types:</span>
+                <span id="doc-exts" class="checks"></span>
+              </div>
+              <div class="grid">
+                <label>Output
+                  <select id="doc-target">
+                    <option value="ai" selected>Library (importable, exportable to NotebookLM)</option>
+                    <option value="copy">sibling *_copy folder (mirror in place)</option>
+                  </select>
+                </label>
+              </div>
+              <div class="toggles">
+                <label class="toggle"><input type="checkbox" id="pdf-recursive" checked /> include subfolders</label>
+                <label class="toggle"><input type="checkbox" id="pdf-overwrite" /> overwrite existing</label>
+                <label class="toggle"><input type="checkbox" id="doc-combined" /> combined <code>documents_pack.md</code> (Library)</label>
+              </div>
+            </div>
+            <div id="pdf-results" class="results"></div>
+          </div>
+
+          <!-- NOTION -->
+          <div id="import-notion" class="import-pane">
+            <div class="card">
+              <h3>🗒️ Convert a Notion HTML export</h3>
+              <p class="hint">Point at a Notion page exported as HTML (a single <code>.html</code> file or the
+                export folder). Produces clean Markdown in your Library — great as NotebookLM / AI sources.</p>
+              <div class="row">
+                <input type="text" id="notion-path" placeholder="Path to a Notion .html file or export folder" />
+                <label class="toggle"><input type="checkbox" id="notion-combined" /> combined <code>notion_pack.md</code></label>
+                <button id="notion-go">Convert</button>
+              </div>
+              <div id="notion-results" class="results"></div>
+            </div>
+          </div>
+
+          <!-- BROWSE -->
+          <div id="import-browse" class="import-pane">
+            <div class="card">
+              <h3>📂 Browse a local folder</h3>
+              <p class="hint">Find the exact path to a slides or documents folder, then paste it into
+                <em>Documents</em> or <em>Notion</em> above.</p>
+              <div class="row">
+                <input type="text" id="materials-path" placeholder="Folder path to browse (e.g. ..\Slides-20260615)" />
+                <button id="materials-go">List</button>
+                <button id="materials-up" class="ghost" title="Parent folder">↑ up</button>
+              </div>
+              <div id="materials-results" class="results"></div>
+            </div>
+          </div>
+        </section>
+
+        <!-- 3 · LIBRARY -->
+        <section id="library" class="panel">
+          <h2><span class="step-chip">3</span> Library <button id="transcripts-refresh" class="small ghost">↻ refresh</button></h2>
+          <p class="panel-intro">Everything you've imported for this course — transcripts and converted documents —
+            in one searchable place.</p>
+
+          <div class="card">
+            <h3>🔎 Search everything</h3>
+            <div class="row">
+              <input type="text" id="search-q" placeholder="Search across every transcript — e.g. three-way handshake" />
+              <button id="search-go">Search</button>
+            </div>
+            <div id="search-results" class="results"></div>
+          </div>
+
+          <div class="card">
+            <h3>🗂️ Reorganize files</h3>
+            <p class="hint">Move existing transcripts into folders by week / date / topic.</p>
+            <div class="row">
+              <select id="org-by">
+                <option value="auto" selected>auto</option>
+                <option value="week">week</option>
+                <option value="lecture">lecture</option>
+                <option value="module">module</option>
+                <option value="date">date</option>
+                <option value="topic">topic</option>
+                <option value="none">none (flat)</option>
+              </select>
+              <button id="org-go" class="ghost">Reorganize</button>
+              <span id="org-results" class="muted"></span>
+            </div>
+          </div>
+
+          <div class="split">
+            <div id="transcripts-list" class="list"></div>
+            <pre id="transcript-view" class="viewer">Select an item on the left to view it here.</pre>
+          </div>
+        </section>
+
+        <!-- 4 · EXPORT -->
+        <section id="export" class="panel">
+          <h2><span class="step-chip">4</span> Export as…</h2>
+          <p class="panel-intro">Turn your library into study material. Everything is tagged with your
+            course name automatically.</p>
 
           <div class="export-grid">
             <div class="card">
-              <h3>📤 Export for NotebookLM</h3>
+              <h3>📓 NotebookLM sources</h3>
               <p class="hint">Clean, de-timestamped Markdown (one file per lecture) under
                 <code>_notebooklm/</code> — ready to upload to NotebookLM as sources.</p>
               <div class="row">
-                <input type="text" id="nlm-course" placeholder="Course name (optional)" />
                 <label class="toggle"><input type="checkbox" id="nlm-combined" /> combined <code>course_pack.md</code></label>
                 <button id="nlm-export">Export all</button>
               </div>
@@ -180,65 +312,23 @@
             </div>
 
             <div class="card">
-              <h3>🗃️ Study database (Notion CSV)</h3>
+              <h3>🗃️ Notion study database (CSV)</h3>
               <p class="hint">One row per lecture — Name, Week, Date, Topic, Tags, Status, Summary.
                 In Notion: <em>Import → CSV</em>, then set Tags to <em>Multi-select</em>.</p>
               <div class="row">
-                <input type="text" id="studycsv-course" placeholder="Course name (optional)" />
                 <button id="studycsv-go">Export CSV</button>
               </div>
               <div id="studycsv-results" class="results"></div>
             </div>
-
-            <div class="card">
-              <h3>🗂️ Reorganize files</h3>
-              <p class="hint">Move existing transcripts into folders by week / date / topic.</p>
-              <div class="row">
-                <select id="org-by">
-                  <option value="auto" selected>auto</option>
-                  <option value="week">week</option>
-                  <option value="lecture">lecture</option>
-                  <option value="module">module</option>
-                  <option value="date">date</option>
-                  <option value="topic">topic</option>
-                  <option value="none">none (flat)</option>
-                </select>
-                <button id="org-go" class="ghost">Reorganize</button>
-                <span id="org-results" class="muted"></span>
-              </div>
-            </div>
           </div>
-
-          <div class="split">
-            <div id="transcripts-list" class="list"></div>
-            <pre id="transcript-view" class="viewer">Select a transcript on the left to view it here.</pre>
-          </div>
-        </section>
-
-        <!-- SEARCH -->
-        <section id="search" class="panel">
-          <h2>Search</h2>
-          <p class="panel-intro">Full-text search across every transcript — one result per lecture.</p>
-          <div class="row">
-            <input type="text" id="search-q" placeholder="e.g. three-way handshake" />
-            <button id="search-go">Search</button>
-          </div>
-          <div id="search-results" class="results"></div>
-        </section>
-
-        <!-- FLASHCARDS -->
-        <section id="flashcards" class="panel">
-          <h2>Flashcards <span class="pill">Anki-ready</span></h2>
-          <p class="panel-intro">Generate tagged flashcards from your transcripts, or tag a deck you already have.</p>
 
           <div class="card">
-            <h3>✨ Generate from your transcripts</h3>
+            <h3>🃏 Anki flashcards <span class="pill">Anki-ready</span></h3>
             <p class="hint">Pulls definitions and acronyms out of your transcripts and auto-tags them by
               course · week · topic. Exports an Anki-importable <code>.txt</code> and a <code>.csv</code>
               under <code>_flashcards/</code>. Summaries make the cleanest cards.</p>
             <div class="grid">
               <label>Deck name <input type="text" id="fc-deck" value="flashcards" /></label>
-              <label>Course <input type="text" id="fc-course" placeholder="e.g. COMPX234" /></label>
               <label>Source
                 <select id="fc-prefer">
                   <option value="summary" selected>summaries (cleanest)</option>
@@ -251,8 +341,8 @@
             <div id="fc-gen-results" class="results"></div>
           </div>
 
-          <div class="card">
-            <h3>🏷️ Categorize an existing deck</h3>
+          <details class="card">
+            <summary><strong>🏷️ Categorize an existing deck</strong> <span class="muted">(already have flashcards? tag them)</span></summary>
             <p class="hint">Paste a deck (CSV or tab-separated: <code>front, back[, tags]</code>) — or give a file
               path — and it adds course/week/topic tags by matching your lectures' vocabulary.</p>
             <textarea id="fc-cat-text" rows="5" placeholder="What is TCP?,A reliable transport protocol&#10;What is a router?,Forwards packets between networks"></textarea>
@@ -260,46 +350,12 @@
               <input type="text" id="fc-cat-path" placeholder="…or a path to a .csv/.tsv/.txt deck" />
             </div>
             <div class="grid">
-              <label>Course <input type="text" id="fc-cat-course" placeholder="e.g. COMPX234" /></label>
               <label>Extra keywords <input type="text" id="fc-cat-kw" placeholder="comma,separated,terms" /></label>
               <label>Deck name <input type="text" id="fc-cat-deck" value="categorized" /></label>
             </div>
             <div class="row"><button id="fc-categorize">Categorize &amp; tag</button></div>
             <div id="fc-cat-results" class="results"></div>
-          </div>
-        </section>
-
-        <!-- DOCUMENTS -->
-        <section id="pdf" class="panel">
-          <h2>Documents → Markdown</h2>
-          <p class="panel-intro">Convert slides and documents into Markdown sources for any AI.</p>
-          <div class="card">
-            <p class="hint">Convert <strong>PDF, PowerPoint, Word, Excel, HTML, EPUB, CSV…</strong> into
-              Markdown for NotebookLM or any other AI. Powered by
-              <a href="https://github.com/microsoft/markitdown" target="_blank" rel="noopener">MarkItDown</a>.</p>
-            <div class="row">
-              <input type="text" id="pdf-path" placeholder="Folder path or a single document (e.g. C:\Users\…\Slides-20260615)" />
-              <button id="pdf-go">Convert</button>
-            </div>
-            <div class="outputs-row">
-              <span class="muted">File types:</span>
-              <span id="doc-exts" class="checks"></span>
-            </div>
-            <div class="grid">
-              <label>Output
-                <select id="doc-target">
-                  <option value="ai" selected>AI sources (_docs, exportable to NotebookLM)</option>
-                  <option value="copy">sibling *_copy folder (mirror in place)</option>
-                </select>
-              </label>
-            </div>
-            <div class="toggles">
-              <label class="toggle"><input type="checkbox" id="pdf-recursive" checked /> include subfolders</label>
-              <label class="toggle"><input type="checkbox" id="pdf-overwrite" /> overwrite existing</label>
-              <label class="toggle"><input type="checkbox" id="doc-combined" /> combined <code>documents_pack.md</code> (AI)</label>
-            </div>
-          </div>
-          <div id="pdf-results" class="results"></div>
+          </details>
         </section>
 
         <!-- JOBS -->
@@ -307,45 +363,6 @@
           <h2>Jobs <button id="jobs-refresh" class="small ghost">↻ refresh</button></h2>
           <p class="panel-intro">Live progress of transcription jobs.</p>
           <div id="jobs-list" class="results"></div>
-        </section>
-
-        <!-- MATERIALS -->
-        <section id="materials" class="panel">
-          <h2>Course materials</h2>
-          <p class="panel-intro">Parse a Moodle export, convert a Notion page, or browse local files.</p>
-
-          <div class="card">
-            <h3>🏫 Parse a Moodle course export</h3>
-            <p class="hint">Point at a saved Moodle course folder (or its <code>course/view_php.html</code>)
-              to pull the course title and week/topic outline. Works with any Moodle course.</p>
-            <div class="row">
-              <input type="text" id="moodle-path" placeholder="Path to the Moodle course folder or HTML file" />
-              <button id="moodle-go">Parse</button>
-            </div>
-            <div id="moodle-results" class="results"></div>
-          </div>
-
-          <div class="card">
-            <h3>🗒️ Convert a Notion HTML export</h3>
-            <p class="hint">Point at a Notion page exported as HTML (a single <code>.html</code> file or the
-              export folder). Produces clean Markdown under <code>_notion/</code> — great as NotebookLM / AI sources.</p>
-            <div class="row">
-              <input type="text" id="notion-path" placeholder="Path to a Notion .html file or export folder" />
-              <label class="toggle"><input type="checkbox" id="notion-combined" /> combined <code>notion_pack.md</code></label>
-              <button id="notion-go">Convert</button>
-            </div>
-            <div id="notion-results" class="results"></div>
-          </div>
-
-          <div class="card">
-            <h3>📂 Browse a local folder</h3>
-            <div class="row">
-              <input type="text" id="materials-path" placeholder="Folder path to browse (e.g. ..\Slides-20260615)" />
-              <button id="materials-go">List</button>
-              <button id="materials-up" class="ghost" title="Parent folder">↑ up</button>
-            </div>
-            <div id="materials-results" class="results"></div>
-          </div>
         </section>
       </main>
     </div>
