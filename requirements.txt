@@ -3,6 +3,5 @@ fastapi>=0.110
 uvicorn[standard]>=0.27
 requests>=2.31
 python-multipart>=0.0.9
-# Optional: one-click "grab my login" reads the logged-in browser's session
-# cookie locally so laymen never have to copy/paste from devtools.
-browser-cookie3>=0.19
+# Moodle import uses the official mobile web-service API (token-based), so no
+# browser-cookie reading or HTML scraping is required.

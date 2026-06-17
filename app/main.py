@@ -52,11 +52,12 @@ from . import backup as backup_mod
 from .integrations import notion as notion_sync, anki as anki_sync, state as sync_state
 from .imports import moodle_web, folder as folder_import, preflight as import_preflight
 from .imports import moodle_resources
+from .imports import moodle_api
 from .jobs import manager
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 STATIC_DIR = BASE_DIR / "static"
-APP_VERSION = "2.2.0"
+APP_VERSION = "2.4.0"
 # Where transcripts are written/read. Override with PANOPTO_OUTPUT.
 OUTPUT_DIR = Path(os.environ.get("PANOPTO_OUTPUT", BASE_DIR / "transcripts")).resolve()
 core.ensure_dir(OUTPUT_DIR)
@@ -361,8 +362,25 @@ class MoodleFetchReq(BaseModel):
     grab_docs: bool = True             # download + convert resource documents
 
 
-class CookieGrabReq(BaseModel):
-    url: str                           # any URL on the site you're logged into
+# --- Moodle web-service import (token-based, replaces cookie/HTML scraping) ----
+
+
+class MoodleConnectReq(BaseModel):
+    url: str                           # site or course URL (host identifies the site)
+    username: str = ""                 # for login/token.php token grant
+    password: str = ""
+    token: str = ""                    # …or paste a mobile web-service token (SSO sites)
+
+
+class MoodleApiImportReq(BaseModel):
+    url: str                           # site or course URL (host -> stored token)
+    course_id: int                     # the course to import
+    grab_lectures: bool = True         # surface lecture/recording feeds for transcription
+    grab_docs: bool = True             # download + convert document files
+    convert: bool = True               # convert downloaded files to Markdown
+    keep_images: bool = True           # attach images to converted docs
+    create_course: bool = False        # create + activate a local course from the title
+    export: str = ""                   # ""|"notebooklm"|"all" — also export after
 
 
 class FolderImportReq(BaseModel):
@@ -1337,64 +1355,130 @@ def api_moodle_fetch_course(req: MoodleFetchReq) -> Dict[str, Any]:
             "keep_images": req.keep_images}
 
 
-@app.post("/api/cookies/grab")
-def api_cookies_grab(req: CookieGrabReq) -> Dict[str, Any]:
-    """One-click, layman-friendly login grab. The app runs locally, so it can
-    read the *already logged-in* browser's session cookie for this site's domain
-    and hand it back as a ``Cookie:`` header — no devtools, no copy/paste.
+def _moodle_token_name(host: str) -> str:
+    return f"moodle_token:{host}"
 
-    Returns a `validated` flag indicating whether the grabbed cookies actually
-    work with the site."""
-    import requests
 
-    host = urlparse(req.url.strip()).hostname or ""
-    if not host:
-        return {"ok": False, "reason": "no-host",
-                "message": "Please enter your course page link first."}
+def _save_api_outline(model: Dict[str, Any]) -> str:
+    """Write the labelled course outline as an AI/NotebookLM source. Returns rel path."""
+    core.ensure_dir(OUTPUT_DIR)
+    c = model["course"]
+    stem = core.safe_name(c.get("code") or c.get("fullname") or "course") + "_outline"
+    target = OUTPUT_DIR / f"{stem}.md"
+    target.write_text(model["outline_markdown"], encoding="utf-8")
+    return target.relative_to(OUTPUT_DIR).as_posix()
+
+
+@app.post("/api/moodle/connect")
+def api_moodle_connect(req: MoodleConnectReq) -> Dict[str, Any]:
+    """Connect to a Moodle site through its official mobile web-service API and
+    list the courses you're enrolled in. Authenticate by username+password (where
+    the site allows the token grant) or by pasting a web-service token (SSO sites).
+
+    The token is stored in the local encrypted secrets store keyed by host, so the
+    follow-up import never has to round-trip credentials. Replaces the old
+    browser-cookie / HTML-scraping path with exact, typed course data."""
     try:
-        import browser_cookie3  # type: ignore
-    except Exception:
-        return {"ok": False, "reason": "missing-dep",
-                "message": "Automatic sign-in detection requires an optional component. "
-                           "Run the extras installer (install-extras), or enter your "
-                           "session manually."}
+        base = moodle_api.normalize_base_url(req.url)
+    except moodle_api.MoodleApiError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    host = urlparse(base).hostname or ""
+    token = req.token.strip()
+    try:
+        if not token:
+            if not (req.username and req.password):
+                raise HTTPException(
+                    status_code=400,
+                    detail="Enter your Moodle username and password, or paste a "
+                           "web-service token from the Moodle mobile app.")
+            token = moodle_api.fetch_token(base, req.username, req.password)
+        client = moodle_api.MoodleClient(base, token)
+        info = client.site_info()
+        courses_list = client.list_courses(info.get("userid"))
+    except moodle_api.MoodleApiError as e:
+        raise HTTPException(status_code=400, detail=str(e))
 
-    # Try each common browser; keep whichever yields a valid session.
-    loaders = [("Chrome", "chrome"), ("Edge", "edge"), ("Firefox", "firefox"),
-               ("Brave", "brave"), ("Opera", "opera")]
-    valid_cookies = None
-    used_browser = None
-    for label, name in loaders:
-        load = getattr(browser_cookie3, name, None)
-        if not load:
-            continue
+    secret_store.set_secret(_moodle_token_name(host), token, root=OUTPUT_DIR)
+    _audit("moodle.connect", target=host, feature="moodle_import_url")
+    return {
+        "host": host,
+        "base_url": base,
+        "sitename": info.get("sitename", ""),
+        "fullname": info.get("fullname", ""),
+        "courses": courses_list,
+    }
+
+
+@app.post("/api/moodle/api-import")
+def api_moodle_api_import(req: MoodleApiImportReq) -> Dict[str, Any]:
+    """Import one course through the web-service API: fetch the typed content tree,
+    label every item (lecture / document / link / activity) with 100% fidelity,
+    download document files under their exact names, convert them to Markdown, save
+    the outline, and surface lecture feeds for transcription. Requires a prior
+    ``/api/moodle/connect``."""
+    try:
+        base = moodle_api.normalize_base_url(req.url)
+    except moodle_api.MoodleApiError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    host = urlparse(base).hostname or ""
+    token = secret_store.get_secret(_moodle_token_name(host), root=OUTPUT_DIR)
+    if not token:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Not connected to {host or 'this Moodle site'} yet — connect first.")
+
+    client = moodle_api.MoodleClient(base, token)
+    try:
+        model = moodle_api.import_course(client, req.course_id)
+    except moodle_api.MoodleApiError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+    outline_rel = _save_api_outline(model)
+
+    downloaded = {"downloaded": 0, "files": [], "errors": []}
+    converted = None
+    if req.grab_docs and model["documents"]:
+        res_dir = OUTPUT_DIR / "_resources"
         try:
-            jar = load(domain_name=host)
-        except Exception:
-            continue
-        # Build a cookie header from all cookies in the jar.
-        pairs = [f"{c.name}={c.value}" for c in jar if c.value]
-        if not pairs:
-            continue
-        cookie_header = "; ".join(pairs)
-        # Validate by trying to fetch the given URL with these cookies.
-        try:
-            resp = requests.get(req.url, cookies=jar, timeout=10,
-                                headers={"User-Agent": "Mozilla/5.0"})
-            if resp.status_code == 200 and ("Moodle" in resp.text or "course" in resp.text.lower()):
-                valid_cookies = cookie_header
-                used_browser = label
-                break
-        except Exception:
-            continue
-    if valid_cookies:
-        return {"ok": True, "browser": used_browser, "host": host,
-                "cookies": valid_cookies,
-                "message": f"Signed-in session detected in {used_browser} for {host}."}
-    else:
-        return {"ok": False, "reason": "not-logged-in", "host": host,
-                "message": f"No valid signed-in session was found for {host}. "
-                           "Open Moodle, sign in, then try again — or enter your session manually."}
+            downloaded = moodle_api.download_documents(client, model["documents"], res_dir)
+        except moodle_api.MoodleApiError as e:
+            raise HTTPException(status_code=502, detail=f"Document download failed: {e}")
+        if req.convert and downloaded["downloaded"]:
+            converted = core.convert_documents(
+                res_dir, OUTPUT_DIR, target="ai", combined=True, keep_images=req.keep_images)
+
+    course_rec = None
+    if req.create_course and (model["course"]["fullname"] or model["course"]["code"]):
+        course_rec = courses.create_course(
+            db, name=model["course"]["fullname"] or model["course"]["code"],
+            code=model["course"]["code"])
+        courses.set_active(db, course_rec["id"])
+
+    exported = None
+    code = model["course"]["code"]
+    if req.export == "notebooklm":
+        exported = core.export_notebooklm(OUTPUT_DIR, combined=True, course=code)
+    elif req.export == "all":
+        exported = core.export_all_sources(OUTPUT_DIR, combined=True, course=code)
+
+    _audit("moodle.api_import", target=code or host,
+           detail=f"docs={downloaded['downloaded']} lectures={model['counts']['lectures']}",
+           feature="moodle_import_url")
+
+    return {
+        "course": {**model["course"], "local_course": course_rec},
+        "counts": model["counts"],
+        "panopto_feeds": model["panopto_feeds"] if req.grab_lectures else [],
+        "lectures": model["lectures"] if req.grab_lectures else [],
+        "documents": model["documents"],
+        "links": model["links"],
+        "activities": model["activities"],
+        "resources": downloaded,
+        "converted": converted,
+        "exported": exported,
+        "outline": outline_rel,
+        "keep_images": req.keep_images,
+    }
 
 
 @app.post("/api/moodle/quick-upload")

@@ -282,12 +282,25 @@ button.tag:hover { background: var(--brand); color: #fff; }
 .mode-chip { font-size: .8rem; color: var(--muted); border: 1px solid var(--border);
   border-radius: 999px; padding: 2px 10px; white-space: nowrap; }
 
-/* Sign-in helper (Moodle quick import). */
-.cookie-helper { margin: 12px 0; padding: 12px; border: 1px solid var(--border);
-  border-radius: 8px; background: var(--surface-2); }
-.cookie-status { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; font-size: .9rem; }
-.cookie-helper textarea { width: 100%; margin-top: 6px; }
+/* Connect / sign-in panel (Moodle web-service import). */
+.cookie-status { display: flex; align-items: center; gap: 8px; margin-top: 8px; font-size: .9rem; }
 .toggles-label { font-size: .85rem; color: var(--muted); align-self: center; margin-right: 4px; }
+
+.mq-auth { margin: 12px 0; padding: 12px; border: 1px solid var(--border);
+  border-radius: 8px; background: var(--surface-2); }
+.mq-auth-tabs { display: flex; gap: 6px; margin-bottom: 10px; }
+.mq-auth-tab { padding: 6px 12px; font-size: .85rem; background: transparent;
+  border: 1px solid var(--border); border-radius: 999px; color: var(--muted); cursor: pointer; }
+.mq-auth-tab.active { background: var(--brand-soft); color: var(--brand); border-color: transparent; font-weight: 600; }
+.mq-auth-pane { display: flex; flex-direction: column; gap: 8px; }
+.mq-auth-pane input { width: 100%; }
+
+/* Course picker (revealed after connect). */
+.mq-course-field { display: flex; align-items: center; gap: 10px; margin: 14px 0 4px; }
+.mq-course-field select { flex: 1; min-width: 0; }
+.mq-counts { gap: 8px; margin: 8px 0 4px; }
+.mq-counts .tag { padding: 3px 10px; font-size: 12px; border-radius: 999px;
+  background: var(--brand-soft); color: var(--brand); }
 
 /* Numbered steps in the guided Moodle import. */
 .mq-step-head { display: flex; align-items: center; gap: 10px; margin-bottom: 4px; }
@@ -296,8 +309,6 @@ button.tag:hover { background: var(--brand); color: #fff; }
   background: var(--brand); color: #fff; font-size: .85rem; font-weight: 600;
   display: inline-flex; align-items: center; justify-content: center; }
 .mq-grab { display: flex; flex-wrap: wrap; align-items: center; gap: 14px; margin: 12px 0; }
-#mq-file-fallback { margin-top: 12px; }
-#mq-file-fallback input[type="file"] { margin-top: 8px; }
 
 .export-choice { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
 @media (max-width: 640px) { .export-choice { grid-template-columns: 1fr; } }

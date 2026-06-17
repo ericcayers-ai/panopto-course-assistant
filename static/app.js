@@ -1120,10 +1120,9 @@ $("change-workspace").addEventListener("click", openLauncher);
 
 // ---- Moodle "Simple" guided flow ------------------------------------------
 let mqRecommend = null, mqInited = false;
-let _mqCookie = "";   // ephemeral cookie value, not stored in localStorage
+let _mqConnected = false;   // true once we have a stored token for the site
 
 async function initMoodleQuick() {
-  refreshCookieStatus();
   if (mqInited) return; mqInited = true;
   try {
     mqRecommend = await api("/api/transcribe/recommend");
@@ -1134,93 +1133,104 @@ async function initMoodleQuick() {
   } catch (_) {}
 }
 
-// ---- sign-in helper (Moodle quick) ----------------------------------------
-function setCookieStatus(state, text) {
-  const dot = document.querySelector("#mq-cookie-status .dot");
+// ---- connect helper (Moodle web-service API) ------------------------------
+function setConnectStatus(state, text) {
+  const box = $("mq-connect-status"); if (!box) return;
+  box.classList.remove("hidden");
+  const dot = box.querySelector(".dot");
   if (dot) dot.className = "dot " + state;     // off | warn | on
-  const t = $("mq-cookie-text");
+  const t = $("mq-connect-text");
   if (t) t.textContent = text;
 }
-// Reflect whether the entered value is a usable Moodle session.
-function refreshCookieStatus() {
-  const v = ($("mq-cookies")?.value || "").trim();
-  if (!v) { setCookieStatus("off", "Sign-in not detected. Most courses require you to be signed in."); return; }
-  if (/moodlesession\s*=\s*[^;\s]+/i.test(v)) setCookieStatus("on", "Signed-in session detected. Ready to import.");
-  else if (/^[\w.\-]{8,}$/.test(v)) setCookieStatus("on", "Session token detected. It will be used as your MoodleSession.");
-  else setCookieStatus("warn", "This does not appear to be a Moodle session and may not work.");
-}
-$("mq-cookie-manual-toggle")?.addEventListener("click", () =>
-  $("mq-cookie-manual").classList.toggle("hidden"));
-$("mq-cookies")?.addEventListener("input", () => {
-  _mqCookie = $("mq-cookies").value.trim();   // ephemeral
-  refreshCookieStatus();
-});
-// Open Moodle in a new tab. If already signed in, the dashboard simply loads.
-$("mq-cookie-open")?.addEventListener("click", () => {
-  const url = $("mq-url").value.trim();
-  let origin = "https://elearn.waikato.ac.nz";
-  try { if (url) origin = new URL(url).origin; } catch (_) {}
-  window.open(origin + "/", "_blank", "noopener");
-  setCookieStatus("warn", "Moodle has opened in a new tab. If you are already signed in, your "
-    + "dashboard will load. Once signed in, return here and select “Use my browser sign-in”.");
-});
-// One click: the local app reads the already-signed-in browser's session.
-$("mq-cookie-grab")?.addEventListener("click", async () => {
-  const url = $("mq-url").value.trim();
-  if (!url) { toast("Please enter your course page link first.", "warn"); return; }
-  const btn = $("mq-cookie-grab"); btn.disabled = true; btn.textContent = "Checking…";
-  try {
-    const d = await postJSON("/api/cookies/grab", { url });
-    if (d.ok) {
-      $("mq-cookies").value = d.cookies;
-      _mqCookie = d.cookies;
-      refreshCookieStatus();
-      toast(d.message, "ok");
-    } else {
-      setCookieStatus("warn", d.message);
-      if (d.reason === "missing-dep" || d.reason === "not-logged-in")
-        $("mq-cookie-manual").classList.remove("hidden");
-      toast(d.message, "warn");
-    }
-  } catch (e) {
-    setCookieStatus("warn", "The browser session could not be read. Please enter your session manually.");
-    toast(e.message, "warn");
-  } finally { btn.disabled = false; btn.textContent = "Use my browser sign-in"; }
-});
 
-// Render the outcome of an import (live URL or saved-page upload) consistently.
-function renderMqImport(data, { grabLectures = true, grabTranscripts = true, grabDocs = true, fromFile = false } = {}) {
+// Authentication tab switch (username/password vs. pasted token).
+document.querySelectorAll(".mq-auth-tab").forEach((tab) =>
+  tab.addEventListener("click", () => {
+    const which = tab.dataset.auth;
+    document.querySelectorAll(".mq-auth-tab").forEach((t) =>
+      t.classList.toggle("active", t === tab));
+    $("mq-auth-password").classList.toggle("hidden", which !== "password");
+    $("mq-auth-token").classList.toggle("hidden", which !== "token");
+  }));
+
+// Connect: obtain a web-service token (stored locally) and list the courses.
+$("mq-connect")?.addEventListener("click", async () => {
+  const url = $("mq-url").value.trim();
+  if (!url) { toast("Enter your Moodle site link first.", "warn"); return; }
+  const usingToken = document.querySelector('.mq-auth-tab[data-auth="token"]')?.classList.contains("active");
+  const body = { url };
+  if (usingToken) {
+    body.token = $("mq-token").value.trim();
+    if (!body.token) { toast("Paste your Moodle web-service token, or use username & password.", "warn"); return; }
+  } else {
+    body.username = $("mq-username").value.trim();
+    body.password = $("mq-password").value;
+    if (!body.username || !body.password) { toast("Enter your Moodle username and password.", "warn"); return; }
+  }
+  const btn = $("mq-connect"); btn.disabled = true; btn.textContent = "Connecting…";
+  setConnectStatus("warn", "Connecting to Moodle…");
+  try {
+    const d = await postJSON("/api/moodle/connect", body);
+    const courses = d.courses || [];
+    const sel = $("mq-course-select"); clear(sel);
+    if (!courses.length) {
+      setConnectStatus("warn", `Connected to ${d.sitename || d.host}, but no enrolled courses were found.`);
+    } else {
+      courses.forEach((c) => sel.appendChild(
+        el("option", { value: String(c.id), text: c.fullname || c.shortname || ("Course " + c.id) })));
+      // Preselect a course whose id matches the one in the pasted URL, if any.
+      const m = url.match(/[?&]id=(\d+)/);
+      if (m && courses.some((c) => String(c.id) === m[1])) sel.value = m[1];
+      setConnectStatus("on", `Connected to ${d.sitename || d.host} as ${d.fullname || "you"}. ${courses.length} course(s) available.`);
+      $("mq-course-pick").classList.remove("hidden");
+    }
+    _mqConnected = true;
+    _mqBaseUrl = d.base_url || url;
+    toast("Connected to Moodle.", "ok");
+  } catch (e) {
+    setConnectStatus("off", e.message);
+    toast(e.message, "err");
+  } finally { btn.disabled = false; btn.textContent = "Connect"; }
+});
+let _mqBaseUrl = "";
+
+// Render the outcome of an API import: a labelled, unambiguous breakdown so
+// lectures, documents, links and activities are never confused with each other.
+function renderMqImport(data, { grabLectures = true, grabTranscripts = true, grabDocs = true } = {}) {
   const out = $("mq-import-result"); clear(out);
   const c = data.course || {};
-  if (c.code || c.title) setCourse(c.code || c.title);
+  if (c.code || c.fullname) setCourse(c.code || c.fullname);
+  const counts = data.counts || {};
   const res = data.resources || {};
   const conv = data.converted || {};
   const imgs = (conv.files || []).reduce((n, f) => n + (f.images || 0), 0);
   const feeds = data.panopto_feeds || [];
 
-  const bits = [`Imported <strong>${c.title || c.code || "course"}</strong> — ${data.outline_sections || 0} section(s)`];
+  const bits = [`Imported <strong>${c.fullname || c.code || "course"}</strong> — ${counts.sections || 0} section(s)`];
   if (grabDocs)
-    bits.push(`${res.downloaded || 0} document(s) downloaded, ${conv.count || 0} converted to Markdown`
+    bits.push(`${res.downloaded || 0} of ${counts.documents || 0} document(s) downloaded, ${conv.count || 0} converted to Markdown`
       + (imgs ? ` (${imgs} image(s) attached)` : ""));
   if (grabLectures || grabTranscripts)
-    bits.push(`${feeds.length} lecture feed(s) detected`);
+    bits.push(`${counts.lectures || 0} lecture(s), ${feeds.length} transcribable feed(s)`);
   out.appendChild(el("div", { class: "ok-box", html: bits.join(" · ") + "." }));
+
+  // Labelled tallies — each item type is counted distinctly from the typed API.
+  out.appendChild(el("div", { class: "row mq-counts" }, [
+    el("span", { class: "tag", text: `${counts.lectures || 0} lectures` }),
+    el("span", { class: "tag", text: `${counts.documents || 0} documents` }),
+    el("span", { class: "tag", text: `${counts.links || 0} links` }),
+    el("span", { class: "tag", text: `${counts.activities || 0} activities` }),
+  ]));
 
   if ((res.errors || []).length)
     out.appendChild(el("p", { class: "muted small",
-      text: `${res.errors.length} document(s) could not be downloaded. Please verify your sign-in.` }));
+      text: `${res.errors.length} document(s) could not be downloaded.` }));
 
-  // No lectures found — guide the user to the saved main course page.
-  if (!feeds.length && (grabLectures || grabTranscripts)) {
+  if (!feeds.length && (grabLectures || grabTranscripts) && (counts.lectures || 0) > 0)
     out.appendChild(el("p", { class: "muted small",
-      text: fromFile
-        ? "No Panopto lectures were found in the page(s) provided. The lecture feeds appear on "
-          + "the main course page (titled with the paper name), not on a section page such as "
-          + "“Slides”. Please save and add the main course page."
-        : "No Panopto lectures were detected from the page. If this course has recorded lectures, "
-          + "use “Lectures not detected?” below to import from a saved copy of the main course page." }));
-    const fb = $("mq-file-fallback"); if (fb) fb.open = true;
-  }
+      text: `${counts.lectures} lecture link(s) were found, but no transcribable Panopto feed was `
+        + "detected for this course. You can paste a Panopto feed URL in the Full workspace to "
+        + "transcribe them." }));
 
   State.mqFeeds = feeds;
   renderMqFeeds();
@@ -1231,39 +1241,10 @@ function renderMqImport(data, { grabLectures = true, grabTranscripts = true, gra
 }
 
 $("mq-import")?.addEventListener("click", async () => {
-  const url = $("mq-url").value.trim();
-  if (!url) { toast("Please enter your course page link first.", "warn"); return; }
-  // Auto-grab cookies if we don't have any yet and the manual textarea is empty.
-  let cookies = _mqCookie || ($("mq-cookies")?.value || "").trim();
-  if (!cookies) {
-    // Attempt to grab the session automatically.
-    const btnGrab = $("mq-import"); btnGrab.disabled = true; btnGrab.textContent = "Detecting sign-in…";
-    try {
-      const d = await postJSON("/api/cookies/grab", { url });
-      if (d.ok) {
-        cookies = d.cookies;
-        $("mq-cookies").value = cookies;
-        _mqCookie = cookies;
-        refreshCookieStatus();
-        toast("Signed-in session detected automatically.", "ok");
-        // Fall through — continue to the import below with cookies now set.
-      } else {
-        setCookieStatus("warn", d.message);
-        toast(d.message, "warn");
-        btnGrab.disabled = false; btnGrab.textContent = "Import course";
-        return;
-      }
-    } catch (e) {
-      toast("Auto sign-in failed. You can enter the session manually below.", "warn");
-      btnGrab.disabled = false; btnGrab.textContent = "Import course";
-      return;
-    }
-    // On success we fall through with the button still disabled; the outer
-    // `const btn` block below updates the label to "Importing…" and handles
-    // re-enabling via its own finally.
-  }
-
-  // Now proceed with the import.
+  if (!_mqConnected) { toast("Connect to Moodle first.", "warn"); return; }
+  const sel = $("mq-course-select");
+  const courseId = sel && sel.value ? parseInt(sel.value, 10) : 0;
+  if (!courseId) { toast("Pick a course to import.", "warn"); return; }
   const adv = document.body.dataset.level === "advanced";
   const grabLectures = adv ? $("mq-grab-lectures").checked : true;
   const grabTranscripts = adv ? $("mq-grab-transcripts").checked : true;
@@ -1273,41 +1254,19 @@ $("mq-import")?.addEventListener("click", async () => {
     toast("Select at least one item to include.", "warn"); return;
   }
   const btn = $("mq-import"); btn.disabled = true; btn.textContent = "Importing…";
+  const out = $("mq-import-result"); clear(out);
+  out.appendChild(el("p", { class: "muted", text: "Reading the course from Moodle…" }));
   try {
-    const data = await postJSON("/api/moodle/fetch-course", {
-      url, cookies, keep_images: keepImages, convert: true,
+    const data = await postJSON("/api/moodle/api-import", {
+      url: _mqBaseUrl, course_id: courseId,
       grab_lectures: grabLectures || grabTranscripts,
-      grab_docs: grabDocs,
+      grab_docs: grabDocs, convert: true, keep_images: keepImages,
     });
     renderMqImport(data, { grabLectures, grabTranscripts, grabDocs });
   } catch (e) {
-    const out = $("mq-import-result"); clear(out);
+    clear(out);
     out.appendChild(el("div", { class: "warn-box", text: "Import failed: " + e.message }));
   } finally { btn.disabled = false; btn.textContent = "Import course"; }
-});
-
-// Saved-page fallback: parse one or more saved course pages for outline,
-// lecture feeds and (when a session is provided) documents.
-$("mq-file")?.addEventListener("change", async (ev) => {
-  const files = [...ev.target.files]; if (!files.length) return;
-  const out = $("mq-import-result"); clear(out);
-  out.appendChild(el("p", { class: "muted", text: `Reading ${files.length} page(s)…` }));
-  const cookies = ($("mq-cookies")?.value || "").trim();
-  const fd = new FormData();
-  files.forEach((f) => fd.append("files", f));
-  fd.append("cookies", cookies);
-  fd.append("keep_images", $("mq-images") ? String($("mq-images").checked) : "true");
-  try {
-    const data = await api("/api/moodle/quick-upload", { method: "POST", body: fd });
-    renderMqImport(data, {
-      grabLectures: true, grabTranscripts: false,
-      grabDocs: (data.converted && data.converted.count > 0),
-      fromFile: true,
-    });
-  } catch (e) {
-    clear(out);
-    out.appendChild(el("div", { class: "warn-box", text: "Could not read the saved page(s): " + e.message }));
-  } finally { ev.target.value = ""; }
 });
 
 function renderMqFeeds() {

@@ -564,9 +564,11 @@ def read_any_text(path: Path) -> str:
 
 
 def _is_internal(f: Path, output_dir: Path) -> bool:
-    """True for manifests, error logs, and anything under an export folder (_*)."""
+    """True for hidden dotfiles (e.g. ``.secrets.json``), manifests/logs, and
+    anything under an export/working folder (``_*``) — none of which are user
+    content and must never be listed or mislabelled as a lecture transcript."""
     rel = f.relative_to(output_dir)
-    return any(part.startswith("_") for part in rel.parts)
+    return any(part.startswith(("_", ".")) for part in rel.parts)
 
 
 def _split_stem_format(name: str) -> Tuple[str, str]:
@@ -805,7 +807,7 @@ def convert_documents(
     combined_path = None
     if combined and docs and target == "ai":
         parts = ["# Documents", ""] + [f"- {t}" for t, _ in docs]
-        body = "\n\n---\n\n".join(d.strip() for _, d in docs)
+        body = "\n\n---\n\n".join(with_heading(_title_from_stem(t), d) for t, d in docs)
         cf = out_root / "documents_pack.md"
         cf.write_text("\n".join(parts) + "\n\n---\n\n" + body + "\n", encoding="utf-8")
         combined_path = cf.relative_to(output_dir).as_posix()
@@ -851,17 +853,40 @@ def convert_pdf_tree(
 
 NOTEBOOKLM_DIRNAME = "_notebooklm"
 
+# A lecture group counts as a real transcript only if it has one of these
+# outputs; a lone ``.md`` (a Moodle outline or stray source dropped in the
+# folder) is a *source*, not a lecture — it must never be exported, listed, or
+# counted as a transcript. Used by both the library listing and the exporters
+# so the "lecture transcript" label means exactly the same thing everywhere.
+_TRANSCRIPT_FMTS = {"txt", "json", "srt", "vtt", "summary", "notebooklm"}
+
+
+def _is_transcript_group(group: Dict[str, Any]) -> bool:
+    return bool(_TRANSCRIPT_FMTS & set(group["formats"]))
+
 
 def _title_from_stem(stem: str) -> str:
     return re.sub(r"\s+", " ", stem.replace("_", " ")).strip() or stem
+
+
+def _nblm_has_prose(body: str) -> bool:
+    """True if a rendered NotebookLM body has real transcript prose, not just the
+    title/metadata header. Guards against an interrupted/empty transcription
+    shipping a header-only file that pollutes the per-lecture and combined exports."""
+    for ln in body.splitlines():
+        s = ln.strip()
+        if s and not s.startswith("#") and not s.startswith(">"):
+            return True
+    return False
 
 
 def _notebooklm_body_for_group(output_dir: Path, group: Dict[str, Any], course: str) -> Tuple[str, str]:
     """Build (clean_markdown, display_title) for one transcript group.
 
     Prefers the .json output (has segments + metadata); falls back to the
-    grouped-timestamp .txt; finally to stripping the .md. Returns ("", "") if
-    no usable source is found.
+    grouped-timestamp .txt; finally to stripping the .md. Returns ("", "") when no
+    usable *prose* is found — a header-only body (empty/interrupted transcription)
+    is treated as empty so it is excluded from both per-lecture files and the pack.
     """
     fmts = group["formats"]
 
@@ -882,12 +907,16 @@ def _notebooklm_body_for_group(output_dir: Path, group: Dict[str, Any], course: 
                 guid=data.get("guid", ""),
             )
             segments = data.get("segments") or [{"text": data.get("text", "")}]
-            return render_notebooklm(item, segments, course), item.title
+            body = render_notebooklm(item, segments, course)
+            if _nblm_has_prose(body):
+                return body, item.title
 
     if "txt" in fmts:
         title = _title_from_stem(group["stem"])
         raw = (output_dir / fmts["txt"]).read_text(encoding="utf-8", errors="replace")
-        return clean_txt_to_notebooklm(raw, title=title, course=course), title
+        body = clean_txt_to_notebooklm(raw, title=title, course=course)
+        if _nblm_has_prose(body):
+            return body, title
 
     if "md" in fmts:
         title = _title_from_stem(group["stem"])
@@ -897,7 +926,9 @@ def _notebooklm_body_for_group(output_dir: Path, group: Dict[str, Any], course: 
             if not ln.startswith("### ") and not ln.startswith("- **") and ln.strip() not in ("## Transcript",)
         ]
         texts = [ln.strip() for ln in kept if ln.strip() and not ln.startswith("#")]
-        return clean_txt_to_notebooklm("\n\n".join(texts), title=title, course=course), title
+        body = clean_txt_to_notebooklm("\n\n".join(texts), title=title, course=course)
+        if _nblm_has_prose(body):
+            return body, title
 
     return "", ""
 
@@ -916,7 +947,7 @@ def export_notebooklm(
     NotebookLM upload. ``selection`` (a list of "<folder>/<stem>" or "<stem>"
     keys) limits which lectures are exported; ``None`` exports all.
     """
-    groups = list_transcripts(output_dir)
+    groups = [g for g in list_transcripts(output_dir) if _is_transcript_group(g)]
     if selection:
         wanted = set(selection)
         groups = [
@@ -975,6 +1006,17 @@ def _collect_source_markdown(folder: Path, exclude: set) -> List[Tuple[str, str]
     return out
 
 
+def with_heading(title: str, body: str) -> str:
+    """Guarantee a section body is anchored by its own ``# H1`` heading, so that
+    when bodies are concatenated into a combined pack one source's prose can never
+    blend headerless into the section above it. Bodies that already start with an
+    H1 (e.g. lecture transcripts) are returned unchanged."""
+    b = (body or "").strip()
+    if b.startswith("# "):
+        return b
+    return f"# {title}\n\n{b}" if b else f"# {title}"
+
+
 def export_all_sources(output_dir: Path, combined: bool = True, course: str = "") -> Dict[str, Any]:
     """Bring **everything imported** together into one NotebookLM / AI export.
 
@@ -990,6 +1032,8 @@ def export_all_sources(output_dir: Path, combined: bool = True, course: str = ""
 
     transcripts: List[Tuple[str, str]] = []
     for g in list_transcripts(output_dir):
+        if not _is_transcript_group(g):
+            continue
         body, title = _notebooklm_body_for_group(output_dir, g, course)
         if body.strip():
             transcripts.append((title, body))
@@ -1016,7 +1060,7 @@ def export_all_sources(output_dir: Path, combined: bool = True, course: str = ""
         parts = ["\n".join(toc).strip()]
         for name, items in sections:
             for title, body in items:
-                parts.append(body.strip())
+                parts.append(with_heading(title, body))
         cf = dest / "everything_pack.md"
         cf.write_text("\n\n---\n\n".join(parts).strip() + "\n", encoding="utf-8")
         combined_path = cf.relative_to(output_dir).as_posix()
@@ -1102,30 +1146,25 @@ def _collect_dir_files(output_dir: Path, subdir: str) -> List[Dict[str, Any]]:
     return [_file_entry(output_dir, f) for f in sorted(d.rglob("*")) if f.is_file()]
 
 
-# A lecture group counts as a real transcript only if it has one of these
-# outputs; a lone ``.md`` (a Moodle outline or stray source dropped in the
-# folder) is shown under "other sources" instead of masquerading as a lecture.
-_TRANSCRIPT_FMTS = {"txt", "json", "srt", "vtt", "summary", "notebooklm"}
-
-
 def list_library(output_dir: Path) -> Dict[str, Any]:
     """A comprehensive, categorised view of *everything* in the library — not just
     transcripts, but converted documents, Notion pages, generated exports and any
     other source files — so nothing the user imported is hidden."""
     all_groups = list_transcripts(output_dir)
-    transcripts = [g for g in all_groups if _TRANSCRIPT_FMTS & set(g["formats"])]
+    transcripts = [g for g in all_groups if _is_transcript_group(g)]
     in_groups = {p for g in all_groups for p in g["formats"].values()}
 
     others: List[Dict[str, Any]] = []
     # markdown-only groups (e.g. a saved course outline) are sources, not lectures
     for g in all_groups:
-        if not (_TRANSCRIPT_FMTS & set(g["formats"])):
+        if not _is_transcript_group(g):
             for rel in g["formats"].values():
                 others.append(_file_entry(output_dir, output_dir / rel))
     if output_dir.is_dir():
         for f in sorted(output_dir.glob("*")):
             if (
                 f.is_file()
+                and not f.name.startswith(".")          # hidden config (.secrets.json, …)
                 and f.suffix.lower() in _VIEWABLE_EXTS
                 and f.relative_to(output_dir).as_posix() not in in_groups
             ):
@@ -1167,7 +1206,46 @@ _STOPWORDS = set(
     such only own same here there because while during before after between against""".split()
 )
 
-_SENT_SPLIT = re.compile(r"(?<=[.!?])\s+")
+_SENT_SPLIT = re.compile(r"(?<=[.!?])\s+")  # retained for backwards compatibility
+
+# Abbreviations whose trailing period must not end a sentence (lecture-prose set).
+_ABBREVS = {
+    "prof", "dr", "mr", "mrs", "ms", "sr", "jr", "st", "vs", "etc", "e.g", "i.e",
+    "approx", "fig", "no", "vol", "ch", "pp", "al", "inc", "ltd", "co", "u.s",
+    "a.m", "p.m", "mt", "gen", "sen", "rep", "cf", "eq", "dept", "est", "ph.d",
+    "b.sc", "m.sc", "i.q", "u.k",
+}
+_PROTECT_DOT = "\x00"
+# Only start a new sentence at terminal punctuation followed by a capital/digit.
+_SENT_SPLIT_SMART = re.compile(r"(?<=[.!?])\s+(?=[\"'(\[]?[A-Z0-9])")
+_DECIMAL_RE = re.compile(r"(\d)\.(\d)")
+_ABBREV_RE = re.compile(
+    r"(?<![\w.])(" + "|".join(re.escape(a) for a in sorted(_ABBREVS, key=len, reverse=True)) + r")\.",
+    re.I,
+)
+
+
+def split_sentences(text: str) -> List[str]:
+    """Split prose into sentences without breaking on common abbreviations or
+    decimals, so summaries and flashcards never emit fragments like ``Prof.`` or
+    ``e.g.``. A new sentence starts only at terminal punctuation followed by a
+    capital letter or digit."""
+    if not text:
+        return []
+    protected = _DECIMAL_RE.sub(r"\1" + _PROTECT_DOT + r"\2", text)
+    protected = _ABBREV_RE.sub(lambda m: m.group(1) + _PROTECT_DOT, protected)
+    out: List[str] = []
+    for part in _SENT_SPLIT_SMART.split(protected):
+        s = part.replace(_PROTECT_DOT, ".").strip()
+        if s:
+            out.append(s)
+    return out
+
+
+def _is_real_sentence(s: str) -> bool:
+    """Reject degenerate fragments (stray abbreviations, one-word splits) from
+    becoming summary bullets — they must carry at least three real words."""
+    return len(re.findall(r"[A-Za-z]{2,}", s)) >= 3
 
 
 def summarize_text(text: str, max_sentences: int = 8) -> List[str]:
@@ -1176,7 +1254,9 @@ def summarize_text(text: str, max_sentences: int = 8) -> List[str]:
     text = (text or "").strip()
     if not text:
         return []
-    sentences = [s.strip() for s in _SENT_SPLIT.split(text) if s.strip()]
+    sentences = [s for s in split_sentences(text) if _is_real_sentence(s)]
+    if not sentences:
+        return []
     if len(sentences) <= max_sentences:
         return sentences
 

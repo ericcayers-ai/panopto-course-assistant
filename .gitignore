@@ -16,6 +16,10 @@ transcripts/
 # Test scratch output
 _test_out.txt
 
+# Moodle-DL reference material (third-party GPL, kept locally for reference only)
+Moodle-DL-main.zip
+_moodledl_ref/
+
 # Editors / OS
 .vscode/
 .idea/

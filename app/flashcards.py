@@ -61,13 +61,29 @@ _ACRONYM_AFTER = re.compile(r"\b([A-Z][A-Za-z][\w-]+(?:\s+[A-Za-z][\w-]+){1,5})\
 _ACRONYM_BEFORE = re.compile(r"\b([A-Z]{2,6})\s*\(([^)]{6,70})\)")
 _ACRONYM_STANDS = re.compile(r"\b([A-Z]{2,6})\s+stands for\s+([^.;:]{5,70})", re.I)
 
-# "X is/are/refers to/means … " definitional sentences.
+# "X is/are/refers to/provides/organises … " descriptive sentences. The verb set
+# is broadened beyond bare copulas (real lecture prose rarely says "X is …"), and
+# the subject is case-insensitive so lowercase mid-sentence terms ("a deadlock is
+# …") are captured, not just title-cased ones.
+_DEF_VERBS = (
+    "is|are|was|were|refers to|means|is defined as|is called|is known as|"
+    "describes|defines|denotes|represents|provides|organizes|organises|reduces|"
+    "removes|enables|allows|consists of|comprises|contains|specifies|"
+    "is used to|are used to"
+)
 _DEF_RE = re.compile(
-    r"^(?:The|A|An)?\s*([A-Z][\w-]+(?:\s+[\w-]+){0,4}?)\s+"
-    r"(is|are|refers to|means|is defined as|is called|is known as)\s+(.+)$"
+    r"^(?:The|A|An)?\s*([A-Za-z][\w-]+(?:\s+[\w-]+){0,4}?)\s+"
+    r"(" + _DEF_VERBS + r")\s+(.+)$",
+    re.I,
 )
 _PRONOUNS = {"it", "this", "that", "these", "those", "there", "they", "he", "she", "we", "you", "i",
-             "here", "today", "now", "so", "then"}
+             "here", "today", "now", "so", "then", "okay", "ok", "well", "right",
+             "yeah", "alright", "basically", "essentially", "anyway"}
+# Discourse fillers that lecturers prefix sentences with — stripped before
+# matching so a definition isn't lost (or mis-subjected as "Okay so throughput").
+_FILLER_PREFIX = re.compile(
+    r"^(?:(?:okay|ok|so|now|well|um+|uh+|right|yeah|yep|alright|basically|"
+    r"essentially|remember|today|anyway|anyways)\b[\s,]*)+", re.I)
 
 
 def _clean_sentence(s: str) -> str:
@@ -75,7 +91,7 @@ def _clean_sentence(s: str) -> str:
 
 
 def _front_for_definition(subject: str, verb: str) -> str:
-    plural = verb.lower() == "are"
+    plural = verb.lower() in ("are", "were", "are used to")
     return f"What {'are' if plural else 'is'} {subject.strip()}?"
 
 
@@ -105,11 +121,11 @@ def extract_cards(text: str, tags: List[str], max_cards: int = 20) -> List[Dict[
     for abbr, full in _ACRONYM_STANDS.findall(text):
         add(f"What does {abbr} stand for?", full)
 
-    # 2) Definitional sentences.
-    for raw in core._SENT_SPLIT.split(text):
+    # 2) Definitional / descriptive sentences (abbreviation-aware split).
+    for raw in core.split_sentences(text):
         if len(cards) >= max_cards:
             break
-        sent = _clean_sentence(raw)
+        sent = _clean_sentence(_FILLER_PREFIX.sub("", raw))
         if len(sent) < 20 or len(sent) > 240:
             continue
         m = _DEF_RE.match(sent)

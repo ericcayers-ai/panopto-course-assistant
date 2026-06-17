@@ -424,67 +424,62 @@
         <!-- MOODLE QUICK (guided course-window flow) -->
         <section id="moodle-quick" class="panel">
           <h2>📘 Import a Moodle course</h2>
-          <p class="panel-intro">Enter your course page link and select <strong>Import course</strong>.
-            Using your signed-in browser session, the assistant retrieves the course outline,
-            documents and Panopto lecture feeds, then prepares them for export.</p>
+          <p class="panel-intro">Connect to your Moodle site and pick a course. The assistant reads it
+            through Moodle's official mobile <strong>web-service API</strong> — exact titles, file types
+            and lecture feeds, with no page-scraping or guesswork — then prepares everything for export.</p>
 
-          <!-- STEP 1 — SOURCE -->
+          <!-- STEP 1 — CONNECT -->
           <div class="card mq-step">
-            <div class="mq-step-head"><span class="mq-num">1</span><h3>Course page link</h3></div>
-            <p class="hint">Enter the main course page address, for example
-              <code>https://elearn.waikato.ac.nz/course/view.php?id=77547</code>.</p>
-            <input type="text" id="mq-url" placeholder="https://elearn.waikato.ac.nz/course/view.php?id=…" autocomplete="off" />
+            <div class="mq-step-head"><span class="mq-num">1</span><h3>Connect to Moodle</h3></div>
+            <p class="hint">Enter your Moodle site (or any course link on it), for example
+              <code>https://elearn.waikato.ac.nz</code>.</p>
+            <input type="text" id="mq-url" placeholder="https://elearn.waikato.ac.nz" autocomplete="off" />
 
-            <!-- Sign-in -->
-            <div class="cookie-helper">
-              <div class="cookie-status" id="mq-cookie-status">
-                <span class="dot off"></span>
-                <span id="mq-cookie-text">Sign-in not detected. Most courses require you to be signed in.</span>
+            <!-- Authentication -->
+            <div class="mq-auth">
+              <div class="mq-auth-tabs">
+                <button class="mq-auth-tab active" data-auth="password" type="button">Username &amp; password</button>
+                <button class="mq-auth-tab" data-auth="token" type="button">Paste a token</button>
               </div>
-              <div class="row">
-                <button id="mq-cookie-grab" class="small" type="button">Use my browser sign-in</button>
-                <button id="mq-cookie-open" class="ghost small" type="button">Open Moodle</button>
-                <button id="mq-cookie-manual-toggle" class="ghost small" type="button">Enter session manually</button>
+              <div id="mq-auth-password" class="mq-auth-pane">
+                <input type="text" id="mq-username" placeholder="Moodle username" autocomplete="username" />
+                <input type="password" id="mq-password" placeholder="Moodle password" autocomplete="current-password" />
+                <p class="hint">Used once, on this computer, to obtain a web-service token from your
+                  Moodle site. Your password is never stored.</p>
               </div>
-              <div id="mq-cookie-manual" class="hidden">
-                <p class="hint">On a signed-in Moodle tab, open developer tools
-                  (<kbd>F12</kbd>) → <em>Application</em> → <em>Cookies</em>, then copy the
-                  <code>MoodleSession</code> value below. A full <code>Cookie:</code> header or a
-                  <code>cookies.txt</code> export is also accepted. The value is stored only on this computer.</p>
-                <textarea id="mq-cookies" rows="2" placeholder="MoodleSession=…"></textarea>
+              <div id="mq-auth-token" class="mq-auth-pane hidden">
+                <input type="text" id="mq-token" placeholder="Moodle mobile web-service token" autocomplete="off" />
+                <p class="hint">From the Moodle mobile app → <em>Settings</em> (or your site's
+                  <em>Security keys</em> page). Use this if your institution signs in through SSO and the
+                  username/password option is rejected.</p>
+              </div>
+              <div class="row"><button id="mq-connect" class="primary" type="button">Connect</button></div>
+              <div id="mq-connect-status" class="cookie-status hidden">
+                <span class="dot off"></span><span id="mq-connect-text"></span>
               </div>
             </div>
 
-            <!-- What to import -->
-            <p class="hint" data-simple-only>The assistant will import the outline, documents,
-              lectures and images for this course. For finer control, choose <strong>Advanced</strong>
-              from <strong>Change workspace</strong>.</p>
-            <div class="mq-grab" data-adv-only>
-              <span class="toggles-label">Include:</span>
-              <label class="toggle" title="Detect Panopto lecture feeds for this course"><input type="checkbox" id="mq-grab-lectures" checked /> Lectures</label>
-              <label class="toggle" title="Transcribe the detected lectures into text"><input type="checkbox" id="mq-grab-transcripts" checked /> Transcripts</label>
-              <label class="toggle" title="Download and convert slides, PDFs, Word and other documents"><input type="checkbox" id="mq-grab-docs" checked /> Documents</label>
-              <label class="toggle" title="Attach figures and diagrams extracted from documents"><input type="checkbox" id="mq-images" checked /> Images</label>
-            </div>
+            <!-- Course picker (revealed after a successful connect) -->
+            <div id="mq-course-pick" class="hidden">
+              <label class="mq-course-field">
+                <span class="course-label">🎓 Course</span>
+                <select id="mq-course-select" title="Pick the course to import"></select>
+              </label>
 
-            <div class="row"><button id="mq-import" class="primary">Import course</button></div>
+              <p class="hint" data-simple-only>The assistant will import the outline, documents,
+                lectures and images for the selected course. For finer control, choose
+                <strong>Advanced</strong> from <strong>Change workspace</strong>.</p>
+              <div class="mq-grab" data-adv-only>
+                <span class="toggles-label">Include:</span>
+                <label class="toggle" title="Surface this course's lecture/recording feeds"><input type="checkbox" id="mq-grab-lectures" checked /> Lectures</label>
+                <label class="toggle" title="Transcribe the detected lectures into text"><input type="checkbox" id="mq-grab-transcripts" checked /> Transcripts</label>
+                <label class="toggle" title="Download and convert slides, PDFs, Word and other documents"><input type="checkbox" id="mq-grab-docs" checked /> Documents</label>
+                <label class="toggle" title="Attach figures and diagrams extracted from documents"><input type="checkbox" id="mq-images" checked /> Images</label>
+              </div>
+
+              <div class="row"><button id="mq-import" class="primary">Import course</button></div>
+            </div>
             <div id="mq-import-result" class="results"></div>
-
-            <!-- Advanced-only fallback -->
-            <details class="sub" data-adv-only id="mq-file-fallback">
-              <summary>Lectures not detected? Import from a saved course page</summary>
-              <p class="hint">Some institutions load the Panopto lecture block in the browser, so it is
-                not visible to a direct fetch. To capture it, open the course in your browser, save the
-                page (<kbd>Ctrl</kbd>+<kbd>S</kbd> → “Web page, complete”), then select the saved
-                <code>.html</code> file here.</p>
-              <p class="hint"><strong>Important:</strong> the lecture feeds appear on the
-                <strong>main course page</strong> — the page titled with the paper name — not on a
-                section page such as “Slides”. You may select several saved pages at once: the main page
-                provides the lectures, and any section pages add their documents. Lecture feeds are read
-                directly from the page and require no sign-in; documents are downloaded only if a session
-                is provided above.</p>
-              <input type="file" id="mq-file" accept=".html,.htm" multiple />
-            </details>
           </div>
 
           <!-- STEP 2 — LECTURES -->

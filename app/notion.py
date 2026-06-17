@@ -452,7 +452,7 @@ def _convert_notion_tree(
     if combined and docs:
         parts = ["# Notion export", ""]
         parts += [f"- {t}" for t, _ in docs]
-        body = "\n\n---\n\n".join(md.strip() for _, md in docs)
+        body = "\n\n---\n\n".join(core.with_heading(t, md) for t, md in docs)
         combined_file = dest_root / "notion_pack.md"
         combined_file.write_text("\n".join(parts) + "\n\n---\n\n" + body + "\n", encoding="utf-8")
         combined_path = combined_file.relative_to(output_dir).as_posix()

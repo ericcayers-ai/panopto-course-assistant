@@ -14,7 +14,7 @@ def db(tmp_path: Path):
     d = database.Database(tmp_path / "t.db")
     cid = d.create_course("C")
     # two transcribe jobs: one done, one failed (network)
-    d.insert_job("j1", "transcribe", "L1", "completed", "", 1.0, "", cid,
+    d.insert_job("j1", "transcribe", "L1", "done", "", 1.0, "", cid,
                  "2026-06-01T10:00:00+00:00", "2026-06-01T10:05:00+00:00")
     d.insert_job("j2", "transcribe", "L2", "error", "", 0.0, "", cid,
                  "2026-06-01T11:00:00+00:00", "2026-06-01T11:01:00+00:00")
