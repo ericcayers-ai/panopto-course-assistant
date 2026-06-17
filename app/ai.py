@@ -146,7 +146,7 @@ def generate_flashcards(output_dir: Path, *, selection: Optional[List[str]] = No
     heur = flashcards.generate_from_library(output_dir, selection=selection,
                                            course=course, max_per_lecture=max_cards)
     cards = [{"front": c.get("front", ""), "back": c.get("back", ""),
-              "type": "definition", "tags": c.get("tags", "")} for c in heur]
+              "type": "definition", "tags": c.get("tags") or []} for c in heur]
     return {"cards": cards, "generated": "extractive"}
 
 

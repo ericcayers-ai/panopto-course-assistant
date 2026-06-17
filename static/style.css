@@ -274,17 +274,54 @@ button.tag:hover { background: var(--brand); color: #fff; }
 .launcher-foot { text-align: center; margin-top: 12px; }
 @media (max-width: 640px) { .launcher-grid { grid-template-columns: 1fr; } }
 
+/* Start-gate selector — show which window/level is currently active. */
+.launch-card.selected { border-color: var(--brand); box-shadow: 0 0 0 2px var(--brand) inset; }
+.launch-modes button.chosen { outline: 2px solid var(--brand); outline-offset: 1px; }
+
+/* Read-only chip in the top bar showing the current workspace (not a control). */
+.mode-chip { font-size: .8rem; color: var(--muted); border: 1px solid var(--border);
+  border-radius: 999px; padding: 2px 10px; white-space: nowrap; }
+
+/* Sign-in helper (Moodle quick import). */
+.cookie-helper { margin: 12px 0; padding: 12px; border: 1px solid var(--border);
+  border-radius: 8px; background: var(--surface-2); }
+.cookie-status { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; font-size: .9rem; }
+.cookie-helper textarea { width: 100%; margin-top: 6px; }
+.toggles-label { font-size: .85rem; color: var(--muted); align-self: center; margin-right: 4px; }
+
+/* Numbered steps in the guided Moodle import. */
+.mq-step-head { display: flex; align-items: center; gap: 10px; margin-bottom: 4px; }
+.mq-step-head h3 { margin: 0; }
+.mq-num { flex: none; width: 26px; height: 26px; border-radius: 50%;
+  background: var(--brand); color: #fff; font-size: .85rem; font-weight: 600;
+  display: inline-flex; align-items: center; justify-content: center; }
+.mq-grab { display: flex; flex-wrap: wrap; align-items: center; gap: 14px; margin: 12px 0; }
+#mq-file-fallback { margin-top: 12px; }
+#mq-file-fallback input[type="file"] { margin-top: 8px; }
+
 .export-choice { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
 @media (max-width: 640px) { .export-choice { grid-template-columns: 1fr; } }
 
-/* Simple mode hides the deeper, optional surfaces so there are fewer choices. */
+/* Simple mode hides the deeper, optional surfaces so there are fewer choices.
+   Advanced mode hides the "simple only" explainer notes. */
 body[data-level="simple"] [data-adv-only] { display: none !important; }
-body[data-level="simple"] details.sub { /* keep collapsible extras available */ }
+body[data-level="advanced"] [data-simple-only] { display: none !important; }
 
-/* Moodle window focuses the guided quick-import flow and hides full-app tabs. */
+/* ---- Window isolation: no cross-access between the two windows ------------
+   Moodle window = only the guided quick-import (+ Jobs). Everything that
+   belongs to the Full workspace is hidden so there's no way to wander across. */
+body[data-window="moodle"] .tab[data-tab="home"],
 body[data-window="moodle"] .tab[data-tab="course"],
-body[data-window="moodle"] .tab[data-tab="import"] { display: none; }
-body[data-window="moodle"] .nav-group.full-only { display: none; }
+body[data-window="moodle"] .tab[data-tab="import"],
+body[data-window="moodle"] .tab[data-tab="library"],
+body[data-window="moodle"] .tab[data-tab="export"],
+body[data-window="moodle"] .nav-group.full-only,
+body[data-window="moodle"] .course-field,
+body[data-window="moodle"] #course-switcher,
+body[data-window="moodle"] #course-new { display: none !important; }
+
+/* Full workspace = hide the Moodle-only quick-import tab. */
+body[data-window="full"] .tab[data-tab="moodle-quick"] { display: none !important; }
 
 .ok-box { background: var(--ok-soft); color: var(--ok); border: 1px solid var(--ok);
   border-radius: 8px; padding: 10px 12px; margin: 8px 0; }
@@ -292,3 +329,31 @@ body[data-window="moodle"] .nav-group.full-only { display: none; }
   border-radius: 8px; padding: 10px 12px; margin: 8px 0; }
 details.sub { margin: 8px 0; }
 details.sub > summary { cursor: pointer; color: var(--brand); font-size: .9rem; }
+
+/* ---- primary button (alias for default filled style with slight size boost) */
+button.primary { padding: 10px 20px; font-size: 15px; font-weight: 600; }
+
+/* ---- lightweight modal prompt ----------------------------------------------- */
+.modal-overlay {
+  position: fixed; inset: 0; z-index: 300;
+  background: rgba(10, 16, 28, .55); backdrop-filter: blur(3px);
+  display: flex; align-items: center; justify-content: center; padding: 24px;
+}
+.modal-box {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--radius); box-shadow: var(--shadow);
+  padding: 24px; min-width: 320px; max-width: 480px; width: 100%;
+  display: flex; flex-direction: column; gap: 12px;
+}
+.modal-label { margin: 0; font-weight: 500; }
+.modal-input { width: 100%; padding: 9px 11px; border: 1px solid var(--border); border-radius: 8px; font: inherit; background: var(--surface); color: var(--ink); }
+.modal-input:focus { outline: 2px solid var(--brand-soft); border-color: var(--brand); }
+.modal-actions { display: flex; gap: 8px; justify-content: flex-end; }
+
+/* ---- job log expand panel --------------------------------------------------- */
+.job-logs {
+  margin: 8px 0 0; padding: 10px 12px; background: var(--surface-2);
+  border: 1px solid var(--border); border-radius: 8px;
+  font-size: 12px; white-space: pre-wrap; max-height: 260px; overflow: auto;
+  color: var(--muted);
+}

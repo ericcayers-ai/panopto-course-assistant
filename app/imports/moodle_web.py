@@ -38,6 +38,10 @@ def parse_cookies(raw: str) -> str:
     raw = (raw or "").strip()
     if not raw:
         return ""
+    # Bare session token — the most common copy/paste mistake is pasting just the
+    # MoodleSession *value* (no name). Wrap it so it becomes a usable cookie.
+    if "=" not in raw and ";" not in raw and "\t" not in raw and len(raw.split()) == 1:
+        return f"MoodleSession={raw}"
     # Netscape cookies.txt: tab-separated, domain in col 0, name/value in last two.
     if "\t" in raw or raw.lstrip().startswith("# Netscape"):
         pairs = []
@@ -70,8 +74,14 @@ def _default_fetcher(url: str, cookie_header: str) -> str:
 
 def _looks_logged_out(raw: str) -> bool:
     low = raw.lower()
-    # Moodle login page markers; a logged-out fetch returns the SSO/login form.
+    # A logged-IN Moodle page always carries a logout link — use that as a strong
+    # "you're fine" signal before we sniff for login markers.
+    if "login/logout.php" in low:
+        return False
+    # Moodle / SSO login page markers; a logged-out fetch returns the login form.
     return ("loginform" in low or "id=\"login\"" in low
+            or "sign in to your account" in low
+            or "login/index.php" in low
             or ("log in" in low and "course" not in low and len(raw) < 8000))
 
 

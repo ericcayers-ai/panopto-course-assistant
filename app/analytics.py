@@ -55,7 +55,7 @@ def compute(db: Database, course_id: Optional[int] = None) -> Dict[str, Any]:
         by_status[j["status"]] = by_status.get(j["status"], 0) + 1
 
     transcribe_jobs = [j for j in jobs if "transcrib" in j["type"].lower()]
-    completed_transcribe = sum(1 for j in transcribe_jobs if j["status"] == "completed")
+    completed_transcribe = sum(1 for j in transcribe_jobs if j["status"] == "done")
 
     usage = {
         "jobs_total": len(jobs),
@@ -88,7 +88,7 @@ def compute(db: Database, course_id: Optional[int] = None) -> Dict[str, Any]:
     # -- throughput: completed-job durations (seconds) --------------------
     durations: List[float] = []
     for j in jobs:
-        if j["status"] != "completed":
+        if j["status"] != "done":
             continue
         a, b = _parse(j.get("created_at", "")), _parse(j.get("updated_at", ""))
         if a and b and b >= a:

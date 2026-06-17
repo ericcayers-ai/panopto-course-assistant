@@ -30,16 +30,21 @@ GET  /api/materials        -> browse files under a local folder
 """
 from __future__ import annotations
 
+import json
 import os
+import shutil
+import tempfile
 from pathlib import Path
 from typing import Any, Dict, List, Optional
+from urllib.parse import urlparse
 
-from fastapi import FastAPI, HTTPException, UploadFile, File
+from fastapi import FastAPI, HTTPException, UploadFile, File, Form
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from . import core, transcribe, sources, notion, flashcards, study, database, courses, settings_store, search, llm, ai, study_planner
+from . import imageextract
 from . import secrets as secret_store
 from . import exports as export_engine
 from . import analytics
@@ -352,6 +357,12 @@ class MoodleFetchReq(BaseModel):
     keep_images: bool = True           # attach images to converted docs (default on)
     convert: bool = True               # convert downloaded files to Markdown
     export: str = ""                   # ""|"notebooklm"|"all" — also export after
+    grab_lectures: bool = True         # detect & return Panopto lecture feeds
+    grab_docs: bool = True             # download + convert resource documents
+
+
+class CookieGrabReq(BaseModel):
+    url: str                           # any URL on the site you're logged into
 
 
 class FolderImportReq(BaseModel):
@@ -404,7 +415,6 @@ def api_status() -> Dict[str, Any]:
     status["secrets"] = secret_store.backend_status()
     status["privacy"] = secret_store.transparency()
     status["transcribe_recommended"] = transcribe.recommend_settings()
-    from . import imageextract
     status["image_extraction"] = imageextract.capability()
     return status
 
@@ -454,7 +464,7 @@ def api_courses_get(course_id: int) -> Dict[str, Any]:
 
 @app.patch("/api/courses/{course_id}")
 def api_courses_update(course_id: int, req: CourseUpdate) -> Dict[str, Any]:
-    if not db.get_course(course_id):
+    if not courses.get_course(db, course_id):
         raise HTTPException(status_code=404, detail="Course not found")
     try:
         return courses.update_course(db, course_id, **req.model_dump(exclude_none=True))
@@ -974,8 +984,7 @@ def api_views_list() -> Dict[str, Any]:
 def api_views_create(req: SavedViewCreate) -> Dict[str, Any]:
     if not req.name.strip():
         raise HTTPException(status_code=400, detail="View name is required.")
-    import json as _json
-    vid = db.create_saved_view(req.name.strip(), _json.dumps(req.query or {}),
+    vid = db.create_saved_view(req.name.strip(), json.dumps(req.query or {}),
                               course_id=settings_store.get_active_course(db))
     return {"id": vid, "name": req.name.strip(), "builtin": False, "query": req.query or {}}
 
@@ -988,9 +997,8 @@ def api_views_delete(view_id: int) -> Dict[str, Any]:
 
 
 def _json_loads(raw: str) -> Dict[str, Any]:
-    import json as _json
     try:
-        return _json.loads(raw) if raw else {}
+        return json.loads(raw) if raw else {}
     except Exception:
         return {}
 
@@ -1293,19 +1301,23 @@ def api_moodle_fetch_course(req: MoodleFetchReq) -> Dict[str, Any]:
         raise HTTPException(status_code=502, detail=f"Could not read course: {e}")
 
     sources.save_outline(OUTPUT_DIR, parsed)
-    res_dir = OUTPUT_DIR / "_resources"
-    try:
-        downloaded = moodle_resources.download_resources(
-            parsed.get("activities", []), res_dir, cookies=req.cookies)
-    except Exception as e:
-        raise HTTPException(status_code=502, detail=f"Resource download failed: {e}")
+
+    # Only download + convert documents when the user ticked "Other docs".
+    downloaded = {"downloaded": 0, "errors": []}
+    converted = None
+    if req.grab_docs:
+        res_dir = OUTPUT_DIR / "_resources"
+        try:
+            downloaded = moodle_resources.download_resources(
+                parsed.get("activities", []), res_dir, cookies=req.cookies)
+        except Exception as e:
+            raise HTTPException(status_code=502, detail=f"Resource download failed: {e}")
+        if req.convert and downloaded["downloaded"]:
+            converted = core.convert_documents(res_dir, OUTPUT_DIR, target="ai",
+                                              combined=True, keep_images=req.keep_images)
     _audit("moodle.fetch_course", target=parsed.get("code", ""),
            detail=f"resources={downloaded['downloaded']}", feature="moodle_import_url")
 
-    converted = None
-    if req.convert and downloaded["downloaded"]:
-        converted = core.convert_documents(res_dir, OUTPUT_DIR, target="ai",
-                                          combined=True, keep_images=req.keep_images)
     exported = None
     if req.export == "notebooklm":
         exported = core.export_notebooklm(OUTPUT_DIR, combined=True,
@@ -1314,13 +1326,151 @@ def api_moodle_fetch_course(req: MoodleFetchReq) -> Dict[str, Any]:
         exported = core.export_all_sources(OUTPUT_DIR, combined=True,
                                           course=parsed.get("code", ""))
 
+    # Only surface lecture feeds when the user ticked "Lectures".
+    feeds = parsed.get("panopto_feeds", []) if req.grab_lectures else []
     return {"course": {"title": parsed.get("title"), "code": parsed.get("code")},
             "outline_sections": parsed.get("section_count"),
-            "panopto_feeds": parsed.get("panopto_feeds", []),
+            "panopto_feeds": feeds,
             "resources": downloaded,
             "converted": converted,
             "exported": exported,
             "keep_images": req.keep_images}
+
+
+@app.post("/api/cookies/grab")
+def api_cookies_grab(req: CookieGrabReq) -> Dict[str, Any]:
+    """One-click, layman-friendly login grab. The app runs locally, so it can
+    read the *already logged-in* browser's session cookie for this site's domain
+    and hand it back as a ``Cookie:`` header — no devtools, no copy/paste.
+
+    Returns a `validated` flag indicating whether the grabbed cookies actually
+    work with the site."""
+    import requests
+
+    host = urlparse(req.url.strip()).hostname or ""
+    if not host:
+        return {"ok": False, "reason": "no-host",
+                "message": "Please enter your course page link first."}
+    try:
+        import browser_cookie3  # type: ignore
+    except Exception:
+        return {"ok": False, "reason": "missing-dep",
+                "message": "Automatic sign-in detection requires an optional component. "
+                           "Run the extras installer (install-extras), or enter your "
+                           "session manually."}
+
+    # Try each common browser; keep whichever yields a valid session.
+    loaders = [("Chrome", "chrome"), ("Edge", "edge"), ("Firefox", "firefox"),
+               ("Brave", "brave"), ("Opera", "opera")]
+    valid_cookies = None
+    used_browser = None
+    for label, name in loaders:
+        load = getattr(browser_cookie3, name, None)
+        if not load:
+            continue
+        try:
+            jar = load(domain_name=host)
+        except Exception:
+            continue
+        # Build a cookie header from all cookies in the jar.
+        pairs = [f"{c.name}={c.value}" for c in jar if c.value]
+        if not pairs:
+            continue
+        cookie_header = "; ".join(pairs)
+        # Validate by trying to fetch the given URL with these cookies.
+        try:
+            resp = requests.get(req.url, cookies=jar, timeout=10,
+                                headers={"User-Agent": "Mozilla/5.0"})
+            if resp.status_code == 200 and ("Moodle" in resp.text or "course" in resp.text.lower()):
+                valid_cookies = cookie_header
+                used_browser = label
+                break
+        except Exception:
+            continue
+    if valid_cookies:
+        return {"ok": True, "browser": used_browser, "host": host,
+                "cookies": valid_cookies,
+                "message": f"Signed-in session detected in {used_browser} for {host}."}
+    else:
+        return {"ok": False, "reason": "not-logged-in", "host": host,
+                "message": f"No valid signed-in session was found for {host}. "
+                           "Open Moodle, sign in, then try again — or enter your session manually."}
+
+
+@app.post("/api/moodle/quick-upload")
+async def api_moodle_quick_upload(
+    files: List[UploadFile] = File(...),
+    cookies: str = Form(""),
+    convert: bool = Form(True),
+    keep_images: bool = Form(True),
+) -> Dict[str, Any]:
+    """Saved-page importer for the quick flow. The user saves the rendered course
+    page(s) — which the browser has fully populated, including the Panopto block's
+    podcast feeds — and uploads them here.
+
+    Multiple pages may be supplied and are merged: the main course page typically
+    carries the Panopto lecture feeds, while section pages (e.g. a "Slides" folder)
+    list the individual documents. Feeds are read directly from the markup and need
+    no sign-in. If session cookies are provided, the linked documents are also
+    downloaded and converted to Markdown."""
+    feeds: List[str] = []
+    activities: List[Dict[str, Any]] = []
+    sections: List[Dict[str, Any]] = []
+    title = ""
+    code = ""
+    seen_feeds: set = set()
+    seen_acts: set = set()
+
+    for f in files:
+        raw = (await f.read()).decode("utf-8", errors="replace")
+        try:
+            parsed = sources.parse_moodle_html(raw)
+        except Exception as e:
+            raise HTTPException(status_code=400, detail=f"Could not read {f.filename}: {e}")
+        for feed in parsed.get("panopto_feeds", []):
+            if feed not in seen_feeds:
+                seen_feeds.add(feed); feeds.append(feed)
+        for a in parsed.get("activities", []):
+            key = a.get("url") or a.get("name")
+            if key and key not in seen_acts:
+                seen_acts.add(key); activities.append(a)
+        sections += parsed.get("sections", [])
+        # Prefer a real paper title over a section title like "Slides".
+        t = parsed.get("title", "")
+        if t and (not title or (parsed.get("panopto_feeds") and not code)):
+            title = t
+        if parsed.get("code"):
+            code = code or parsed["code"]
+
+    merged = {"title": title or (files[0].filename if files else "Course"),
+              "code": code, "sections": sections, "section_count": len(sections),
+              "activities": activities, "activity_count": len(activities),
+              "panopto_feeds": feeds,
+              "outline_markdown": sources._outline_markdown(title, code, sections, activities, [])}
+    sources.save_outline(OUTPUT_DIR, merged)
+
+    downloaded = {"downloaded": 0, "files": [], "errors": []}
+    converted = None
+    if cookies.strip() and activities:
+        res_dir = OUTPUT_DIR / "_resources"
+        try:
+            downloaded = moodle_resources.download_resources(
+                activities, res_dir, cookies=cookies)
+            if convert and downloaded["downloaded"]:
+                converted = core.convert_documents(res_dir, OUTPUT_DIR, target="ai",
+                                                  combined=True, keep_images=keep_images)
+        except Exception as e:
+            downloaded["errors"].append({"name": "download", "error": str(e)})
+
+    _audit("moodle.quick_upload", target=code,
+           detail=f"feeds={len(feeds)} files={len(files)} docs={downloaded['downloaded']}",
+           feature="moodle_import_url")
+    return {"course": {"title": title, "code": code},
+            "outline_sections": len(sections),
+            "panopto_feeds": feeds,
+            "resources": downloaded,
+            "converted": converted,
+            "from_file": ", ".join(f.filename or "page" for f in files)}
 
 
 @app.post("/api/import/preflight")
@@ -1364,8 +1514,6 @@ def api_notion_convert(req: NotionRequest) -> Dict[str, Any]:
 @app.post("/api/notion/upload")
 async def api_notion_upload(file: UploadFile = File(...), combined: bool = False) -> Dict[str, Any]:
     """Convert an uploaded Notion export (.zip or a single .html) into Markdown."""
-    import tempfile
-
     suffix = Path(file.filename or "export.zip").suffix or ".zip"
     raw = await file.read()
     tmp = Path(tempfile.mkdtemp(prefix="notion_up_")) / f"upload{suffix}"
@@ -1377,7 +1525,6 @@ async def api_notion_upload(file: UploadFile = File(...), combined: bool = False
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Could not read export: {e}")
     finally:
-        import shutil
         shutil.rmtree(tmp.parent, ignore_errors=True)
     return result
 

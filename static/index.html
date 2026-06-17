@@ -23,6 +23,7 @@
         <button class="tab" data-tab="jobs"><span class="ico">⚙️</span> Jobs <span id="jobs-badge" class="count-badge hidden">0</span></button>
       </nav>
       <div class="sidebar-foot">
+        <button id="change-workspace" class="ghost small" title="Choose a different window / level">⇄ Change workspace</button>
         <button id="theme-toggle" class="ghost small" title="Toggle light/dark">🌙 Theme</button>
         <a href="/docs" target="_blank" rel="noopener" class="muted small">API docs ↗</a>
       </div>
@@ -41,7 +42,7 @@
           </label>
         </div>
         <div class="topbar-right">
-          <button id="mode-btn" class="ghost small" title="Switch window / Simple-Advanced">⚙︎ <span id="mode-label">Mode</span></button>
+          <span id="mode-label" class="mode-chip" title="Your current workspace">Full · Simple</span>
           <div id="status-bar" class="status-bar">checking environment…</div>
         </div>
       </header>
@@ -59,23 +60,23 @@
 
           <div id="dash-env" class="env-strip"></div>
 
-          <h3 class="section-title">How it works</h3>
-          <div class="tiles flow-tiles">
+          <h3 class="section-title">Jump back in</h3>
+          <div class="tiles flow-tiles" data-adv-only>
             <button class="tile" data-goto="course">
-              <span class="tile-ico">🎓</span><span class="tile-title"><span class="step-chip">1</span> Set up your course</span>
-              <span class="tile-desc">Name it, or grab its title &amp; outline from a Moodle export.</span>
+              <span class="tile-ico">🎓</span><span class="tile-title">Course</span>
+              <span class="tile-desc">Name it or grab its outline from Moodle.</span>
             </button>
             <button class="tile" data-goto="import">
-              <span class="tile-ico">📥</span><span class="tile-title"><span class="step-chip">2</span> Import your stuff</span>
-              <span class="tile-desc">Lectures, PDFs, slides, Word/Excel, Notion pages — keep adding.</span>
+              <span class="tile-ico">📥</span><span class="tile-title">Import</span>
+              <span class="tile-desc">Lectures, documents, Notion — keep adding.</span>
             </button>
             <button class="tile" data-goto="library">
-              <span class="tile-ico">📚</span><span class="tile-title"><span class="step-chip">3</span> Browse &amp; search</span>
-              <span class="tile-desc">Everything you've collected, fully searchable in one library.</span>
+              <span class="tile-ico">📚</span><span class="tile-title">Library</span>
+              <span class="tile-desc">Everything you've collected, searchable.</span>
             </button>
             <button class="tile" data-goto="export">
-              <span class="tile-ico">📤</span><span class="tile-title"><span class="step-chip">4</span> Export as…</span>
-              <span class="tile-desc">NotebookLM sources, Anki flashcards, or a Notion study database.</span>
+              <span class="tile-ico">📤</span><span class="tile-title">Export</span>
+              <span class="tile-desc">NotebookLM, Anki or Notion.</span>
             </button>
           </div>
 
@@ -99,7 +100,7 @@
             </div>
           </div>
 
-          <div class="card">
+          <div class="card" data-adv-only>
             <h3>🏫 Grab course info from Moodle</h3>
             <p class="hint">Point at a saved Moodle course folder (or its <code>course/view_php.html</code>)
               to pull the course title and week/topic outline — then use it as your course name in one click.
@@ -121,8 +122,8 @@
           <div class="import-switch">
             <button class="seg active" data-import="lectures">📡 Lectures</button>
             <button class="seg" data-import="documents">📑 Documents</button>
-            <button class="seg" data-import="notion">🗒️ Notion</button>
-            <button class="seg" data-import="browse">📂 Browse files</button>
+            <button class="seg" data-import="notion" data-adv-only>🗒️ Notion</button>
+            <button class="seg" data-import="browse" data-adv-only>📂 Browse files</button>
           </div>
 
           <!-- LECTURES -->
@@ -141,7 +142,7 @@
                 (audio <em>or</em> video — both work) in your browser. It shows raw XML — press
                 <kbd>Ctrl</kbd>+<kbd>S</kbd> to save it as an <code>.xml</code> file, then upload that
                 here (or paste its path above and click Load).</p>
-              <p class="hint">Example feed: <code>../vibecodeapp/ExampleRssFeed.txt</code> — paste its path above and click Load.</p>
+              <!-- Removed the example feed line -->
             </div>
 
             <details id="settings" class="card hidden" open data-adv-only>
@@ -199,7 +200,7 @@
                 <span class="muted">File types:</span>
                 <span id="doc-exts" class="checks"></span>
               </div>
-              <div class="grid">
+              <div class="grid" data-adv-only>
                 <label>Output
                   <select id="doc-target">
                     <option value="ai" selected>Library (importable, exportable to NotebookLM)</option>
@@ -209,8 +210,8 @@
               </div>
               <div class="toggles">
                 <label class="toggle"><input type="checkbox" id="pdf-recursive" checked /> include subfolders</label>
-                <label class="toggle"><input type="checkbox" id="pdf-overwrite" /> overwrite existing</label>
-                <label class="toggle"><input type="checkbox" id="doc-combined" /> combined <code>documents_pack.md</code> (Library)</label>
+                <label class="toggle" data-adv-only><input type="checkbox" id="pdf-overwrite" /> overwrite existing</label>
+                <label class="toggle" data-adv-only><input type="checkbox" id="doc-combined" /> combined <code>documents_pack.md</code> (Library)</label>
                 <label class="toggle" title="Extract figures/diagrams from the documents and attach them to the Markdown"><input type="checkbox" id="doc-images" checked /> include images &amp; diagrams</label>
               </div>
             </div>
@@ -269,7 +270,7 @@
             <div id="search-results" class="results"></div>
           </div>
 
-          <div class="card">
+          <div class="card" data-adv-only>
             <h3>🗂️ Reorganize files</h3>
             <p class="hint">Move existing transcripts into folders by week / date / topic.</p>
             <div class="row">
@@ -287,7 +288,7 @@
             </div>
           </div>
 
-          <div class="card">
+          <div class="card" data-adv-only>
             <h3>🧭 Filter &amp; sort</h3>
             <div class="row">
               <select id="lib-type" title="Filter by type">
@@ -349,7 +350,7 @@
               <div id="nlm-results" class="results"></div>
             </div>
 
-            <div class="card">
+            <div class="card" data-adv-only>
               <h3>🗃️ Notion study database (CSV)</h3>
               <p class="hint">One row per lecture — Name, Week, Date, Topic, Tags, Status, Summary.
                 In Notion: <em>Import → CSV</em>, then set Tags to <em>Multi-select</em>.</p>
@@ -359,7 +360,7 @@
               <div id="studycsv-results" class="results"></div>
             </div>
 
-            <div class="card">
+            <div class="card" data-adv-only>
               <h3>🎬 Subtitles &amp; extra formats</h3>
               <p class="hint">Generate captions and other formats from your transcripts — saved next to
                 each lecture and shown in your Library.</p>
@@ -396,7 +397,7 @@
             <div id="fc-gen-results" class="results"></div>
           </div>
 
-          <details class="card">
+          <details class="card" data-adv-only>
             <summary><strong>🏷️ Categorize an existing deck</strong> <span class="muted">(already have flashcards? tag them)</span></summary>
             <p class="hint">Paste a deck (CSV or tab-separated: <code>front, back[, tags]</code>) — or give a file
               path — and it adds course/week/topic tags by matching your lectures' vocabulary.</p>
@@ -420,51 +421,95 @@
           <div id="jobs-list" class="results"></div>
         </section>
 
-        <!-- MOODLE QUICK (Simple, course-window flow) -->
+        <!-- MOODLE QUICK (guided course-window flow) -->
         <section id="moodle-quick" class="panel">
-          <h2>📘 Import your Moodle course</h2>
-          <p class="panel-intro">Paste your course page link. With your browser session
-            it pulls the outline, documents and Panopto lectures — then you pick one export.</p>
+          <h2>📘 Import a Moodle course</h2>
+          <p class="panel-intro">Enter your course page link and select <strong>Import course</strong>.
+            Using your signed-in browser session, the assistant retrieves the course outline,
+            documents and Panopto lecture feeds, then prepares them for export.</p>
 
-          <div class="card">
-            <h3>1 · Your course link</h3>
-            <p class="hint">The main course page, e.g.
-              <code>https://elearn.waikato.ac.nz/course/view.php?id=77547</code></p>
+          <!-- STEP 1 — SOURCE -->
+          <div class="card mq-step">
+            <div class="mq-step-head"><span class="mq-num">1</span><h3>Course page link</h3></div>
+            <p class="hint">Enter the main course page address, for example
+              <code>https://elearn.waikato.ac.nz/course/view.php?id=77547</code>.</p>
             <input type="text" id="mq-url" placeholder="https://elearn.waikato.ac.nz/course/view.php?id=…" autocomplete="off" />
-            <details class="sub">
-              <summary>Need to sign in? Paste browser cookies</summary>
-              <p class="hint">Moodle needs you logged in. Paste your site cookies
-                (a <code>Cookie:</code> header or a cookies.txt export). Stored only on this machine.</p>
-              <textarea id="mq-cookies" rows="2" placeholder="MoodleSession=…; …"></textarea>
-            </details>
-            <div class="toggles">
-              <label class="toggle" title="Extract figures/diagrams from slides &amp; assignments and attach them to the Markdown"><input type="checkbox" id="mq-images" checked /> include images &amp; diagrams</label>
+
+            <!-- Sign-in -->
+            <div class="cookie-helper">
+              <div class="cookie-status" id="mq-cookie-status">
+                <span class="dot off"></span>
+                <span id="mq-cookie-text">Sign-in not detected. Most courses require you to be signed in.</span>
+              </div>
+              <div class="row">
+                <button id="mq-cookie-grab" class="small" type="button">Use my browser sign-in</button>
+                <button id="mq-cookie-open" class="ghost small" type="button">Open Moodle</button>
+                <button id="mq-cookie-manual-toggle" class="ghost small" type="button">Enter session manually</button>
+              </div>
+              <div id="mq-cookie-manual" class="hidden">
+                <p class="hint">On a signed-in Moodle tab, open developer tools
+                  (<kbd>F12</kbd>) → <em>Application</em> → <em>Cookies</em>, then copy the
+                  <code>MoodleSession</code> value below. A full <code>Cookie:</code> header or a
+                  <code>cookies.txt</code> export is also accepted. The value is stored only on this computer.</p>
+                <textarea id="mq-cookies" rows="2" placeholder="MoodleSession=…"></textarea>
+              </div>
             </div>
-            <div class="row"><button id="mq-import" class="primary">Import course &amp; files →</button></div>
+
+            <!-- What to import -->
+            <p class="hint" data-simple-only>The assistant will import the outline, documents,
+              lectures and images for this course. For finer control, choose <strong>Advanced</strong>
+              from <strong>Change workspace</strong>.</p>
+            <div class="mq-grab" data-adv-only>
+              <span class="toggles-label">Include:</span>
+              <label class="toggle" title="Detect Panopto lecture feeds for this course"><input type="checkbox" id="mq-grab-lectures" checked /> Lectures</label>
+              <label class="toggle" title="Transcribe the detected lectures into text"><input type="checkbox" id="mq-grab-transcripts" checked /> Transcripts</label>
+              <label class="toggle" title="Download and convert slides, PDFs, Word and other documents"><input type="checkbox" id="mq-grab-docs" checked /> Documents</label>
+              <label class="toggle" title="Attach figures and diagrams extracted from documents"><input type="checkbox" id="mq-images" checked /> Images</label>
+            </div>
+
+            <div class="row"><button id="mq-import" class="primary">Import course</button></div>
             <div id="mq-import-result" class="results"></div>
+
+            <!-- Advanced-only fallback -->
+            <details class="sub" data-adv-only id="mq-file-fallback">
+              <summary>Lectures not detected? Import from a saved course page</summary>
+              <p class="hint">Some institutions load the Panopto lecture block in the browser, so it is
+                not visible to a direct fetch. To capture it, open the course in your browser, save the
+                page (<kbd>Ctrl</kbd>+<kbd>S</kbd> → “Web page, complete”), then select the saved
+                <code>.html</code> file here.</p>
+              <p class="hint"><strong>Important:</strong> the lecture feeds appear on the
+                <strong>main course page</strong> — the page titled with the paper name — not on a
+                section page such as “Slides”. You may select several saved pages at once: the main page
+                provides the lectures, and any section pages add their documents. Lecture feeds are read
+                directly from the page and require no sign-in; documents are downloaded only if a session
+                is provided above.</p>
+              <input type="file" id="mq-file" accept=".html,.htm" multiple />
+            </details>
           </div>
 
-          <div class="card hidden" id="mq-step-transcribe">
-            <h3>2 · Lectures (Panopto)</h3>
-            <p class="hint" id="mq-recommend">Detecting best transcription settings…</p>
+          <!-- STEP 2 — LECTURES -->
+          <div class="card mq-step hidden" id="mq-step-transcribe">
+            <div class="mq-step-head"><span class="mq-num">2</span><h3>Lectures</h3></div>
+            <p class="hint" id="mq-recommend">Determining the best transcription settings for this computer…</p>
             <div id="mq-feeds" class="results"></div>
             <div class="row">
-              <button id="mq-autotranscribe" class="primary">Auto-transcribe all lectures</button>
-              <span class="muted small">Uses the best detected settings for your machine.</span>
+              <button id="mq-autotranscribe" class="primary">Transcribe all lectures</button>
+              <span class="muted small">Uses the best settings detected for this computer.</span>
             </div>
           </div>
 
-          <div class="card hidden" id="mq-step-export">
-            <h3>3 · Export</h3>
-            <p class="hint">One click — pick where this course is going.</p>
+          <!-- STEP 3 — EXPORT -->
+          <div class="card mq-step hidden" id="mq-step-export">
+            <div class="mq-step-head"><span class="mq-num">3</span><h3>Export</h3></div>
+            <p class="hint">Choose a destination for this course.</p>
             <div class="export-choice">
               <button id="mq-export-nblm" class="tile">
                 <span class="tile-ico">📓</span><span class="tile-title">For NotebookLM</span>
                 <span class="tile-desc">Clean per-lecture Markdown sources.</span>
               </button>
               <button id="mq-export-ai" class="tile">
-                <span class="tile-ico">🤖</span><span class="tile-title">For general AI</span>
-                <span class="tile-desc">One combined pack for ChatGPT/Claude/etc.</span>
+                <span class="tile-ico">🤖</span><span class="tile-title">For a general AI assistant</span>
+                <span class="tile-desc">A single combined pack for ChatGPT, Claude and others.</span>
               </button>
             </div>
             <div id="mq-export-result" class="results"></div>
@@ -474,21 +519,13 @@
     </div>
   </div>
 
-  <!-- LAUNCHER: choose a window (Full app vs Moodle course) + mode (Simple/Advanced) -->
+  <!-- START GATE: the only place you choose a window + level. -->
   <div id="launcher" class="launcher hidden">
     <div class="launcher-box">
       <h1>How do you want to work?</h1>
-      <p class="lead">Pick a window. You can switch any time from the ⚙︎ Mode button.</p>
+      <p class="lead">Pick a window and a level. Each window is self-contained — to switch later,
+        reopen this from <strong>⇄ Change workspace</strong> in the sidebar.</p>
       <div class="launcher-grid">
-        <div class="launch-card" data-window="full">
-          <div class="launch-ico">🧰</div>
-          <h3>Full workspace</h3>
-          <p>Everything: courses, every import source, library, study tools and exports.</p>
-          <div class="launch-modes">
-            <button class="primary" data-window="full" data-level="simple">Simple</button>
-            <button class="ghost" data-window="full" data-level="advanced">Advanced</button>
-          </div>
-        </div>
         <div class="launch-card" data-window="moodle">
           <div class="launch-ico">📘</div>
           <h3>Just my Moodle course</h3>
@@ -496,6 +533,15 @@
           <div class="launch-modes">
             <button class="primary" data-window="moodle" data-level="simple">Simple</button>
             <button class="ghost" data-window="moodle" data-level="advanced">Advanced</button>
+          </div>
+        </div>
+        <div class="launch-card" data-window="full">
+          <div class="launch-ico">🧰</div>
+          <h3>Full workspace</h3>
+          <p>Everything: courses, every import source, library, study tools and exports.</p>
+          <div class="launch-modes">
+            <button class="primary" data-window="full" data-level="simple">Simple</button>
+            <button class="ghost" data-window="full" data-level="advanced">Advanced</button>
           </div>
         </div>
       </div>

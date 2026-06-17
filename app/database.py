@@ -309,7 +309,10 @@ class Database:
             "VALUES(?, ?, ?, ?, ?, ?)",
             (course_id, title, path, type, import_source, now_iso()),
         )
-        return int(cur.lastrowid)
+        if cur.lastrowid:
+            return int(cur.lastrowid)
+        row = self.query_one("SELECT id FROM documents WHERE path=?", (path,))
+        return int(row["id"]) if row else 0
 
     def list_documents(self, course_id: Optional[int] = None) -> List[sqlite3.Row]:
         if course_id is None:
