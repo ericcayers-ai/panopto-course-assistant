@@ -159,18 +159,22 @@ _ACTIVITY_KIND = {
 }
 
 _ANCHOR_MOD_RE = re.compile(
-    r'<a\b[^>]*href="[^"]*/mod/(\w+)/view[^"]*"[^>]*>(.*?)</a>', re.S | re.I)
+    r'<a\b[^>]*href="([^"]*/mod/(\w+)/view[^"]*)"[^>]*>(.*?)</a>', re.S | re.I)
 _INSTANCENAME_RE = re.compile(
     r'class="instancename">(.*?)(?:<span class="accesshide|</span>|<)', re.S | re.I)
+
+# Activity kinds whose "view" page leads to a downloadable file.
+_DOWNLOADABLE_KINDS = {"resource", "folder", "assign"}
 
 
 def _extract_activities(raw: str) -> List[Dict[str, Any]]:
     """Recover the named activities/resources Moodle renders inside the course
     page (forums, assignments, resources, quizzes, folders, links, …). Each is an
-    ``<a href=".../mod/<kind>/view…">`` whose visible text is the activity name."""
+    ``<a href=".../mod/<kind>/view…">`` whose visible text is the activity name.
+    The ``url`` is captured too so file-backed activities can be downloaded."""
     out: List[Dict[str, Any]] = []
     seen = set()
-    for kind, inner in _ANCHOR_MOD_RE.findall(raw):
+    for url, kind, inner in _ANCHOR_MOD_RE.findall(raw):
         m = _INSTANCENAME_RE.search(inner)
         name = _clean(m.group(1) if m else inner)
         if not name or name.lower() in _CHROME_HEADINGS or len(name) > 140:
@@ -180,7 +184,9 @@ def _extract_activities(raw: str) -> List[Dict[str, Any]]:
             continue
         seen.add(key)
         out.append({"name": name, "kind": kind.lower(),
-                    "kind_label": _ACTIVITY_KIND.get(kind.lower(), kind.title())})
+                    "kind_label": _ACTIVITY_KIND.get(kind.lower(), kind.title()),
+                    "url": html.unescape(url),
+                    "downloadable": kind.lower() in _DOWNLOADABLE_KINDS})
     return out
 
 
@@ -287,13 +293,26 @@ _RSS_GENERIC_RE = re.compile(r'href="([^"]*(?:podcast|/rss|\.rss)[^"]*)"', re.I)
 
 def extract_panopto_feeds(raw: str) -> List[str]:
     """Best-effort discovery of Panopto podcast RSS feeds embedded in a course
-    page, so the existing feed/transcribe flow can consume lecture recordings."""
+    page, so the existing feed/transcribe flow can consume lecture recordings.
+
+    Moodle's Panopto block exposes each feed twice — an ``itpc://`` (iTunes
+    "subscribe in Podcasts") link and the plain ``https://`` one. We normalise the
+    ``itpc://`` scheme to ``https://`` and de-duplicate, preferring video (mp4)
+    feeds, so the caller gets one usable URL per recording set rather than four."""
+    raw_hits = _PANOPTO_FEED_RE.findall(raw) + _RSS_GENERIC_RE.findall(raw)
     feeds: List[str] = []
     seen = set()
-    for m in _PANOPTO_FEED_RE.findall(raw) + _RSS_GENERIC_RE.findall(raw):
+    for m in raw_hits:
         url = html.unescape(m)
-        if "panopto" in url.lower() and url not in seen:
+        if "panopto" not in url.lower():
+            continue
+        # itpc:// is just the podcast-app scheme over the same https endpoint.
+        if url.lower().startswith("itpc://"):
+            url = "https://" + url[len("itpc://"):]
+        if url not in seen:
             seen.add(url); feeds.append(url)
+    # Prefer mp4 (video) feeds first; they carry the lecture content.
+    feeds.sort(key=lambda u: (0 if "type=mp4" in u.lower() else 1, u))
     return feeds
 
 

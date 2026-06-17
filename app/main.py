@@ -46,11 +46,12 @@ from . import analytics
 from . import backup as backup_mod
 from .integrations import notion as notion_sync, anki as anki_sync, state as sync_state
 from .imports import moodle_web, folder as folder_import, preflight as import_preflight
+from .imports import moodle_resources
 from .jobs import manager
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 STATIC_DIR = BASE_DIR / "static"
-APP_VERSION = "2.1.0"
+APP_VERSION = "2.2.0"
 # Where transcripts are written/read. Override with PANOPTO_OUTPUT.
 OUTPUT_DIR = Path(os.environ.get("PANOPTO_OUTPUT", BASE_DIR / "transcripts")).resolve()
 core.ensure_dir(OUTPUT_DIR)
@@ -176,6 +177,7 @@ class DocsRequest(BaseModel):
     overwrite: bool = False
     target: str = "ai"                   # "ai" (_docs) | "copy" (sibling *_copy)
     combined: bool = False               # one documents_pack.md (ai target only)
+    keep_images: bool = True             # extract & attach embedded images (default on)
 
 
 class NotebookLMRequest(BaseModel):
@@ -342,6 +344,14 @@ class MoodleUrlReq(BaseModel):
     follow_sections: bool = True       # also crawl linked section.php pages
     save_outline: bool = True          # write the outline as an AI source
     create_course: bool = False        # create + activate a course from the title
+
+
+class MoodleFetchReq(BaseModel):
+    url: str                           # .../course/view.php?id=NNNNN
+    cookies: str = ""                  # browser session cookies (header/txt)
+    keep_images: bool = True           # attach images to converted docs (default on)
+    convert: bool = True               # convert downloaded files to Markdown
+    export: str = ""                   # ""|"notebooklm"|"all" — also export after
 
 
 class FolderImportReq(BaseModel):
@@ -1269,6 +1279,50 @@ def api_moodle_import_url(req: MoodleUrlReq) -> Dict[str, Any]:
     return parsed
 
 
+@app.post("/api/moodle/fetch-course")
+def api_moodle_fetch_course(req: MoodleFetchReq) -> Dict[str, Any]:
+    """Everything-from-the-link (§7): parse the course, download its resource
+    files with your session cookies, convert them to Markdown (images attached
+    unless ``keep_images`` is off), optionally export, and report the Panopto feeds
+    so lectures can be transcribed. Requires internet + valid cookies."""
+    try:
+        parsed = moodle_web.import_course(req.url, req.cookies, follow_sections=True)
+    except moodle_web.MoodleWebError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"Could not read course: {e}")
+
+    sources.save_outline(OUTPUT_DIR, parsed)
+    res_dir = OUTPUT_DIR / "_resources"
+    try:
+        downloaded = moodle_resources.download_resources(
+            parsed.get("activities", []), res_dir, cookies=req.cookies)
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"Resource download failed: {e}")
+    _audit("moodle.fetch_course", target=parsed.get("code", ""),
+           detail=f"resources={downloaded['downloaded']}", feature="moodle_import_url")
+
+    converted = None
+    if req.convert and downloaded["downloaded"]:
+        converted = core.convert_documents(res_dir, OUTPUT_DIR, target="ai",
+                                          combined=True, keep_images=req.keep_images)
+    exported = None
+    if req.export == "notebooklm":
+        exported = core.export_notebooklm(OUTPUT_DIR, combined=True,
+                                         course=parsed.get("code", ""))
+    elif req.export == "all":
+        exported = core.export_all_sources(OUTPUT_DIR, combined=True,
+                                          course=parsed.get("code", ""))
+
+    return {"course": {"title": parsed.get("title"), "code": parsed.get("code")},
+            "outline_sections": parsed.get("section_count"),
+            "panopto_feeds": parsed.get("panopto_feeds", []),
+            "resources": downloaded,
+            "converted": converted,
+            "exported": exported,
+            "keep_images": req.keep_images}
+
+
 @app.post("/api/import/preflight")
 def api_import_preflight(req: PreflightReq) -> Dict[str, Any]:
     """Validate a folder import before running it: counts, expected output, and
@@ -1340,6 +1394,7 @@ def api_docs_convert(req: DocsRequest) -> Dict[str, Any]:
             overwrite=req.overwrite,
             target=req.target,
             combined=req.combined,
+            keep_images=req.keep_images,
         )
     except RuntimeError as e:        # markitdown missing
         raise HTTPException(status_code=503, detail=str(e))

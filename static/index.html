@@ -211,6 +211,7 @@
                 <label class="toggle"><input type="checkbox" id="pdf-recursive" checked /> include subfolders</label>
                 <label class="toggle"><input type="checkbox" id="pdf-overwrite" /> overwrite existing</label>
                 <label class="toggle"><input type="checkbox" id="doc-combined" /> combined <code>documents_pack.md</code> (Library)</label>
+                <label class="toggle" title="Extract figures/diagrams from the documents and attach them to the Markdown"><input type="checkbox" id="doc-images" checked /> include images &amp; diagrams</label>
               </div>
             </div>
             <div id="pdf-results" class="results"></div>
@@ -436,7 +437,10 @@
                 (a <code>Cookie:</code> header or a cookies.txt export). Stored only on this machine.</p>
               <textarea id="mq-cookies" rows="2" placeholder="MoodleSession=…; …"></textarea>
             </details>
-            <div class="row"><button id="mq-import" class="primary">Import course →</button></div>
+            <div class="toggles">
+              <label class="toggle" title="Extract figures/diagrams from slides &amp; assignments and attach them to the Markdown"><input type="checkbox" id="mq-images" checked /> include images &amp; diagrams</label>
+            </div>
+            <div class="row"><button id="mq-import" class="primary">Import course &amp; files →</button></div>
             <div id="mq-import-result" class="results"></div>
           </div>
 

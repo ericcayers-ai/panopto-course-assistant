@@ -761,10 +761,13 @@ $("pdf-go").addEventListener("click", async () => {
         overwrite: $("pdf-overwrite").checked,
         target,
         combined: $("doc-combined").checked,
+        keep_images: $("doc-images").checked,
       }),
     });
     clear(out);
-    out.appendChild(el("p", { class: "ok-text", text: `✓ Converted ${data.count} document(s) → ${data.output_root}` }));
+    const withImgs = data.files ? data.files.reduce((n, f) => n + (f.images || 0), 0) : 0;
+    const imgNote = withImgs ? ` · ${withImgs} image(s) attached` : "";
+    out.appendChild(el("p", { class: "ok-text", text: `✓ Converted ${data.count} document(s)${imgNote} → ${data.output_root}` }));
     if (data.combined) out.appendChild(el("div", {}, [
       el("button", { class: "tag", text: "view documents_pack.md", onclick: () => { viewTranscript(data.combined); showTab("library"); } }),
     ]));
@@ -1080,17 +1083,28 @@ $("mq-import")?.addEventListener("click", async () => {
   const url = $("mq-url").value.trim();
   if (!url) { toast("Paste your course link first.", "warn"); return; }
   const cookies = $("mq-cookies").value.trim();
-  const btn = $("mq-import"); btn.disabled = true; btn.textContent = "Importing…";
+  const keepImages = $("mq-images").checked;
+  const btn = $("mq-import"); btn.disabled = true; btn.textContent = "Importing & downloading…";
   const out = $("mq-import-result"); clear(out);
   try {
-    const data = await postJSON("/api/moodle/import-url",
-      { url, cookies, follow_sections: true, save_outline: true, create_course: true });
-    if (data.course) setCourse(data.course.code || data.course.name);
+    // Full "from the link" flow: parse → download resource files → convert to MD.
+    const data = await postJSON("/api/moodle/fetch-course",
+      { url, cookies, keep_images: keepImages, convert: true });
+    const c = data.course || {};
+    if (c.code || c.title) setCourse(c.code || c.title);
+    const res = data.resources || {};
+    const conv = data.converted || {};
+    const imgs = (conv.files || []).reduce((n, f) => n + (f.images || 0), 0);
     out.appendChild(el("div", { class: "ok-box", html:
-      `Imported <strong>${data.title || data.code || "course"}</strong> — `
-      + `${data.section_count} sections, ${data.activity_count} activities, `
-      + `${(data.panopto_feeds || []).length} lecture feed(s), `
-      + `${data.pages_fetched} page(s) read.` }));
+      `Imported <strong>${c.title || c.code || "course"}</strong> — `
+      + `${data.outline_sections || 0} sections, `
+      + `<strong>${res.downloaded || 0}</strong> file(s) downloaded, `
+      + `<strong>${conv.count || 0}</strong> converted to Markdown`
+      + (imgs ? ` (${imgs} image(s) attached)` : "")
+      + `, ${(data.panopto_feeds || []).length} lecture feed(s).` }));
+    if ((res.errors || []).length)
+      out.appendChild(el("p", { class: "muted small",
+        text: `${res.errors.length} file(s) couldn't be downloaded (check your cookies).` }));
     window.__mqFeeds = data.panopto_feeds || [];
     renderMqFeeds();
     $("mq-step-transcribe").classList.remove("hidden");
@@ -1098,7 +1112,7 @@ $("mq-import")?.addEventListener("click", async () => {
     toast("Course imported.", "ok");
   } catch (e) {
     out.appendChild(el("div", { class: "warn-box", text: "Import failed: " + e.message }));
-  } finally { btn.disabled = false; btn.textContent = "Import course →"; }
+  } finally { btn.disabled = false; btn.textContent = "Import course & files →"; }
 });
 
 function renderMqFeeds() {

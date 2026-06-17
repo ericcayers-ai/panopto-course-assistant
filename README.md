@@ -12,6 +12,8 @@ A **Python / FastAPI** backend with a plain **HTML + JavaScript** frontend
 
 ## What's new
 
+**v2.2 — download a whole course from its link.** `POST /api/moodle/fetch-course` parses the course, **downloads every resource file** (slides, assignment briefs, PDFs) using your browser session cookies, converts them to Markdown, and reports the Panopto feeds for transcription — one call from the course URL. The Moodle "Simple" window now runs this end-to-end (import → files → auto-transcribe → export). Resource download URLs are captured from the page, Panopto's duplicated `itpc://`/`https://` feeds are de-duplicated, and there's an **"include images & diagrams" toggle (on by default)** on both the document import and the Moodle flow.
+
 **v2.1 — imagery & diagrams are no longer lost.** Converting a PDF/PPTX/DOCX used to keep only the text; now embedded **figures, diagrams and screenshots are extracted and attached** to the Markdown (`![Figure N (p.X)](…_assets/…)`) so worked examples, assignment figures and lecture-slide diagrams survive into NotebookLM/AI exports and the course archive. Office/EPUB images come out with the standard library; PDFs use PyMuPDF or pdfplumber. Images are preserved even when text extraction fails, and Notion-export images are copied across too.
 
 ### v2.0
