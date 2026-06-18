@@ -398,13 +398,13 @@ GET  /api/export/{id}
 
 ## §11 — Packaging & Distribution
 
-**Status:** 🟡 **Partial.** `backup.py` ships the recovery essentials: `environment_report` (one snapshot of Python/platform/engines/optional-deps/free-disk for the first-run wizard + "why is X disabled?" panel) and a portable `create_backup`/`restore_backup` pair (zip of DB + whole library, **secrets excluded**, path-traversal-guarded, safe-merge by default; restored DB migrates forward on next launch). Routes: `GET /api/environment`, `POST /api/backup`, `POST /api/restore`. `run.py` already auto-selects a free port. `tests/test_backup.py` green. Remaining: PyInstaller one-click bundles, lite/full guided installers, auto-update with changelog.
+**Status:** 🟡 **Partial.** `backup.py` ships the recovery essentials: `environment_report` (one snapshot of Python/platform/engines/optional-deps/free-disk for the first-run wizard + "why is X disabled?" panel) and a portable `create_backup`/`restore_backup` pair (zip of DB + whole library, **secrets excluded**, path-traversal-guarded, safe-merge by default; restored DB migrates forward on next launch). Routes: `GET /api/environment`, `POST /api/backup`, `POST /api/restore`. `run.py` already auto-selects a free port. `tests/test_backup.py` green. Remaining: lite/full guided installers, auto-update with changelog.
 
-**Goal:** Non-technical, double-click deployment.
+**Goal:** Low-friction, double-click deployment from source.
 **Depends:** §1–§9 stable.
-**Files:** PyInstaller spec(s), installer scripts, extend existing `start-*`/`install-extras-*`.
+**Files:** installer scripts, extend existing `start-*`/`install-extras-*`.
 
-- **Build:** PyInstaller for Windows / macOS / Linux; bundled one-click launchers; improved auto-port selection (extends `run.py`).
+- **Build:** bundled one-click launchers for Windows / macOS / Linux; improved auto-port selection (extends `run.py`).
 - **Install modes:** optional **lite** (core only) vs **full** (whisper/OCR/markitdown) install paths; guided dependency installer + **environment checker** that reports what's present/missing.
 - **Installer features:** first-run wizard, dependency detection, auto-updates with **changelog summaries**, portable mode (all state under one folder), backup/restore (pairs with §9 archive), migration tools (pairs with §1 migrations), **one-click recovery/reset** for broken config, and a **"migrate to a new computer"** package (settings + DB + library export/import).
 

@@ -122,7 +122,11 @@ function applyTheme(theme) {
   const btn = $("theme-toggle");
   if (btn) btn.textContent = theme === "dark" ? "☀️ Theme" : "🌙 Theme";
 }
-$("theme-toggle").addEventListener("click", () =>
+// Apply the saved theme immediately (before the async init chain) so it sticks
+// on refresh with no flash, even if later startup code errors out.
+applyTheme(recall("theme") ||
+  (window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light"));
+$("theme-toggle")?.addEventListener("click", () =>
   applyTheme(document.documentElement.getAttribute("data-theme") === "dark" ? "light" : "dark"));
 $("menu-toggle").addEventListener("click", () =>
   document.querySelector(".app").classList.toggle("menu-open"));
@@ -327,15 +331,17 @@ if ($("course-switcher")) {
 if ($("course-new")) $("course-new").addEventListener("click", createCourse);
 
 // keep the top-bar field and the Course panel field in sync + persisted
-$("course-input").addEventListener("input", () => remember("course", $("course-input").value.trim()));
-$("course-name-set").addEventListener("click", () => {
+$("course-input")?.addEventListener("input", () => remember("course", $("course-input").value.trim()));
+// Legacy "set course" button — no longer in the markup; guard so a missing
+// element can't throw and halt the rest of this script (theme, SSO, handlers).
+$("course-name-set")?.addEventListener("click", () => {
   const name = $("course-name-main").value.trim();
   if (!name) { toast("Type a course name first.", "warn"); return; }
   setCourse(name);
   toast("Course set to “" + name + "”.", "ok");
 });
-$("course-name-main").addEventListener("keydown", (e) => {
-  if (e.key === "Enter") $("course-name-set").click();
+$("course-name-main")?.addEventListener("keydown", (e) => {
+  if (e.key === "Enter") $("course-name-set")?.click();
 });
 
 // ---- lectures -------------------------------------------------------------
@@ -689,9 +695,21 @@ $("srt-export").addEventListener("click", async () => {
     });
     clear(out);
     out.appendChild(el("p", { class: "ok-text",
-      text: `✓ ${data.count} SRT file(s) written to ${data.dest}` }));
+      text: `✓ ${data.count} SRT file(s) written to ${data.dest || data.output_dir}` }));
+    const rec = data.recordings;
+    if (rec) {
+      const have = (rec.copied?.length || 0) + (rec.downloaded?.length || 0);
+      out.appendChild(el("p", { class: have ? "ok-text" : "hint",
+        text: `🎬 ${have} lecture recording(s) placed alongside the SRT files`
+          + (rec.downloaded?.length ? ` (${rec.downloaded.length} downloaded)` : "") + "." }));
+      if (rec.missing?.length) {
+        out.appendChild(el("p", { class: "hint",
+          text: `${rec.missing.length} recording(s) couldn't be retrieved (not kept locally and `
+            + `the source needs sign-in). Re-transcribe those lectures to keep their video.` }));
+      }
+    }
     out.appendChild(el("p", { class: "hint",
-      text: "Place SRT files in the same folder as your videos — most players load them automatically." }));
+      text: "The .srt files share each video's name, so players load them automatically when both are in this folder." }));
     toast(`Exported ${data.count} SRT file(s).`, "ok");
   } catch (e) { out.textContent = "Error: " + e.message; toast(e.message, "warn"); }
   finally { btn.disabled = false; }
@@ -1326,7 +1344,8 @@ async function autoTranscribeMq() {
   if (!feeds.length) { toast("No lecture feed to transcribe.", "warn"); return; }
   if (!mqRecommend || !mqRecommend.ready) { toast(mqRecommend?.reason || "No transcription engine.", "warn"); return; }
   const settings = { engine: mqRecommend.engine, model: mqRecommend.model,
-    device: mqRecommend.device, language: mqRecommend.language, interval: mqRecommend.interval };
+    device: mqRecommend.device, language: mqRecommend.language, interval: mqRecommend.interval,
+    keep_media: true };   // retain the recording so SRT export can sit it next to the video
   let queued = 0;
   for (const feed of feeds) {
     try {

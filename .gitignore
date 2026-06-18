@@ -16,6 +16,11 @@ transcripts/
 # Test scratch output
 _test_out.txt
 
+# Build artifacts
+build/
+dist/
+*.spec
+
 # Moodle-DL reference material (third-party GPL, kept locally for reference only)
 Moodle-DL-main.zip
 _moodledl_ref/

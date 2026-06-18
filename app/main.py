@@ -58,10 +58,9 @@ from . import sso_protocol
 from .jobs import manager
 
 BASE_DIR = Path(__file__).resolve().parent.parent
-# CA_STATIC_DIR is set by run.py when running as a PyInstaller frozen exe so
-# the static folder is found in sys._MEIPASS rather than relative to __file__.
+# Static assets live next to the app; CA_STATIC_DIR can override the location.
 STATIC_DIR = Path(os.environ.get("CA_STATIC_DIR", BASE_DIR / "static"))
-APP_VERSION = "2.5.0"
+APP_VERSION = "2.5.1"
 # Where transcripts are written/read. Override with PANOPTO_OUTPUT.
 OUTPUT_DIR = Path(os.environ.get("PANOPTO_OUTPUT", BASE_DIR / "transcripts")).resolve()
 core.ensure_dir(OUTPUT_DIR)
@@ -231,6 +230,7 @@ class StudyCsvRequest(BaseModel):
 
 class SrtExportRequest(BaseModel):
     output_dir: Optional[str] = None       # folder to copy SRT files alongside videos
+    include_recordings: bool = True        # also place the lecture videos in that folder
 
 
 # --- Multi-course / persistence (§1) ---------------------------------------
@@ -472,6 +472,64 @@ def _copy_export_files(rel_paths: List[str], src_root: Path, dest_dir: Path) -> 
         src = src_root / rel
         if src.exists():
             shutil.copy2(src, dest_dir / src.name)
+
+
+def _find_media(folder: Path, stem: str) -> Optional[Path]:
+    """Return the lecture recording for ``stem`` inside ``folder`` if one exists."""
+    if not folder.is_dir():
+        return None
+    for ext in folder_import.MEDIA_EXTS:
+        cand = folder / f"{stem}{ext}"
+        if cand.exists():
+            return cand
+    return None
+
+
+def _export_recordings(dest_dir: Path, cookies: str = "") -> Dict[str, Any]:
+    """Ensure each transcribed lecture's recording sits next to its exported SRT.
+
+    For every transcript we copy the recording from the library if it was kept
+    there, otherwise we try to (re)download it from the source URL stored in the
+    lecture's JSON. Subtitle players auto-load a ``.srt`` when the video shares
+    its folder and stem, so this makes the SRT export self-contained.
+    """
+    dest_dir.mkdir(parents=True, exist_ok=True)
+    copied: List[str] = []
+    downloaded: List[str] = []
+    missing: List[str] = []
+    for g in core.list_transcripts(OUTPUT_DIR):
+        fmts = g.get("formats", {})
+        if "json" not in fmts:
+            continue
+        stem = g["stem"]
+        if _find_media(dest_dir, stem):
+            copied.append(stem)            # already present in the destination
+            continue
+        json_path = OUTPUT_DIR / fmts["json"]
+        lib_media = _find_media(json_path.parent, stem)
+        if lib_media:
+            try:
+                shutil.copy2(lib_media, dest_dir / lib_media.name)
+                copied.append(stem)
+                continue
+            except OSError:
+                pass
+        # Not kept in the library — re-download from the stored source URL.
+        try:
+            data = json.loads(json_path.read_text(encoding="utf-8", errors="replace"))
+            url = (data.get("url") or "").strip()
+        except (json.JSONDecodeError, OSError):
+            url = ""
+        if url:
+            try:
+                transcribe.download_media(url, dest_dir / f"{stem}.mp4", cookies=cookies)
+                downloaded.append(stem)
+                continue
+            except Exception:
+                pass
+        missing.append(stem)
+    return {"copied": copied, "downloaded": downloaded, "missing": missing,
+            "have": len(copied) + len(downloaded)}
 
 
 # ---------------------------------------------------------------------------
@@ -1121,6 +1179,9 @@ def api_export_srt(req: SrtExportRequest) -> Dict[str, Any]:
         dest = Path(req.output_dir).expanduser()
         _copy_export_files(result.get("files", []), OUTPUT_DIR, dest)
         result["output_dir"] = str(dest)
+        result["dest"] = str(dest)
+        if req.include_recordings:
+            result["recordings"] = _export_recordings(dest)
     return result
 
 

@@ -49,6 +49,41 @@ def test_status(client):
     assert "engines" in body and "output_choices" in body
 
 
+def test_export_srt_places_recordings(client):
+    """SRT export drops each lecture's kept recording next to its .srt so a media
+    player auto-loads the subtitles."""
+    c, tmp = client
+    _seed(tmp)
+    from app import core
+    item = core.LectureItem(title="Week2_CPU", url="u", duration=60,
+                            pub_date="Mon, 09 Mar 2026 02:13:40 GMT")
+    lib_dir = core.output_dir_for(tmp, item, "week")
+    (lib_dir / f"{item.safe_title}.mp4").write_bytes(b"fake-video")  # kept recording
+
+    dest = tmp / "videos"
+    r = c.post("/api/export/srt", json={"output_dir": str(dest)})
+    assert r.status_code == 200
+    data = r.json()
+    assert data["count"] >= 1
+    assert (dest / f"{item.safe_title}.srt").exists()       # subtitle
+    assert (dest / f"{item.safe_title}.mp4").exists()       # recording alongside it
+    assert item.safe_title in data["recordings"]["copied"]
+    assert data["recordings"]["have"] >= 1
+
+
+def test_export_srt_reports_missing_recording(client):
+    """When a recording wasn't kept and can't be fetched, it's reported missing
+    rather than silently dropped."""
+    c, tmp = client
+    _seed(tmp)   # no media file, url 'u' is not downloadable
+    dest = tmp / "videos"
+    r = c.post("/api/export/srt", json={"output_dir": str(dest), "include_recordings": True})
+    assert r.status_code == 200
+    rec = r.json()["recordings"]
+    assert rec["have"] == 0
+    assert "Week2_CPU" in rec["missing"]
+
+
 def test_index_and_assets_are_no_cache(client):
     c, _ = client
     # the SPA shell and its assets must revalidate so updates aren't masked by

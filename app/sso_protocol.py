@@ -86,6 +86,7 @@ def register(port: int) -> bool:
     except ImportError:
         return False
 
+    # Drive a tiny pythonw helper that POSTs the token back to this server.
     py = Path(sys.executable)
     pythonw = py.with_name("pythonw.exe")
     exe = str(pythonw) if pythonw.exists() else str(py)
