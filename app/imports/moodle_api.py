@@ -62,6 +62,15 @@ class MoodleApiError(Exception):
 # ---------------------------------------------------------------------------
 
 # Module kinds whose payload is *always* lecture/recording content.
+# Moodle errorcode values that mean "username/password login is not available here
+# because this site uses SSO / external authentication."  The user must paste a
+# token obtained from their Moodle security keys page instead.
+_SSO_CODES = frozenset({
+    "loginerrorothers",      # external-auth plugin — password login disabled
+    "loginerrorexternal",    # variant used by some SSO plugins
+    "webservicesnotenabled", # mobile web services completely disabled
+})
+
 _VIDEO_MODNAMES = {"panopto", "kalvidres", "helixmedia", "kalvidpres", "facetoface_video"}
 # Module kinds that carry downloadable course files (documents).
 _FILE_MODNAMES = {"resource", "folder", "page", "book", "imscp"}
@@ -195,8 +204,15 @@ def fetch_token(base_url: str, username: str, password: str, *,
                              "Web services may be disabled, or this is not a Moodle site.") from None
     if "token" in payload:
         return str(payload["token"])
-    err = payload.get("error") or payload.get("errorcode") or "unknown error"
-    raise MoodleApiError(f"Could not obtain a token: {err}")
+    err_code = payload.get("errorcode", "")
+    err_msg = payload.get("error") or err_code or "unknown error"
+    if err_code in _SSO_CODES:
+        raise MoodleApiError(
+            "SSO_REJECTED: This Moodle site uses SSO or external authentication — "
+            "username/password sign-in is disabled. Open your Moodle security keys "
+            "page to get a token, then use the ‘Paste a token’ tab."
+        )
+    raise MoodleApiError(f"Could not obtain a token: {err_msg}")
 
 
 class MoodleClient:

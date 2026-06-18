@@ -259,6 +259,16 @@ def test_fetch_token_non_json():
         ma.fetch_token("https://m/", "u", "p", http_post=post)
 
 
+def test_fetch_token_sso_rejection():
+    """SSO sites return loginerrorothers — must raise with SSO_REJECTED: prefix
+    so the frontend can auto-switch to the token tab."""
+    post = lambda url, data: (200, json.dumps(
+        {"error": "Authentication with username and password is not used on this site.",
+         "errorcode": "loginerrorothers"}))
+    with pytest.raises(ma.MoodleApiError, match="SSO_REJECTED:"):
+        ma.fetch_token("https://m/", "u", "p", http_post=post)
+
+
 # ---------------------------------------------------------------------------
 # download_documents — exact names, dedup, error capture
 # ---------------------------------------------------------------------------

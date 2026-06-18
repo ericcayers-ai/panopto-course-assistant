@@ -1153,6 +1153,19 @@ document.querySelectorAll(".mq-auth-tab").forEach((tab) =>
     $("mq-auth-token").classList.toggle("hidden", which !== "token");
   }));
 
+// "Open security keys ↗" — builds the managetoken.php URL from whatever the user
+// typed in #mq-url and opens it in a new tab so they can copy their token.
+$("mq-open-token-page")?.addEventListener("click", () => {
+  const raw = $("mq-url").value.trim();
+  if (!raw) { toast("Enter your Moodle site URL first.", "warn"); return; }
+  try {
+    const base = new URL(/^https?:\/\//i.test(raw) ? raw : "https://" + raw);
+    window.open(base.origin + "/user/managetoken.php", "_blank", "noopener,noreferrer");
+  } catch (_) {
+    toast("Enter a valid Moodle URL first (e.g. https://elearn.waikato.ac.nz).", "warn");
+  }
+});
+
 // Connect: obtain a web-service token (stored locally) and list the courses.
 $("mq-connect")?.addEventListener("click", async () => {
   const url = $("mq-url").value.trim();
@@ -1188,8 +1201,17 @@ $("mq-connect")?.addEventListener("click", async () => {
     _mqBaseUrl = d.base_url || url;
     toast("Connected to Moodle.", "ok");
   } catch (e) {
-    setConnectStatus("off", e.message);
-    toast(e.message, "err");
+    const msg = e.message || "";
+    if (msg.startsWith("SSO_REJECTED:")) {
+      // Auto-switch to the token tab and guide the user.
+      document.querySelector('.mq-auth-tab[data-auth="token"]')?.click();
+      const hint = msg.slice("SSO_REJECTED:".length).trim();
+      setConnectStatus("warn", hint);
+      toast("SSO site detected — paste a token to connect.", "warn");
+    } else {
+      setConnectStatus("off", msg);
+      toast(msg, "err");
+    }
   } finally { btn.disabled = false; btn.textContent = "Connect"; }
 });
 let _mqBaseUrl = "";

@@ -294,6 +294,7 @@ button.tag:hover { background: var(--brand); color: #fff; }
 .mq-auth-tab.active { background: var(--brand-soft); color: var(--brand); border-color: transparent; font-weight: 600; }
 .mq-auth-pane { display: flex; flex-direction: column; gap: 8px; }
 .mq-auth-pane input { width: 100%; }
+.mq-open-btn { align-self: flex-start; font-size: .82rem; }
 
 /* Course picker (revealed after connect). */
 .mq-course-field { display: flex; align-items: center; gap: 10px; margin: 14px 0 4px; }
