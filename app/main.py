@@ -54,6 +54,7 @@ from .imports import moodle_web, folder as folder_import, preflight as import_pr
 from .imports import moodle_resources
 from .imports import moodle_api
 from .imports import moodle_sso
+from . import sso_protocol
 from .jobs import manager
 
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -191,11 +192,13 @@ class NotebookLMRequest(BaseModel):
     selection: Optional[List[str]] = None  # ["folder/stem", ...]; None = all
     combined: bool = False                 # also write a single course_pack.md
     course: str = ""                       # optional course name for headers
+    output_dir: Optional[str] = None       # also copy files to this folder
 
 
 class ExportAllRequest(BaseModel):
     combined: bool = True                  # write a single everything_pack.md
     course: str = ""                       # optional course name for headers
+    output_dir: Optional[str] = None       # also copy files to this folder
 
 
 class FormatsRequest(BaseModel):
@@ -207,21 +210,25 @@ class FlashcardGenRequest(BaseModel):
     selection: Optional[List[str]] = None  # limit to these lecture stems; None = all
     course: str = ""
     deck: str = "flashcards"
-    prefer: str = "summary"                # "summary" | "text"
-    max_per_lecture: int = 15
+    max_cards: int = 50                    # total max cards to generate
+    output_dir: Optional[str] = None       # custom output folder
 
 
 class FlashcardCatRequest(BaseModel):
     text: str = ""                         # pasted CSV/TSV deck (front, back[, tags])
     path: str = ""                         # …or a path to a .csv/.tsv/.txt deck
     course: str = ""
-    extra_keywords: Optional[List[str]] = None
     deck: str = "categorized"
 
 
 class StudyCsvRequest(BaseModel):
     course: str = ""
     filename: str = "study_database"
+    output_dir: Optional[str] = None       # also copy CSV to this folder
+
+
+class SrtExportRequest(BaseModel):
+    output_dir: Optional[str] = None       # folder to copy SRT files alongside videos
 
 
 # --- Multi-course / persistence (§1) ---------------------------------------
@@ -430,7 +437,9 @@ def api_status() -> Dict[str, Any]:
         "active_course": settings_store.get_active_course(db),
     }
     status["ai"] = llm.detect()
-    status["ai"]["config"] = _safe_ai_config(llm.get_config(db, settings_store.get_active_course(db)))
+    _cfg = llm.get_config(db, settings_store.get_active_course(db))
+    status["ai"]["config"] = _safe_ai_config(_cfg)
+    status["llm_ready"] = llm.is_enabled(_cfg)
     status["secrets"] = secret_store.backend_status()
     status["privacy"] = secret_store.transparency()
     status["transcribe_recommended"] = transcribe.recommend_settings()
@@ -449,6 +458,18 @@ def _safe_ai_config(cfg: Dict[str, Any]) -> Dict[str, Any]:
     out = {k: v for k, v in cfg.items() if k != "api_key"}
     out["has_api_key"] = bool(cfg.get("api_key"))
     return out
+
+
+def _copy_export_files(rel_paths: List[str], src_root: Path, dest_dir: Path) -> None:
+    """Copy exported files (given as rel paths from src_root) into dest_dir,
+    flattening the hierarchy so all files land directly in dest_dir."""
+    dest_dir.mkdir(parents=True, exist_ok=True)
+    for rel in rel_paths:
+        if not rel:
+            continue
+        src = src_root / rel
+        if src.exists():
+            shutil.copy2(src, dest_dir / src.name)
 
 
 # ---------------------------------------------------------------------------
@@ -1036,6 +1057,13 @@ def api_export_notebooklm(req: NotebookLMRequest) -> Dict[str, Any]:
             status_code=404,
             detail="No transcripts found to export. Transcribe some lectures first.",
         )
+    if req.output_dir:
+        dest = Path(req.output_dir).expanduser()
+        files = list(result.get("files", []))
+        if result.get("combined"):
+            files.append(result["combined"])
+        _copy_export_files(files, OUTPUT_DIR, dest)
+        result["output_dir"] = str(dest)
     return result
 
 
@@ -1050,6 +1078,13 @@ def api_export_all(req: ExportAllRequest) -> Dict[str, Any]:
             detail="Nothing to export yet. Import some lectures, documents or "
             "Notion pages first.",
         )
+    if req.output_dir:
+        dest = Path(req.output_dir).expanduser()
+        files = []
+        if result.get("combined"):
+            files.append(result["combined"])
+        _copy_export_files(files, OUTPUT_DIR, dest)
+        result["output_dir"] = str(dest)
     return result
 
 
@@ -1066,42 +1101,165 @@ def api_export_formats(req: FormatsRequest) -> Dict[str, Any]:
     return result
 
 
+@app.post("/api/export/srt")
+def api_export_srt(req: SrtExportRequest) -> Dict[str, Any]:
+    """Generate SRT subtitle files from all transcribed lectures and optionally copy
+    them to a folder alongside the video recordings so players pick them up automatically.
+
+    SRT files share the same stem as each lecture's transcript so subtitle players can
+    auto-load them when the video and .srt live in the same folder."""
+    result = core.export_formats(OUTPUT_DIR, ["srt"])
+    if result["count"] == 0:
+        raise HTTPException(
+            status_code=404,
+            detail="No transcripts found. Transcribe some lectures first — SRT files "
+            "are generated from the timing data produced during transcription.",
+        )
+    if req.output_dir:
+        dest = Path(req.output_dir).expanduser()
+        _copy_export_files(result.get("files", []), OUTPUT_DIR, dest)
+        result["output_dir"] = str(dest)
+    return result
+
+
+_STUDY_SUMMARY_SYSTEM = (
+    "You are a concise study assistant. Summarise this lecture into 2–3 sentences of "
+    "clean, accurate study notes, grounded strictly in the provided text. No preamble, "
+    "no markdown, no bullet points — just the sentences."
+)
+
+
+def _study_summarizer(cfg: Dict[str, Any]):
+    """Build an LLM-backed Summary-column writer for the Notion CSV, falling back to
+    the extractive cell when the model is unreachable or the text is empty."""
+    def summarize(output_dir, group, json_text: str) -> str:
+        text = (json_text or "").strip()
+        if not text:
+            return study._summary_cell(output_dir, group, json_text)
+        try:
+            out = llm.complete(f"Summarise this lecture in 2–3 sentences:\n\n{text[:12000]}",
+                               system=_STUDY_SUMMARY_SYSTEM, config=cfg)
+            if out.strip():
+                return " ".join(out.split())
+        except llm.LLMError:
+            pass
+        return study._summary_cell(output_dir, group, json_text)
+    return summarize
+
+
 @app.post("/api/export/notion-csv")
 def api_export_notion_csv(req: StudyCsvRequest) -> Dict[str, Any]:
-    """Export the transcript library as a Notion-importable study-database CSV."""
-    result = study.write_study_database(OUTPUT_DIR, course=req.course, filename=req.filename)
+    """Export the transcript library as a Notion-importable study-database CSV.
+
+    When an LLM provider is configured the Summary column is AI-written and the
+    job runs in the background so the UI stays responsive. Extractive mode is
+    synchronous."""
+    cid = settings_store.get_active_course(db)
+    cfg = llm.get_config(db, cid)
+    used_ai = llm.is_enabled(cfg)
+    course = req.course
+    filename = req.filename
+    out_dir_str = req.output_dir
+    captured_cfg = dict(cfg)
+
+    if used_ai:
+        def work(_progress):
+            _progress("Writing study database with AI summaries...")
+            result = study.write_study_database(
+                OUTPUT_DIR, course=course, filename=filename,
+                summarizer=_study_summarizer(captured_cfg))
+            if out_dir_str:
+                _copy_export_files([result.get("csv", "")], OUTPUT_DIR,
+                                   Path(out_dir_str).expanduser())
+                result["output_dir"] = str(Path(out_dir_str).expanduser())
+            result["generated"] = "ai"
+            result["provider"] = captured_cfg.get("provider")
+            if captured_cfg.get("provider") in llm.CLOUD_PROVIDERS:
+                _audit("ai.study_csv", target=captured_cfg.get("provider", ""),
+                       detail="Notion study CSV summaries", feature="ai_cloud")
+            return result
+        job = manager.submit("Study database (AI summaries)", work,
+                             type="study_csv", payload=req.model_dump(), course_id=cid)
+        return job.to_dict()
+
+    result = study.write_study_database(OUTPUT_DIR, course=course, filename=filename)
     if result["count"] == 0:
         raise HTTPException(
             status_code=404,
             detail="Nothing to export yet. Transcribe or convert some lectures first.",
         )
+    if out_dir_str:
+        _copy_export_files([result.get("csv", "")], OUTPUT_DIR,
+                           Path(out_dir_str).expanduser())
+        result["output_dir"] = str(Path(out_dir_str).expanduser())
+    result["generated"] = "extractive"
     return result
 
 
 @app.post("/api/flashcards/generate")
 def api_flashcards_generate(req: FlashcardGenRequest) -> Dict[str, Any]:
-    """Generate Anki-importable flashcards (auto-tagged) from existing transcripts."""
-    cards = flashcards.generate_from_library(
-        OUTPUT_DIR,
-        selection=req.selection,
-        course=req.course,
-        prefer=req.prefer,
-        max_per_lecture=max(1, min(req.max_per_lecture, 50)),
-    )
-    if not cards:
+    """Generate Anki-importable flashcards using LLM (requires Ollama/configured provider).
+
+    Runs as a background job so the UI stays responsive. Returns job status immediately."""
+    cid = settings_store.get_active_course(db)
+    cfg = llm.get_config(db, cid)
+    if not llm.is_enabled(cfg):
         raise HTTPException(
-            status_code=404,
-            detail="No flashcards could be generated. Transcribe or convert some "
-            "lectures first (summaries give the best cards).",
-        )
-    result = flashcards.write_deck(OUTPUT_DIR, cards, req.deck)
-    result["course"] = req.course
-    return result
+            status_code=503,
+            detail="LLM not available. Install Ollama with llama3 to generate flashcards. "
+            "See the Extra Dependencies installer to set this up.")
+    selection = req.selection
+    course = req.course
+    deck = req.deck
+    max_cards = max(1, min(req.max_cards, 200))
+    out_dir_str = req.output_dir
+    captured_cfg = dict(cfg)
+
+    def work(_progress):
+        _progress("Generating flashcards with LLM...")
+        out = ai.generate_flashcards(OUTPUT_DIR, selection=selection, course=course,
+                                     max_cards=max_cards, config=captured_cfg)
+        cards = out.get("cards", [])
+        if not cards:
+            raise ValueError("No flashcards generated — try adding more transcript content.")
+        if course:
+            ctag = flashcards._tag(course)
+            if ctag:
+                for c in cards:
+                    tags = list(c.get("tags") or [])
+                    if ctag not in tags:
+                        tags.insert(0, ctag)
+                    c["tags"] = tags
+        result = flashcards.write_deck(OUTPUT_DIR, cards, deck)
+        result["course"] = course
+        result["generated"] = out.get("generated")
+        result["provider"] = out.get("provider")
+        if out_dir_str:
+            dest = Path(out_dir_str).expanduser()
+            _copy_export_files([result.get("anki_tsv", ""), result.get("csv", "")],
+                               OUTPUT_DIR, dest / "_flashcards")
+            result["output_dir"] = str(dest)
+        if captured_cfg.get("provider") in llm.CLOUD_PROVIDERS:
+            _audit("ai.flashcards", target=captured_cfg.get("provider", ""),
+                   detail="flashcard export", feature="ai_cloud")
+        return result
+
+    job = manager.submit(f"Flashcards: {deck}", work,
+                        type="flashcards_generate", payload=req.model_dump(), course_id=cid)
+    return job.to_dict()
 
 
 @app.post("/api/flashcards/categorize")
 def api_flashcards_categorize(req: FlashcardCatRequest) -> Dict[str, Any]:
-    """Add study tags to an existing deck (pasted text or a file path)."""
+    """Tag an existing flashcard deck by topic using LLM (requires configured provider).
+
+    Runs as a background job. Accepts pasted CSV/TSV text or a file path."""
+    cid = settings_store.get_active_course(db)
+    cfg = llm.get_config(db, cid)
+    if not llm.is_enabled(cfg):
+        raise HTTPException(
+            status_code=503,
+            detail="LLM not available. Install Ollama with llama3 to categorize flashcards.")
     text = req.text
     if not text and req.path:
         try:
@@ -1112,11 +1270,26 @@ def api_flashcards_categorize(req: FlashcardCatRequest) -> Dict[str, Any]:
     if not cards:
         raise HTTPException(status_code=400, detail="No flashcards found in the input "
                             "(expected CSV/TSV with front, back[, tags]).")
-    vocab = flashcards.build_vocabulary(OUTPUT_DIR, req.course, req.extra_keywords)
-    cards = flashcards.categorise_cards(cards, vocab, req.course)
-    result = flashcards.write_deck(OUTPUT_DIR, cards, req.deck)
-    result["course"] = req.course
-    return result
+    course = req.course
+    deck = req.deck
+    captured_cfg = dict(cfg)
+
+    def work(_progress):
+        _progress("Categorizing flashcards with LLM...")
+        out = ai.llm_categorize_cards(cards, course=course, config=captured_cfg)
+        tagged = out.get("cards", cards)
+        result = flashcards.write_deck(OUTPUT_DIR, tagged, deck)
+        result["course"] = course
+        result["generated"] = out.get("generated")
+        result["provider"] = out.get("provider")
+        if captured_cfg.get("provider") in llm.CLOUD_PROVIDERS:
+            _audit("ai.flashcards_cat", target=captured_cfg.get("provider", ""),
+                   detail="flashcard categorize", feature="ai_cloud")
+        return result
+
+    job = manager.submit(f"Categorize deck: {deck}", work,
+                        type="flashcards_categorize", payload=req.model_dump(), course_id=cid)
+    return job.to_dict()
 
 
 @app.post("/api/transcribe")
@@ -1413,6 +1586,34 @@ def api_moodle_decode_launch_token(req: DecodeLaunchTokenReq) -> Dict[str, Any]:
     except moodle_api.MoodleApiError as e:
         raise HTTPException(status_code=400, detail=str(e))
     return {"token": token}
+
+
+class SsoCallbackReq(BaseModel):
+    raw: str   # full courseassistant://token=… URL sent by the OS protocol handler
+
+
+@app.post("/api/moodle/sso-callback")
+def api_moodle_sso_callback(req: SsoCallbackReq) -> Response:
+    """Receives courseassistant://token=… from the Windows protocol handler and
+    stores the decoded token for the next poll."""
+    try:
+        token = moodle_api.decode_launch_token(req.raw, expected_passport=_MOODLE_PASSPORT)
+    except moodle_api.MoodleApiError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    sso_protocol.store_token(token)
+    return Response(status_code=204)
+
+
+from fastapi import Request as _Request  # noqa: E402 — local import to avoid name collision
+
+
+@app.get("/api/moodle/sso-poll")
+def api_moodle_sso_poll(request: _Request) -> Dict[str, Any]:
+    """Poll for a token delivered by the OS protocol handler.  Also re-registers
+    the handler with the correct port on the first call (covers dev-server restarts)."""
+    port = request.url.port or int(os.environ.get("CA_PORT", "8123"))
+    sso_protocol.register(port)
+    return {"token": sso_protocol.poll_token()}
 
 
 @app.post("/api/moodle/connect")

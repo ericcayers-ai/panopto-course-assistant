@@ -13,17 +13,15 @@
       <div class="brand">🎓 <span>Course Assistant</span></div>
       <nav class="nav">
         <button class="tab active" data-tab="home"><span class="ico">🏠</span> Home</button>
-        <button class="tab moodle-only hidden" data-tab="moodle-quick"><span class="ico">📘</span> Quick import</button>
-        <div class="nav-group full-only">Your course</div>
-        <button class="tab" data-tab="course"><span class="ico">🎓</span> <span class="step-n">1</span> Course</button>
-        <button class="tab" data-tab="import"><span class="ico">📥</span> <span class="step-n">2</span> Import</button>
-        <button class="tab" data-tab="library"><span class="ico">📚</span> <span class="step-n">3</span> Library</button>
-        <button class="tab" data-tab="export"><span class="ico">📤</span> <span class="step-n">4</span> Export</button>
+        <button class="tab" data-tab="moodle-quick"><span class="ico">📘</span> Moodle</button>
+        <div class="nav-group">Your course</div>
+        <button class="tab" data-tab="import"><span class="ico">📥</span> Import</button>
+        <button class="tab" data-tab="library"><span class="ico">📚</span> Library</button>
+        <button class="tab" data-tab="export"><span class="ico">📤</span> Export</button>
         <div class="nav-group">System</div>
         <button class="tab" data-tab="jobs"><span class="ico">⚙️</span> Jobs <span id="jobs-badge" class="count-badge hidden">0</span></button>
       </nav>
       <div class="sidebar-foot">
-        <button id="change-workspace" class="ghost small" title="Choose a different window / level">⇄ Change workspace</button>
         <button id="theme-toggle" class="ghost small" title="Toggle light/dark">🌙 Theme</button>
         <a href="/docs" target="_blank" rel="noopener" class="muted small">API docs ↗</a>
       </div>
@@ -42,7 +40,6 @@
           </label>
         </div>
         <div class="topbar-right">
-          <span id="mode-label" class="mode-chip" title="Your current workspace">Full · Simple</span>
           <div id="status-bar" class="status-bar">checking environment…</div>
         </div>
       </header>
@@ -61,11 +58,7 @@
           <div id="dash-env" class="env-strip"></div>
 
           <h3 class="section-title">Jump back in</h3>
-          <div class="tiles flow-tiles" data-adv-only>
-            <button class="tile" data-goto="course">
-              <span class="tile-ico">🎓</span><span class="tile-title">Course</span>
-              <span class="tile-desc">Name it or grab its outline from Moodle.</span>
-            </button>
+          <div class="tiles flow-tiles">
             <button class="tile" data-goto="import">
               <span class="tile-ico">📥</span><span class="tile-title">Import</span>
               <span class="tile-desc">Lectures, documents, Notion — keep adding.</span>
@@ -84,34 +77,11 @@
           <div id="dash-stats" class="stats"></div>
         </section>
 
-        <!-- 1 · COURSE -->
-        <section id="course" class="panel">
-          <h2><span class="step-chip">1</span> Your course</h2>
-          <p class="panel-intro">Give your course a name (used to tag every import and export), or
-            grab its real title and weekly outline straight from a Moodle export.</p>
-
-          <div class="card">
-            <h3>🎓 Course name</h3>
-            <p class="hint">This name flows everywhere automatically — transcripts, flashcards, NotebookLM
-              and Notion exports all get tagged with it. You can change it any time from the bar at the top.</p>
-            <div class="row">
-              <input type="text" id="course-name-main" placeholder="e.g. COMPX234 — Networks" />
-              <button id="course-name-set">Set course</button>
-            </div>
-          </div>
-
-          <div class="card" data-adv-only>
-            <h3>🏫 Grab course info from Moodle</h3>
-            <p class="hint">Point at a saved Moodle course folder (or its <code>course/view_php.html</code>)
-              to pull the course title and week/topic outline — then use it as your course name in one click.
-              Works with any Moodle course.</p>
-            <div class="row">
-              <input type="text" id="moodle-path" placeholder="Path to the Moodle course folder or HTML file" />
-              <button id="moodle-go">Grab</button>
-            </div>
-            <div id="moodle-results" class="results"></div>
-          </div>
-        </section>
+        <!-- hidden elements kept for JS compat -->
+        <input type="text" id="course-name-main" style="display:none" />
+        <input type="text" id="moodle-path" style="display:none" />
+        <button id="moodle-go" style="display:none"></button>
+        <div id="moodle-results" style="display:none"></div>
 
         <!-- 2 · IMPORT -->
         <section id="import" class="panel">
@@ -120,73 +90,17 @@
             <strong>Library</strong>, ready to export. Pick a source below.</p>
 
           <div class="import-switch">
-            <button class="seg active" data-import="lectures">📡 Lectures</button>
-            <button class="seg" data-import="documents">📑 Documents</button>
-            <button class="seg" data-import="notion" data-adv-only>🗒️ Notion</button>
-            <button class="seg" data-import="browse" data-adv-only>📂 Browse files</button>
+            <button class="seg active" data-import="documents">📑 Documents</button>
+            <button class="seg" data-import="notion">🗒️ Notion</button>
+            <button class="seg" data-import="browse">📂 Browse files</button>
           </div>
 
-          <!-- LECTURES -->
-          <div id="import-lectures" class="import-pane active">
-            <div class="card">
-              <h3>1 · Load a Panopto feed</h3>
-              <div class="row">
-                <input type="text" id="feed-source" placeholder="Panopto RSS feed URL or local .xml path" />
-                <button id="feed-load">Load feed</button>
-              </div>
-              <div class="row">
-                <span class="muted">or upload an RSS XML file:</span>
-                <input type="file" id="feed-file" accept=".xml,.rss,.txt" />
-              </div>
-              <p class="hint">📌 <strong>Getting the feed:</strong> open your Panopto <em>podcast link</em>
-                (audio <em>or</em> video — both work) in your browser. It shows raw XML — press
-                <kbd>Ctrl</kbd>+<kbd>S</kbd> to save it as an <code>.xml</code> file, then upload that
-                here (or paste its path above and click Load).</p>
-              <!-- Removed the example feed line -->
-            </div>
-
-            <details id="settings" class="card hidden" open data-adv-only>
-              <summary><strong>2 · Transcription settings</strong> <span class="muted">(sensible defaults — tweak only if needed)</span></summary>
-              <div id="engine-warning" class="banner warn hidden"></div>
-              <div class="grid">
-                <label>Engine <select id="opt-engine"></select></label>
-                <label>Model
-                  <select id="opt-model">
-                    <option>tiny</option><option>base</option>
-                    <option selected>small</option><option>medium</option>
-                    <option>large-v3</option>
-                  </select>
-                </label>
-                <label>Language <input type="text" id="opt-language" value="en" /></label>
-                <label>Device
-                  <select id="opt-device"><option>auto</option><option>cuda</option><option>cpu</option></select>
-                </label>
-              </div>
-              <div class="toggles">
-                <label class="toggle"><input type="checkbox" id="opt-skip" checked /> skip already-transcribed</label>
-                <label class="toggle"><input type="checkbox" id="opt-audio" /> audio-only download <span class="muted">(saves bandwidth, needs yt-dlp+ffmpeg)</span></label>
-              </div>
-              <p class="hint">Transcripts are saved in clean text, Markdown, JSON and a study summary —
-                enough for everything in the <strong>Library</strong> and <strong>Export</strong> steps.
-                Subtitles and other formats are available under <strong>Export</strong>.</p>
-              <div class="row">
-                <input type="text" id="opt-cookies" placeholder="cookies.txt path (optional, for auth-gated feeds)" />
-              </div>
-            </details>
-
-            <div id="lectures-heading" class="hidden"><h3>3 · Choose lectures to transcribe</h3></div>
-            <div id="lectures-toolbar" class="toolbar hidden">
-              <button id="sel-all" class="ghost">Select all</button>
-              <button id="sel-none" class="ghost">Clear</button>
-              <button id="transcribe-selected">Transcribe selected</button>
-              <button id="transcribe-pending" class="ghost">Transcribe all pending</button>
-              <span id="lectures-summary" class="muted"></span>
-            </div>
-            <div id="lectures-list"></div>
-          </div>
+          <p class="hint">📡 <strong>Lectures</strong> come bundled with a course — import them from
+            <strong>Import a Moodle course</strong>, where they're detected and transcribed automatically
+            alongside that course's documents.</p>
 
           <!-- DOCUMENTS -->
-          <div id="import-documents" class="import-pane">
+          <div id="import-documents" class="import-pane active">
             <div class="card">
               <h3>📑 Documents → Markdown</h3>
               <p class="hint">Convert <strong>PDF, PowerPoint, Word, Excel, HTML, EPUB, CSV…</strong> into
@@ -200,7 +114,7 @@
                 <span class="muted">File types:</span>
                 <span id="doc-exts" class="checks"></span>
               </div>
-              <div class="grid" data-adv-only>
+              <div class="grid">
                 <label>Output
                   <select id="doc-target">
                     <option value="ai" selected>Library (importable, exportable to NotebookLM)</option>
@@ -210,8 +124,8 @@
               </div>
               <div class="toggles">
                 <label class="toggle"><input type="checkbox" id="pdf-recursive" checked /> include subfolders</label>
-                <label class="toggle" data-adv-only><input type="checkbox" id="pdf-overwrite" /> overwrite existing</label>
-                <label class="toggle" data-adv-only><input type="checkbox" id="doc-combined" /> combined <code>documents_pack.md</code> (Library)</label>
+                <label class="toggle"><input type="checkbox" id="pdf-overwrite" /> overwrite existing</label>
+                <label class="toggle"><input type="checkbox" id="doc-combined" /> combined <code>documents_pack.md</code> (Library)</label>
                 <label class="toggle" title="Extract figures/diagrams from the documents and attach them to the Markdown"><input type="checkbox" id="doc-images" checked /> include images &amp; diagrams</label>
               </div>
             </div>
@@ -270,7 +184,7 @@
             <div id="search-results" class="results"></div>
           </div>
 
-          <div class="card" data-adv-only>
+          <div class="card">
             <h3>🗂️ Reorganize files</h3>
             <p class="hint">Move existing transcripts into folders by week / date / topic.</p>
             <div class="row">
@@ -288,7 +202,7 @@
             </div>
           </div>
 
-          <div class="card" data-adv-only>
+          <div class="card">
             <h3>🧭 Filter &amp; sort</h3>
             <div class="row">
               <select id="lib-type" title="Filter by type">
@@ -330,6 +244,9 @@
               <code>_notebooklm/</code>, plus a single combined <code>everything_pack.md</code> you can
               drop into <strong>NotebookLM</strong> or hand to <strong>any other AI</strong>.</p>
             <div class="row">
+              <input type="text" id="export-all-dest" placeholder="Output folder (leave blank for default)" style="flex:1" />
+            </div>
+            <div class="row">
               <label class="toggle"><input type="checkbox" id="all-combined" checked /> combined <code>everything_pack.md</code></label>
               <button id="export-all">Export everything</button>
             </div>
@@ -344,69 +261,74 @@
               <p class="hint">Clean, de-timestamped Markdown (one file per lecture) under
                 <code>_notebooklm/</code> — ready to upload to NotebookLM as sources.</p>
               <div class="row">
+                <input type="text" id="nlm-dest" placeholder="Output folder (leave blank for default)" style="flex:1" />
+              </div>
+              <div class="row">
                 <label class="toggle"><input type="checkbox" id="nlm-combined" /> combined <code>course_pack.md</code></label>
                 <button id="nlm-export">Export all</button>
               </div>
               <div id="nlm-results" class="results"></div>
             </div>
 
-            <div class="card" data-adv-only>
+            <div class="card">
               <h3>🗃️ Notion study database (CSV)</h3>
               <p class="hint">One row per lecture — Name, Week, Date, Topic, Tags, Status, Summary.
-                In Notion: <em>Import → CSV</em>, then set Tags to <em>Multi-select</em>.</p>
+                In Notion: <em>Import → CSV</em>, then set Tags to <em>Multi-select</em>. With an
+                <strong>AI provider configured</strong> the Summary column is LLM-written. Runs as a job.</p>
+              <div class="row">
+                <input type="text" id="studycsv-dest" placeholder="Output folder (leave blank for default _exports/)" style="flex:1" />
+              </div>
               <div class="row">
                 <button id="studycsv-go">Export CSV</button>
               </div>
               <div id="studycsv-results" class="results"></div>
             </div>
 
-            <div class="card" data-adv-only>
-              <h3>🎬 Subtitles &amp; extra formats</h3>
-              <p class="hint">Generate captions and other formats from your transcripts — saved next to
-                each lecture and shown in your Library.</p>
-              <div class="outputs-row">
-                <span class="muted">Formats:</span>
-                <span class="checks">
-                  <label class="chk"><input type="checkbox" value="srt" checked /> srt</label>
-                  <label class="chk"><input type="checkbox" value="vtt" /> vtt</label>
-                  <label class="chk"><input type="checkbox" value="txt" /> txt</label>
-                  <label class="chk"><input type="checkbox" value="md" /> md</label>
-                </span>
+            <div class="card">
+              <h3>🎬 Lecture transcripts + SRT</h3>
+              <p class="hint">Export transcript text and <code>.srt</code> subtitle files for all
+                recorded lectures. Place SRT files in the same folder as your video recordings so
+                media players load them automatically.</p>
+              <div class="row">
+                <input type="text" id="srt-dest" placeholder="Folder to save SRT files (e.g. C:\Videos\Lectures)" style="flex:1" />
+                <button id="srt-export">Export SRT</button>
               </div>
-              <div class="row"><button id="formats-go">Generate</button></div>
-              <div id="formats-results" class="results"></div>
+              <div id="srt-results" class="results"></div>
             </div>
           </div>
 
-          <div class="card">
+          <div class="card" id="fc-section">
             <h3>🃏 Anki flashcards <span class="pill">Anki-ready</span></h3>
-            <p class="hint">Pulls definitions and acronyms out of your transcripts and auto-tags them by
-              course · week · topic. Exports an Anki-importable <code>.txt</code> and a <code>.csv</code>
-              under <code>_flashcards/</code>. Summaries make the cleanest cards.</p>
+            <p class="hint">Uses your local LLM to generate Q&amp;A, cloze and definition cards from
+              your transcripts, auto-tagged by course · week · topic. Exports an Anki-importable
+              <code>.txt</code> and a <code>.csv</code> to the folder you choose.
+              Requires <strong>Ollama</strong> (installed with extra dependencies).</p>
+            <div id="fc-llm-missing" class="banner warn hidden">
+              Flashcard generation requires a local LLM. Install extra dependencies and start Ollama.
+            </div>
             <div class="grid">
               <label>Deck name <input type="text" id="fc-deck" value="flashcards" /></label>
-              <label>Source
-                <select id="fc-prefer">
-                  <option value="summary" selected>summaries (cleanest)</option>
-                  <option value="text">full transcript text</option>
-                </select>
-              </label>
-              <label>Max cards / lecture <input type="number" id="fc-max" value="15" min="1" max="50" /></label>
+              <label>Max cards (total) <input type="number" id="fc-max" value="50" min="1" max="200" /></label>
+            </div>
+            <div class="row">
+              <input type="text" id="fc-output-dir" placeholder="Output folder (leave blank for default _flashcards/)" style="flex:1" />
             </div>
             <div class="row"><button id="fc-generate">Generate flashcards</button></div>
             <div id="fc-gen-results" class="results"></div>
           </div>
 
-          <details class="card" data-adv-only>
-            <summary><strong>🏷️ Categorize an existing deck</strong> <span class="muted">(already have flashcards? tag them)</span></summary>
+          <details class="card" id="fc-cat-section">
+            <summary><strong>🏷️ Categorize an existing deck</strong> <span class="muted">(LLM-powered topic tagging)</span></summary>
             <p class="hint">Paste a deck (CSV or tab-separated: <code>front, back[, tags]</code>) — or give a file
-              path — and it adds course/week/topic tags by matching your lectures' vocabulary.</p>
+              path — and the LLM adds intelligent course/topic tags. Requires Ollama.</p>
+            <div id="fc-cat-llm-missing" class="banner warn hidden">
+              Categorization requires a local LLM. Install extra dependencies and start Ollama.
+            </div>
             <textarea id="fc-cat-text" rows="5" placeholder="What is TCP?,A reliable transport protocol&#10;What is a router?,Forwards packets between networks"></textarea>
             <div class="row">
               <input type="text" id="fc-cat-path" placeholder="…or a path to a .csv/.tsv/.txt deck" />
             </div>
             <div class="grid">
-              <label>Extra keywords <input type="text" id="fc-cat-kw" placeholder="comma,separated,terms" /></label>
               <label>Deck name <input type="text" id="fc-cat-deck" value="categorized" /></label>
             </div>
             <div class="row"><button id="fc-categorize">Categorize &amp; tag</button></div>
@@ -417,7 +339,7 @@
         <!-- JOBS -->
         <section id="jobs" class="panel">
           <h2>Jobs <button id="jobs-refresh" class="small ghost">↻ refresh</button></h2>
-          <p class="panel-intro">Live progress of transcription jobs.</p>
+          <p class="panel-intro">Live progress of transcription and AI jobs (flashcards, study CSV, categorization).</p>
           <div id="jobs-list" class="results"></div>
         </section>
 
@@ -435,54 +357,15 @@
               <code>https://elearn.waikato.ac.nz</code>.</p>
             <input type="text" id="mq-url" placeholder="https://elearn.waikato.ac.nz" autocomplete="off" />
 
-            <!-- Authentication -->
-            <div class="mq-auth">
-              <div class="mq-auth-tabs">
-                <button class="mq-auth-tab active" data-auth="password" type="button">Username &amp; password</button>
-                <button class="mq-auth-tab" data-auth="token" type="button">Paste a token</button>
-              </div>
-              <div id="mq-auth-password" class="mq-auth-pane">
-                <input type="text" id="mq-username" placeholder="Moodle username" autocomplete="username" />
-                <input type="password" id="mq-password" placeholder="Moodle password" autocomplete="current-password" />
-                <p class="hint">Used once, on this computer, to obtain a web-service token from your
-                  Moodle site. Your password is never stored.</p>
-              </div>
-              <div id="mq-auth-token" class="mq-auth-pane hidden">
-
-                <!-- Path B first — SSO is the common case for institutional Moodle -->
-                <div class="mq-token-section">
-                  <p class="hint mq-token-label"><strong>Sign in via browser</strong>
-                    <span class="muted"> — for Microsoft / Google SSO accounts</span></p>
-                  <ol class="hint mq-token-steps">
-                    <li>Click <strong>Open sign-in page ↗</strong> below.</li>
-                    <li>Sign in with your institutional account (Microsoft, Google, …).
-                      The browser then shows a blank or <em>"site can't be reached"</em> page — that's expected.</li>
-                    <li>Click the address bar (or press <kbd>Ctrl</kbd>+<kbd>L</kbd>),
-                      select all (<kbd>Ctrl</kbd>+<kbd>A</kbd>) and copy (<kbd>Ctrl</kbd>+<kbd>C</kbd>)
-                      the URL — it starts with <code>moodlemobile://token=</code>.</li>
-                    <li>Paste it below and click <strong>Extract &amp; connect</strong>.</li>
-                  </ol>
-                  <button id="mq-launch-sso" class="ghost small mq-open-btn" type="button">Open sign-in page ↗</button>
-                  <div class="row mq-launch-row">
-                    <input type="text" id="mq-launch-url" placeholder="moodlemobile://token=…" autocomplete="off" />
-                    <button id="mq-launch-extract" type="button">Extract &amp; connect</button>
-                  </div>
-                </div>
-
-                <div class="mq-token-divider"><span>or paste a token directly</span></div>
-
-                <!-- Path A — manual token (visible on security keys page) -->
-                <input type="text" id="mq-token" placeholder="Moodle Mobile Web Service token" autocomplete="off" />
-                <div class="row mq-token-row-hint">
-                  <span class="hint muted">Find it at <strong>Profile → Security keys</strong>
-                    (look for <em>Moodle Mobile Web Service</em>, not RSS).</span>
-                  <button id="mq-open-token-page" class="ghost small mq-open-btn" type="button">Open security keys ↗</button>
-                </div>
-              </div>
-              <div class="row"><button id="mq-connect" class="primary" type="button">Connect</button></div>
-              <div id="mq-connect-status" class="cookie-status hidden">
-                <span class="dot off"></span><span id="mq-connect-text"></span>
-              </div>
+            <!-- Sign in via browser SSO -->
+            <button id="mq-launch-sso" class="primary mq-sso-btn" type="button">Sign in with Moodle ↗</button>
+            <div id="mq-sso-waiting" class="mq-sso-waiting hidden">
+              <span class="mq-sso-spinner"></span>
+              <span>Signing in…</span>
+              <a href="#" id="mq-sso-cancel">Cancel</a>
+            </div>
+            <div id="mq-connect-status" class="cookie-status hidden">
+              <span class="dot off"></span><span id="mq-connect-text"></span>
             </div>
 
             <!-- Course picker (revealed after a successful connect) -->
@@ -492,14 +375,10 @@
                 <select id="mq-course-select" title="Pick the course to import"></select>
               </label>
 
-              <p class="hint" data-simple-only>The assistant will import the outline, documents,
-                lectures and images for the selected course. For finer control, choose
-                <strong>Advanced</strong> from <strong>Change workspace</strong>.</p>
-              <div class="mq-grab" data-adv-only>
+              <div class="mq-grab">
                 <span class="toggles-label">Include:</span>
-                <label class="toggle" title="Surface this course's lecture/recording feeds"><input type="checkbox" id="mq-grab-lectures" checked /> Lectures</label>
-                <label class="toggle" title="Transcribe the detected lectures into text"><input type="checkbox" id="mq-grab-transcripts" checked /> Transcripts</label>
                 <label class="toggle" title="Download and convert slides, PDFs, Word and other documents"><input type="checkbox" id="mq-grab-docs" checked /> Documents</label>
+                <label class="toggle" title="Detect this course's lecture/recording feeds and transcribe them — lectures are always pulled as part of the course, never on their own"><input type="checkbox" id="mq-grab-transcripts" checked /> Lectures &amp; transcripts</label>
                 <label class="toggle" title="Attach figures and diagrams extracted from documents"><input type="checkbox" id="mq-images" checked /> Images</label>
               </div>
 
@@ -522,7 +401,9 @@
           <!-- STEP 3 — EXPORT -->
           <div class="card mq-step hidden" id="mq-step-export">
             <div class="mq-step-head"><span class="mq-num">3</span><h3>Export</h3></div>
-            <p class="hint">Choose a destination for this course.</p>
+            <p class="hint">Choose a destination for this course. Want to fold in extra material first?
+              Add <strong>documents</strong> or a <strong>Notion</strong> export from
+              <em>Import your stuff</em> — the “general AI” pack below bundles every source together.</p>
             <div class="export-choice">
               <button id="mq-export-nblm" class="tile">
                 <span class="tile-ico">📓</span><span class="tile-title">For NotebookLM</span>
@@ -537,38 +418,6 @@
           </div>
         </section>
       </main>
-    </div>
-  </div>
-
-  <!-- START GATE: the only place you choose a window + level. -->
-  <div id="launcher" class="launcher hidden">
-    <div class="launcher-box">
-      <h1>How do you want to work?</h1>
-      <p class="lead">Pick a window and a level. Each window is self-contained — to switch later,
-        reopen this from <strong>⇄ Change workspace</strong> in the sidebar.</p>
-      <div class="launcher-grid">
-        <div class="launch-card" data-window="moodle">
-          <div class="launch-ico">📘</div>
-          <h3>Just my Moodle course</h3>
-          <p>Paste a course link and let it pull everything — outline, files and lectures.</p>
-          <div class="launch-modes">
-            <button class="primary" data-window="moodle" data-level="simple">Simple</button>
-            <button class="ghost" data-window="moodle" data-level="advanced">Advanced</button>
-          </div>
-        </div>
-        <div class="launch-card" data-window="full">
-          <div class="launch-ico">🧰</div>
-          <h3>Full workspace</h3>
-          <p>Everything: courses, every import source, library, study tools and exports.</p>
-          <div class="launch-modes">
-            <button class="primary" data-window="full" data-level="simple">Simple</button>
-            <button class="ghost" data-window="full" data-level="advanced">Advanced</button>
-          </div>
-        </div>
-      </div>
-      <div class="launcher-foot">
-        <span class="muted small">Simple = fewest choices, best defaults. Advanced = every knob.</span>
-      </div>
     </div>
   </div>
 

@@ -14,9 +14,15 @@ import io
 import json
 import re
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional
 
 from . import core
+
+# A summariser takes (output_dir, group, json_text) and returns a summary string.
+# Defaults to the dependency-free extractive cell; callers can pass an LLM-backed
+# one (see app/main.py) so the CSV's Summary column is AI-written when a provider
+# is configured.
+Summarizer = Callable[[Path, Dict[str, Any], str], str]
 
 EXPORTS_DIRNAME = "_exports"
 
@@ -78,7 +84,9 @@ def _meta_for_group(output_dir: Path, group: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
-def build_study_rows(output_dir: Path, course: str = "") -> List[Dict[str, Any]]:
+def build_study_rows(output_dir: Path, course: str = "",
+                     summarizer: Optional[Summarizer] = None) -> List[Dict[str, Any]]:
+    summarize = summarizer or _summary_cell
     rows: List[Dict[str, Any]] = []
     for g in core.list_transcripts(output_dir):
         m = _meta_for_group(output_dir, g)
@@ -91,7 +99,7 @@ def build_study_rows(output_dir: Path, course: str = "") -> List[Dict[str, Any]]
             "Tags": _readable_tags(course, m["week"], m["topic"]),
             "Status": "Transcribed",
             "Formats": ", ".join(sorted(g["formats"])),
-            "Summary": _summary_cell(output_dir, g, m["text"]),
+            "Summary": summarize(output_dir, g, m["text"]),
             "Folder": g["folder"],
         })
     return rows
@@ -108,8 +116,9 @@ def rows_to_csv(rows: List[Dict[str, Any]]) -> str:
     return out.getvalue()
 
 
-def write_study_database(output_dir: Path, course: str = "", filename: str = "study_database") -> Dict[str, Any]:
-    rows = build_study_rows(output_dir, course)
+def write_study_database(output_dir: Path, course: str = "", filename: str = "study_database",
+                         summarizer: Optional[Summarizer] = None) -> Dict[str, Any]:
+    rows = build_study_rows(output_dir, course, summarizer=summarizer)
     dest = core.ensure_dir(output_dir / EXPORTS_DIRNAME)
     csv_path = dest / f"{core.safe_name(filename)}.csv"
     csv_path.write_text(rows_to_csv(rows), encoding="utf-8")

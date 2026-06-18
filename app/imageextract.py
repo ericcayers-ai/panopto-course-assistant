@@ -21,6 +21,7 @@ so the caller can append an "Images & diagrams" section to the Markdown.
 from __future__ import annotations
 
 import io
+import shutil
 import zipfile
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -256,4 +257,37 @@ def images_markdown(images: List[Dict[str, Any]], assets_relname: str,
     if extra:
         lines.append(f"> {extra} additional vector image(s) preserved in `{assets_relname}/` "
                      "(not inline-renderable).")
+    return "\n".join(lines).rstrip() + "\n"
+
+
+def pack_assets_to_zip(assets_dir: Path) -> Path:
+    """Compress all files in ``assets_dir`` into a sibling ``<name>.zip``, then
+    remove the directory. Returns the zip path. Safe to call even when the dir
+    is empty or doesn't exist — an empty zip is created in that case."""
+    assets_dir = Path(assets_dir)
+    zip_path = assets_dir.parent / (assets_dir.name + ".zip")
+    files = sorted(f for f in assets_dir.iterdir() if f.is_file()) \
+        if assets_dir.exists() else []
+    with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zf:
+        for f in files:
+            zf.write(f, f.name)
+    if assets_dir.exists():
+        shutil.rmtree(assets_dir)
+    return zip_path
+
+
+def images_markdown_packed(images: List[Dict[str, Any]], zip_name: str,
+                            title: str = "") -> str:
+    """A compact Markdown section noting that images are packed in ``zip_name``
+    (used instead of :func:`images_markdown` when assets are zipped)."""
+    if not images:
+        return ""
+    n = len(images)
+    lines = ["", "## Images & diagrams",
+             f"_{n} image(s) preserved from the original"
+             f"{(' — ' + title) if title else ''}._",
+             f"_Images are packed in `{zip_name}` alongside this file._", ""]
+    for img in images:
+        page = f" (p.{img['page']})" if img.get("page") else ""
+        lines.append(f"- Figure {img['index']}{page}: `{img['file']}`")
     return "\n".join(lines).rstrip() + "\n"

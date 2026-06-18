@@ -87,8 +87,9 @@ def test_convert_documents_attaches_images(tmp_path: Path):
     md_path = out / "_docs" / "Week2_Slides.md"
     body = md_path.read_text(encoding="utf-8")
     assert "## Images & diagrams" in body
-    assert "Week2_Slides_assets/image01.png" in body
-    assert (out / "_docs" / "Week2_Slides_assets" / "image01.png").exists()
+    assert "Week2_Slides_assets.zip" in body
+    assert (out / "_docs" / "Week2_Slides_assets.zip").exists()
+    assert not (out / "_docs" / "Week2_Slides_assets").exists()
 
 
 def test_convert_documents_keep_images_false(tmp_path: Path):
@@ -115,7 +116,34 @@ def test_images_preserved_even_when_text_conversion_fails(tmp_path: Path):
     body = (out / "_docs" / "Broken_Slides.md").read_text(encoding="utf-8")
     assert "Text could not be extracted" in body
     assert "## Images & diagrams" in body
-    assert (out / "_docs" / "Broken_Slides_assets" / "image01.png").exists()
+    assert (out / "_docs" / "Broken_Slides_assets.zip").exists()
+    assert not (out / "_docs" / "Broken_Slides_assets").exists()
+
+
+def test_pack_assets_to_zip(tmp_path: Path):
+    pptx = tmp_path / "Deck.pptx"
+    _make_office(pptx, "ppt/media")
+    assets = tmp_path / "Deck_assets"
+    imgs = imageextract.extract_images(pptx, assets)
+    assert assets.is_dir()
+    zip_path = imageextract.pack_assets_to_zip(assets)
+    assert zip_path == tmp_path / "Deck_assets.zip"
+    assert zip_path.exists()
+    assert not assets.exists()                  # folder removed
+    with zipfile.ZipFile(zip_path) as zf:
+        names = set(zf.namelist())
+    assert all(img["file"] in names for img in imgs)
+
+
+def test_images_markdown_packed():
+    imgs = [{"file": "image01.png", "index": 1, "ext": ".png", "renderable": True},
+            {"file": "image02.jpg", "index": 2, "ext": ".jpg", "renderable": True, "page": 3}]
+    md = imageextract.images_markdown_packed(imgs, "slides_assets.zip", "Lecture")
+    assert "## Images & diagrams" in md
+    assert "slides_assets.zip" in md
+    assert "Figure 1" in md
+    assert "Figure 2" in md and "p.3" in md
+    assert "![" not in md   # no broken inline image syntax
 
 
 def test_notion_preserves_and_copies_images(tmp_path: Path):

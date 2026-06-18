@@ -150,6 +150,34 @@ def generate_flashcards(output_dir: Path, *, selection: Optional[List[str]] = No
     return {"cards": cards, "generated": "extractive"}
 
 
+_CATEGORIZE_SYSTEM = (
+    "You categorize study flashcards into topics. Given a list of cards, assign each a "
+    "descriptive topic tag based on its subject matter. Return ONLY a JSON array of "
+    "objects like {\"front\": \"...\", \"back\": \"...\", \"tags\": [\"topic\", ...]}. "
+    "Keep any existing tags and prepend the topic tag. No preamble, no markdown fences."
+)
+
+
+def llm_categorize_cards(cards: List[Dict[str, Any]], course: str = "",
+                         db=None, course_id=None,
+                         config: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    """Tag flashcards by topic using LLM. Raises LLMError if no provider configured."""
+    cfg = config or llm.get_config(db, course_id)
+    if not llm.is_enabled(cfg):
+        raise llm.LLMError("No LLM provider configured")
+    course_hint = f" for a '{course}' course" if course else ""
+    cards_json = json.dumps(
+        [{"front": c.get("front", ""), "back": c.get("back", ""), "tags": c.get("tags") or []}
+         for c in cards[:150]],
+        indent=2)
+    prompt = (f"Categorize these flashcards{course_hint} — add a topic tag to each:\n\n{cards_json}")
+    raw = llm.complete(prompt, system=_CATEGORIZE_SYSTEM, config=cfg)
+    result = _parse_json_array(raw)
+    if result:
+        return {"cards": result, "generated": "ai", "provider": cfg.get("provider")}
+    return {"cards": cards, "generated": "extractive"}
+
+
 # ---------------------------------------------------------------------------
 # Quiz generation (§4) — extractive MCQ + cloze, LLM-enhanced when available
 # ---------------------------------------------------------------------------

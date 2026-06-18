@@ -95,7 +95,7 @@ def test_full_pipeline_link_to_notebooklm(tmp_path: Path):
     assert conv["count"] == 2
     md = (out / "_docs" / "Lecture_1_Slides.md").read_text(encoding="utf-8")
     assert "## Images & diagrams" in md
-    assert (out / "_docs" / "Lecture_1_Slides_assets").is_dir()
+    assert (out / "_docs" / "Lecture_1_Slides_assets.zip").is_file()
 
     # 4) export a NotebookLM folder from everything imported
     exp = core.export_all_sources(out, combined=True, course="COMPX201-26A")
@@ -113,8 +113,8 @@ def test_pipeline_include_images_toggle_off(tmp_path: Path):
                                        fetcher=_resource_fetcher)
     core.convert_documents(res_dir, out, target="ai", keep_images=False)
     # the toggle's effect: no image assets are extracted when it's off
-    assert list((out / "_docs").glob("*_assets")) == []
-    # for contrast, the same input WITH images on does create assets
+    assert list((out / "_docs").glob("*_assets*")) == []
+    # for contrast, the same input WITH images on does create assets (as a zip)
     out2 = tmp_path / "lib2"; out2.mkdir()
     core.convert_documents(res_dir, out2, target="ai", keep_images=True)
-    assert list((out2 / "_docs").glob("*_assets"))
+    assert list((out2 / "_docs").glob("*_assets.zip"))

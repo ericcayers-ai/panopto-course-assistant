@@ -785,12 +785,13 @@ def convert_documents(
                 assets_name = f"{safe_name(rel.stem)}_assets"
                 images = imageextract.extract_images(src, target_dir / assets_name)
                 if images:
+                    zip_path = imageextract.pack_assets_to_zip(target_dir / assets_name)
                     if convert_error:
                         text = (f"# {_title_from_stem(rel.stem)}\n\n"
                                 f"_Text could not be extracted ({convert_error}); "
                                 "images below are preserved from the original._\n")
-                    text = text.rstrip() + "\n" + imageextract.images_markdown(
-                        images, assets_name, rel.stem)
+                    text = text.rstrip() + "\n" + imageextract.images_markdown_packed(
+                        images, zip_path.name, rel.stem)
                     n_images = len(images)
         if not text.strip():
             converted.append({"src": str(src), "md": "", "error": convert_error or "empty"})

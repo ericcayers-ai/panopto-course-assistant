@@ -176,25 +176,40 @@ async function loadStatus() {
     bar.textContent = parts.join("   •   ");
     bar.className = "status-bar " + (s.any_engine ? "ok" : "warn");
 
-    // engine dropdown
+    // engine dropdown (only present in the legacy manual-transcribe UI, if any)
     const sel = $("opt-engine");
-    clear(sel);
-    if (engines.length) engines.forEach((e) => sel.appendChild(el("option", { text: e })));
-    else sel.appendChild(el("option", { text: "(none installed)" }));
-    if (s.default_engine) sel.value = s.default_engine;
+    if (sel) {
+      clear(sel);
+      if (engines.length) engines.forEach((e) => sel.appendChild(el("option", { text: e })));
+      else sel.appendChild(el("option", { text: "(none installed)" }));
+      if (s.default_engine) sel.value = s.default_engine;
+    }
 
     // document-type checkboxes (for the Documents → Markdown tab)
     buildDocExtChecks(s.doc_exts || [".pdf"]);
 
     // engine-aware warning
     const warn = $("engine-warning");
-    if (!s.any_engine) {
-      warn.textContent = "No transcription engine installed — you can still load feeds, browse, "
-        + "search and export. To transcribe: pip install -r requirements-transcribe.txt";
-      warn.classList.remove("hidden");
-    } else {
-      warn.classList.add("hidden");
+    if (warn) {
+      if (!s.any_engine) {
+        warn.textContent = "No transcription engine installed — you can still import documents, browse, "
+          + "search and export. To transcribe Moodle lectures: pip install -r requirements-transcribe.txt";
+        warn.classList.remove("hidden");
+      } else {
+        warn.classList.add("hidden");
+      }
     }
+
+    // LLM availability — show/hide flashcard sections
+    const llmReady = s.llm_ready === true;
+    const fcMissing = $("fc-llm-missing");
+    const fcCatMissing = $("fc-cat-llm-missing");
+    const fcBtn = $("fc-generate");
+    const fcCatBtn = $("fc-categorize");
+    if (fcMissing) fcMissing.classList.toggle("hidden", llmReady);
+    if (fcCatMissing) fcCatMissing.classList.toggle("hidden", llmReady);
+    if (fcBtn) fcBtn.disabled = !llmReady;
+    if (fcCatBtn) fcCatBtn.disabled = !llmReady;
   } catch (e) {
     bar.textContent = "could not reach backend: " + e.message;
     bar.className = "status-bar warn";
@@ -339,8 +354,8 @@ function renderLectures() {
   clear(list);
   const has = State.lectures.length > 0;
   ["lectures-heading", "lectures-toolbar"].forEach((id) =>
-    $(id).classList.toggle("hidden", !has));
-  $("settings").classList.toggle("hidden", !has);
+    $(id)?.classList.toggle("hidden", !has));
+  $("settings")?.classList.toggle("hidden", !has);
   if (!has) { list.appendChild(el("p", { class: "empty", text: "No lectures loaded yet." })); return; }
 
   const noEngine = !State.status || !State.status.any_engine;
@@ -426,7 +441,7 @@ async function openLectureTranscript(lec) {
   } catch (_) {}
 }
 
-$("feed-load").addEventListener("click", async () => {
+$("feed-load")?.addEventListener("click", async () => {
   const source = $("feed-source").value.trim();
   if (!source) { toast("Enter a feed URL or path.", "warn"); return; }
   remember("feed", source);
@@ -445,7 +460,7 @@ $("feed-load").addEventListener("click", async () => {
   finally { btn.disabled = false; btn.textContent = "Load feed"; }
 });
 
-$("feed-file").addEventListener("change", async (ev) => {
+$("feed-file")?.addEventListener("change", async (ev) => {
   const file = ev.target.files[0];
   if (!file) return;
   const fd = new FormData();
@@ -460,10 +475,10 @@ $("feed-file").addEventListener("change", async (ev) => {
   } catch (e) { toast("Error: " + e.message, "warn"); }
 });
 
-$("sel-all").addEventListener("click", () => document.querySelectorAll(".lec-check").forEach((c) => (c.checked = true)));
-$("sel-none").addEventListener("click", () => document.querySelectorAll(".lec-check").forEach((c) => (c.checked = false)));
-$("transcribe-selected").addEventListener("click", () => transcribeLectures(checkedIndexes()));
-$("transcribe-pending").addEventListener("click", () =>
+$("sel-all")?.addEventListener("click", () => document.querySelectorAll(".lec-check").forEach((c) => (c.checked = true)));
+$("sel-none")?.addEventListener("click", () => document.querySelectorAll(".lec-check").forEach((c) => (c.checked = false)));
+$("transcribe-selected")?.addEventListener("click", () => transcribeLectures(checkedIndexes()));
+$("transcribe-pending")?.addEventListener("click", () =>
   transcribeLectures(State.lectures.map((l, i) => i).filter((i) => !lectureDone(State.lectures[i]))));
 
 // ---- library (comprehensive: transcripts + documents + notion + exports) --
@@ -513,9 +528,19 @@ async function loadTranscripts() {  // loads the whole Library
       ]));
     });
 
-    // Everything else, file by file
-    librarySection(list, "📑 Documents", cats.documents.length);
-    cats.documents.forEach((f) => list.appendChild(fileRow(f)));
+    // Documents — separate image assets from primary docs
+    const _IMG_EXTS = new Set([".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg", ".bmp", ".tif", ".tiff"]);
+    const isImg = (f) => _IMG_EXTS.has((f.name || f.path || "").toLowerCase().replace(/.*\./, "."));
+    const docFiles = cats.documents.filter((f) => !isImg(f));
+    const imgFiles = cats.documents.filter(isImg);
+    librarySection(list, "📑 Documents", docFiles.length);
+    docFiles.forEach((f) => list.appendChild(fileRow(f)));
+    if (imgFiles.length) {
+      const imgRow = el("div", { class: "list-item muted small" }, [
+        el("span", { class: "li-label", text: `📷 ${imgFiles.length} embedded image(s) (from document conversion)` }),
+      ]);
+      list.appendChild(imgRow);
+    }
     librarySection(list, "🗒️ Notion pages", cats.notion.length);
     cats.notion.forEach((f) => list.appendChild(fileRow(f)));
     librarySection(list, "📂 Other sources", cats.others.length);
@@ -579,9 +604,10 @@ $("export-all").addEventListener("click", async () => {
   const btn = $("export-all");
   btn.disabled = true; out.textContent = "Gathering every source…";
   try {
+    const dest = $("export-all-dest")?.value.trim() || "";
     const data = await api("/api/export/all", {
       method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ course: currentCourse(), combined: $("all-combined").checked }),
+      body: JSON.stringify({ course: currentCourse(), combined: $("all-combined").checked, output_dir: dest || undefined }),
     });
     clear(out);
     out.appendChild(el("p", { class: "ok-text",
@@ -601,9 +627,10 @@ $("nlm-export").addEventListener("click", async () => {
   const btn = $("nlm-export");
   btn.disabled = true; out.textContent = "Exporting…";
   try {
+    const dest = $("nlm-dest")?.value.trim() || "";
     const data = await api("/api/export/notebooklm", {
       method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ course: currentCourse(), combined: $("nlm-combined").checked }),
+      body: JSON.stringify({ course: currentCourse(), combined: $("nlm-combined").checked, output_dir: dest || undefined }),
     });
     clear(out);
     out.appendChild(el("p", { class: "ok-text", text: `✓ Exported ${data.count} file(s) → ${data.dest}` }));
@@ -619,42 +646,53 @@ $("nlm-export").addEventListener("click", async () => {
   finally { btn.disabled = false; }
 });
 
-// Notion study-database CSV export
+// Notion study-database CSV export (runs as a background LLM job)
 $("studycsv-go").addEventListener("click", async () => {
   const out = $("studycsv-results");
   const btn = $("studycsv-go");
-  btn.disabled = true; out.textContent = "Exporting…";
+  btn.disabled = true; out.textContent = "Queuing export…";
   try {
+    const dest = $("studycsv-dest")?.value.trim() || "";
     const data = await api("/api/export/notion-csv", {
       method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ course: currentCourse() }),
+      body: JSON.stringify({ course: currentCourse(), output_dir: dest || undefined }),
     });
     clear(out);
-    out.appendChild(el("p", { class: "ok-text", text: `✓ ${data.count} lecture(s) → ${data.csv}` }));
-    out.appendChild(el("div", {}, [
-      el("button", { class: "tag", text: "view CSV", onclick: () => viewTranscript(data.csv) }),
-    ]));
-    out.appendChild(el("p", { class: "hint", text: "Columns: " + data.columns.join(", ") }));
-    toast(`Exported ${data.count} rows to a Notion CSV.`, "ok");
+    if (data.job_id) {
+      out.appendChild(el("p", { class: "ok-text", text: `✓ Job queued — check Jobs panel for progress.` }));
+      out.appendChild(el("button", { class: "tag", text: "Go to Jobs", onclick: () => showTab("jobs") }));
+      toast("Study CSV job started.", "ok");
+      startJobsPolling();
+    } else {
+      out.appendChild(el("p", { class: "ok-text", text: `✓ ${data.count} lecture(s) → ${data.csv}` }));
+      out.appendChild(el("div", {}, [
+        el("button", { class: "tag", text: "view CSV", onclick: () => viewTranscript(data.csv) }),
+      ]));
+      out.appendChild(el("p", { class: "hint", text: "Columns: " + (data.columns || []).join(", ") }));
+      toast(`Exported ${data.count} rows to a Notion CSV.`, "ok");
+    }
   } catch (e) { out.textContent = "Error: " + e.message; toast(e.message, "warn"); }
   finally { btn.disabled = false; }
 });
 
-// Subtitles & extra formats (generated from existing transcripts)
-$("formats-go").addEventListener("click", async () => {
-  const out = $("formats-results");
-  const formats = [...document.querySelectorAll("#export .checks input:checked")].map((i) => i.value);
-  if (!formats.length) { toast("Pick at least one format.", "warn"); return; }
-  const btn = $("formats-go");
-  btn.disabled = true; out.textContent = "Generating…";
+// Lecture SRT export — writes SRT files to a user-chosen folder alongside videos
+$("srt-export").addEventListener("click", async () => {
+  const out = $("srt-results");
+  const dest = $("srt-dest").value.trim();
+  if (!dest) { toast("Enter a folder path to save SRT files.", "warn"); return; }
+  const btn = $("srt-export");
+  btn.disabled = true; out.textContent = "Exporting SRT files…";
   try {
-    const data = await api("/api/export/formats", {
+    const data = await api("/api/export/srt", {
       method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ formats }),
+      body: JSON.stringify({ output_dir: dest }),
     });
     clear(out);
-    out.appendChild(el("p", { class: "ok-text", text: `✓ Wrote ${data.count} file(s) (${data.formats.join(", ")})` }));
-    toast(`Generated ${data.count} file(s).`, "ok");
+    out.appendChild(el("p", { class: "ok-text",
+      text: `✓ ${data.count} SRT file(s) written to ${data.dest}` }));
+    out.appendChild(el("p", { class: "hint",
+      text: "Place SRT files in the same folder as your videos — most players load them automatically." }));
+    toast(`Exported ${data.count} SRT file(s).`, "ok");
   } catch (e) { out.textContent = "Error: " + e.message; toast(e.message, "warn"); }
   finally { btn.disabled = false; }
 });
@@ -725,19 +763,28 @@ function renderDeckResult(out, data, label) {
 $("fc-generate").addEventListener("click", async () => {
   const out = $("fc-gen-results");
   const btn = $("fc-generate");
-  btn.disabled = true; out.textContent = "Generating…";
+  btn.disabled = true; out.textContent = "Queuing flashcard job…";
   try {
+    const dest = $("fc-output-dir")?.value.trim() || "";
     const data = await api("/api/flashcards/generate", {
       method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         deck: $("fc-deck").value.trim() || "flashcards",
         course: currentCourse(),
-        prefer: $("fc-prefer").value,
-        max_per_lecture: parseInt($("fc-max").value, 10) || 15,
+        max_cards: parseInt($("fc-max").value, 10) || 50,
+        output_dir: dest || undefined,
       }),
     });
-    renderDeckResult(out, data, "generated from transcripts");
-    toast(`Generated ${data.count} flashcard(s).`, "ok");
+    clear(out);
+    if (data.job_id) {
+      out.appendChild(el("p", { class: "ok-text", text: "✓ Flashcard job queued — check Jobs panel for progress." }));
+      out.appendChild(el("button", { class: "tag", text: "Go to Jobs", onclick: () => showTab("jobs") }));
+      toast("Flashcard generation started.", "ok");
+      startJobsPolling();
+    } else {
+      renderDeckResult(out, data, "generated with LLM");
+      toast(`Generated ${data.count} flashcard(s).`, "ok");
+    }
   } catch (e) { out.textContent = "Error: " + e.message; toast(e.message, "warn"); }
   finally { btn.disabled = false; }
 });
@@ -748,19 +795,26 @@ $("fc-categorize").addEventListener("click", async () => {
   const text = $("fc-cat-text").value.trim();
   const path = $("fc-cat-path").value.trim();
   if (!text && !path) { toast("Paste a deck or give a file path.", "warn"); return; }
-  btn.disabled = true; out.textContent = "Categorizing…";
+  btn.disabled = true; out.textContent = "Queuing categorization job…";
   try {
     const data = await api("/api/flashcards/categorize", {
       method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         text, path,
         course: currentCourse(),
-        extra_keywords: $("fc-cat-kw").value.split(",").map((s) => s.trim()).filter(Boolean),
         deck: $("fc-cat-deck").value.trim() || "categorized",
       }),
     });
-    renderDeckResult(out, data, "tagged");
-    toast(`Categorized ${data.count} card(s).`, "ok");
+    clear(out);
+    if (data.job_id) {
+      out.appendChild(el("p", { class: "ok-text", text: "✓ Categorization job queued — check Jobs panel for progress." }));
+      out.appendChild(el("button", { class: "tag", text: "Go to Jobs", onclick: () => showTab("jobs") }));
+      toast("Categorization job started.", "ok");
+      startJobsPolling();
+    } else {
+      renderDeckResult(out, data, "tagged");
+      toast(`Categorized ${data.count} card(s).`, "ok");
+    }
   } catch (e) { out.textContent = "Error: " + e.message; toast(e.message, "warn"); }
   finally { btn.disabled = false; }
 });
@@ -1035,7 +1089,7 @@ function restore() {
     (window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
   applyTheme(savedTheme);
 
-  $("feed-source").value = recall("feed");
+  if ($("feed-source")) $("feed-source").value = recall("feed");
   $("pdf-path").value = recall("pdfpath");
   $("materials-path").value = recall("matpath");
   $("moodle-path").value = recall("moodlepath");
@@ -1045,78 +1099,21 @@ function restore() {
   if (course) { $("course-input").value = course; $("course-name-main").value = course; }
   try {
     const s = JSON.parse(recall("settings") || "{}");
-    if (s.model) $("opt-model").value = s.model;
-    if (s.language) $("opt-language").value = s.language;
-    if (s.device) $("opt-device").value = s.device;
-    if (typeof s.audio_only === "boolean") $("opt-audio").checked = s.audio_only;
-    if (typeof s.skip_existing === "boolean") $("opt-skip").checked = s.skip_existing;
+    if (s.model && $("opt-model")) $("opt-model").value = s.model;
+    if (s.language && $("opt-language")) $("opt-language").value = s.language;
+    if (s.device && $("opt-device")) $("opt-device").value = s.device;
+    if (typeof s.audio_only === "boolean" && $("opt-audio")) $("opt-audio").checked = s.audio_only;
+    if (typeof s.skip_existing === "boolean" && $("opt-skip")) $("opt-skip").checked = s.skip_existing;
   } catch (_) {}
 }
 
 loadStatus().then(() => {
   restore();                   // now the engine/model selects are populated
   loadDashboard();
+  initMoodleQuick();
 });
 loadCourses();
 
-// ===========================================================================
-// Window + Simple/Advanced mode launcher (custom UX layer)
-// ===========================================================================
-const Mode = {
-  get window() { return recall("ui.window", ""); },
-  get level() { return recall("ui.level", "simple"); },
-  set(win, level) {
-    remember("ui.window", win); remember("ui.level", level);
-    // Best-effort persist to the server so it survives a localStorage clear (§1).
-    postJSON("/api/settings", { values: { ui_window: win, ui_level: level } }, "PUT").catch(() => {});
-    applyMode();
-  },
-};
-
-function applyMode() {
-  const win = Mode.window || "full";
-  const level = Mode.level || "simple";
-  document.body.dataset.window = win;
-  document.body.dataset.level = level;
-  document.querySelectorAll(".moodle-only").forEach((n) => n.classList.toggle("hidden", win !== "moodle"));
-  const label = $("mode-label");
-  if (label) label.textContent = `${win === "moodle" ? "Moodle" : "Full"} · ${level === "simple" ? "Simple" : "Advanced"}`;
-  highlightWorkspace(win, level);
-  // Each window is self-contained: land on its home tab so you can't sit on a
-  // tab that belongs to the other window.
-  if (win === "moodle") { showTab("moodle-quick"); initMoodleQuick(); }
-  else if (document.querySelector("#moodle-quick.active")) { showTab("home"); }
-}
-
-// Mark the current window/level on the start gate so it's obvious when reopened.
-function highlightWorkspace(win, level) {
-  document.querySelectorAll("#launcher .launch-card").forEach((card) => {
-    const active = card.dataset.window === win;
-    card.classList.toggle("selected", active);
-    card.querySelectorAll("[data-level]").forEach((b) =>
-      b.classList.toggle("chosen", active && b.dataset.level === level));
-  });
-}
-
-function openLauncher() { highlightWorkspace(Mode.window || "full", Mode.level || "simple"); $("launcher").classList.remove("hidden"); }
-function closeLauncher() { $("launcher").classList.add("hidden"); }
-
-// The start gate is the ONLY place to pick a window + level.
-document.querySelectorAll("#launcher [data-window][data-level]").forEach((btn) =>
-  btn.addEventListener("click", () => {
-    Mode.set(btn.dataset.window, btn.dataset.level);
-    closeLauncher();
-    toast(`Switched to ${btn.dataset.window === "moodle" ? "Moodle course" : "Full workspace"} · ${btn.dataset.level}.`, "ok");
-  })
-);
-// Reopen the gate from the sidebar — the only way back to the selection.
-$("change-workspace").addEventListener("click", openLauncher);
-
-// First run (no stored window) shows the gate; otherwise apply silently.
-(function bootMode() {
-  if (!Mode.window) openLauncher();
-  applyMode();
-})();
 
 // ---- Moodle "Simple" guided flow ------------------------------------------
 let mqRecommend = null, mqInited = false;
@@ -1143,26 +1140,37 @@ function setConnectStatus(state, text) {
   if (t) t.textContent = text;
 }
 
-// Authentication tab switch (username/password vs. pasted token).
-document.querySelectorAll(".mq-auth-tab").forEach((tab) =>
-  tab.addEventListener("click", () => {
-    const which = tab.dataset.auth;
-    document.querySelectorAll(".mq-auth-tab").forEach((t) =>
-      t.classList.toggle("active", t === tab));
-    $("mq-auth-password").classList.toggle("hidden", which !== "password");
-    $("mq-auth-token").classList.toggle("hidden", which !== "token");
-  }));
+// SSO polling — started when the user opens the sign-in page.  Polls
+// /api/moodle/sso-poll every 2 s; the OS protocol handler (Windows) calls
+// /api/moodle/sso-callback when courseassistant:// lands, and the poll picks it up.
+let _ssoPollTimer = null;
+let _ssoStartedAt = 0;
 
-// "Open security keys ↗" — opens managetoken.php in a new tab (Option A).
-$("mq-open-token-page")?.addEventListener("click", () => {
-  const raw = $("mq-url").value.trim();
-  if (!raw) { toast("Enter your Moodle site URL first.", "warn"); return; }
-  try {
-    const base = new URL(/^https?:\/\//i.test(raw) ? raw : "https://" + raw);
-    window.open(base.origin + "/user/managetoken.php", "_blank", "noopener,noreferrer");
-  } catch (_) {
-    toast("Enter a valid Moodle URL first (e.g. https://elearn.waikato.ac.nz).", "warn");
-  }
+function _stopSsoPoll() {
+  if (_ssoPollTimer) { clearInterval(_ssoPollTimer); _ssoPollTimer = null; }
+  $("mq-sso-waiting")?.classList.add("hidden");
+}
+
+function _startSsoPoll() {
+  _stopSsoPoll();
+  _ssoStartedAt = Date.now();
+  $("mq-sso-waiting")?.classList.remove("hidden");
+  _ssoPollTimer = setInterval(async () => {
+    if (Date.now() - _ssoStartedAt > 5 * 60 * 1000) { _stopSsoPoll(); return; }
+    try {
+      const d = await api("/api/moodle/sso-poll");
+      if (d.token) {
+        _stopSsoPoll();
+        toast("Signed in — connecting…", "ok");
+        await _moodleConnect($("mq-url").value.trim(), d.token);
+      }
+    } catch (_) { /* ignore poll errors */ }
+  }, 2000);
+}
+
+$("mq-sso-cancel")?.addEventListener("click", (e) => {
+  e.preventDefault();
+  _stopSsoPoll();
 });
 
 // "Open sign-in page ↗" — Option B: browser SSO launch flow.
@@ -1179,46 +1187,23 @@ $("mq-launch-sso")?.addEventListener("click", () => {
     toast("Enter a valid Moodle URL first (e.g. https://elearn.waikato.ac.nz).", "warn");
     return;
   }
-  // Strip any course/login path back to the site root, then append launch.php.
+  // urlscheme=courseassistant: our OS handler intercepts courseassistant://token=…
+  // and POSTs it to /api/moodle/sso-callback so the poll below picks it up.
   const launch = base.origin +
     "/admin/tool/mobile/launch.php?service=moodle_mobile_app" +
-    "&passport=courseassistant&urlscheme=moodlemobile";
+    "&passport=courseassistant&urlscheme=courseassistant";
   // No noopener: a brand-new about:blank tab that we immediately navigate is fine,
   // and some browsers blank a noopener tab opened to a cross-origin redirect chain.
   window.open(launch, "_blank");
+  _startSsoPoll();
 });
 
-// "Extract & connect" — decodes the moodlemobile:// URL the user copied from
-// their address bar, puts the extracted token into #mq-token, and fires Connect.
-$("mq-launch-extract")?.addEventListener("click", async () => {
-  const raw = $("mq-launch-url").value.trim();
-  if (!raw) { toast("Paste the moodlemobile:// URL from your browser first.", "warn"); return; }
-  try {
-    const d = await postJSON("/api/moodle/decode-launch-token", { raw });
-    $("mq-token").value = d.token;
-    toast("Token extracted — connecting…", "ok");
-    $("mq-connect").click();
-  } catch (e) { toast(e.message, "err"); }
-});
-
-// Connect: obtain a web-service token (stored locally) and list the courses.
-$("mq-connect")?.addEventListener("click", async () => {
-  const url = $("mq-url").value.trim();
+async function _moodleConnect(url, token) {
   if (!url) { toast("Enter your Moodle site link first.", "warn"); return; }
-  const usingToken = document.querySelector('.mq-auth-tab[data-auth="token"]')?.classList.contains("active");
-  const body = { url };
-  if (usingToken) {
-    body.token = $("mq-token").value.trim();
-    if (!body.token) { toast("Paste your Moodle web-service token, or use username & password.", "warn"); return; }
-  } else {
-    body.username = $("mq-username").value.trim();
-    body.password = $("mq-password").value;
-    if (!body.username || !body.password) { toast("Enter your Moodle username and password.", "warn"); return; }
-  }
-  const btn = $("mq-connect"); btn.disabled = true; btn.textContent = "Connecting…";
+  if (!token) { toast("No token received — try signing in again.", "warn"); return; }
   setConnectStatus("warn", "Connecting to Moodle…");
   try {
-    const d = await postJSON("/api/moodle/connect", body);
+    const d = await postJSON("/api/moodle/connect", { url, token });
     const courses = d.courses || [];
     const sel = $("mq-course-select"); clear(sel);
     if (!courses.length) {
@@ -1226,7 +1211,6 @@ $("mq-connect")?.addEventListener("click", async () => {
     } else {
       courses.forEach((c) => sel.appendChild(
         el("option", { value: String(c.id), text: c.fullname || c.shortname || ("Course " + c.id) })));
-      // Preselect a course whose id matches the one in the pasted URL, if any.
       const m = url.match(/[?&]id=(\d+)/);
       if (m && courses.some((c) => String(c.id) === m[1])) sel.value = m[1];
       setConnectStatus("on", `Connected to ${d.sitename || d.host} as ${d.fullname || "you"}. ${courses.length} course(s) available.`);
@@ -1237,31 +1221,11 @@ $("mq-connect")?.addEventListener("click", async () => {
     toast("Connected to Moodle.", "ok");
   } catch (e) {
     const msg = e.message || "";
-    if (msg.startsWith("SSO_REJECTED:")) {
-      // Definitive SSO code — auto-switch to the token tab.
-      document.querySelector('.mq-auth-tab[data-auth="token"]')?.click();
-      setConnectStatus("warn", msg.slice("SSO_REJECTED:".length).trim());
-      toast("SSO site detected — paste a token to connect.", "warn");
-    } else {
-      setConnectStatus("off", msg);
-      // Ambiguous login failure: add a soft "try the token tab" hint so SSO
-      // users (whose site returns a generic 'Invalid login') know what to do.
-      if (/invalid login|invalid password/i.test(msg)) {
-        const statusText = $("mq-connect-text");
-        if (statusText) {
-          const a = el("a", { href: "#", class: "mq-sso-hint",
-            text: " → Try the token tab if your site uses Microsoft/Google SSO" });
-          a.addEventListener("click", (ev) => {
-            ev.preventDefault();
-            document.querySelector('.mq-auth-tab[data-auth="token"]')?.click();
-          });
-          statusText.appendChild(a);
-        }
-      }
-      toast(msg, "err");
-    }
-  } finally { btn.disabled = false; btn.textContent = "Connect"; }
-});
+    const display = msg.startsWith("SSO_REJECTED:") ? msg.slice("SSO_REJECTED:".length).trim() : msg;
+    setConnectStatus("off", display);
+    toast(display, "err");
+  }
+}
 let _mqBaseUrl = "";
 
 // Render the outcome of an API import: a labelled, unambiguous breakdown so
@@ -1315,13 +1279,14 @@ $("mq-import")?.addEventListener("click", async () => {
   const sel = $("mq-course-select");
   const courseId = sel && sel.value ? parseInt(sel.value, 10) : 0;
   if (!courseId) { toast("Pick a course to import.", "warn"); return; }
-  const adv = document.body.dataset.level === "advanced";
-  const grabLectures = adv ? $("mq-grab-lectures").checked : true;
-  const grabTranscripts = adv ? $("mq-grab-transcripts").checked : true;
-  const grabDocs = adv ? $("mq-grab-docs").checked : true;
-  const keepImages = adv ? $("mq-images").checked : true;
-  if (adv && !grabLectures && !grabTranscripts && !grabDocs) {
-    toast("Select at least one item to include.", "warn"); return;
+  // "Lectures & transcripts" is one toggle: lectures are only ever pulled as part
+  // of the course (with transcription), never as a standalone import.
+  const grabDocs = $("mq-grab-docs")?.checked ?? true;
+  const grabTranscripts = $("mq-grab-transcripts")?.checked ?? true;
+  const grabLectures = grabTranscripts;
+  const keepImages = $("mq-images")?.checked ?? true;
+  if (!grabDocs && !grabTranscripts) {
+    toast("Pick at least one thing to include — documents or lectures.", "warn"); return;
   }
   const btn = $("mq-import"); btn.disabled = true; btn.textContent = "Importing…";
   const out = $("mq-import-result"); clear(out);

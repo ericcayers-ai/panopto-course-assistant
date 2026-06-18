@@ -57,4 +57,11 @@ if __name__ == "__main__":
               f"-> using {port} instead.")
     print(f"Course Assistant -> {url}")
     _maybe_open_browser(url)
+    # Register courseassistant:// protocol handler so SSO callbacks reach this server.
+    os.environ["CA_PORT"] = str(port)
+    try:
+        from app import sso_protocol
+        sso_protocol.register(port)
+    except Exception:
+        pass
     uvicorn.run("app.main:app", host=host, port=port, reload=False)

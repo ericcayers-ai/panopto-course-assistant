@@ -183,8 +183,18 @@ def course_archive(output_dir: Path, *, db: Any = None, course_id: Optional[int]
                         zf.write(p, arcname=rel)
                         manifest["files"].append(rel)
                         seen.add(rel)
-        # Bundle extracted image assets (diagrams/figures from slides, assignments,
-        # …) so the Markdown's image references still resolve inside the archive.
+        # Bundle extracted image assets so they travel with the Markdown.
+        # New format: a single *_assets.zip per document (preferred).
+        for zip_f in output_dir.rglob("*_assets.zip"):
+            if not zip_f.is_file():
+                continue
+            rel = zip_f.relative_to(output_dir).as_posix()
+            if rel in seen:
+                continue
+            zf.write(zip_f, arcname=rel)
+            manifest["files"].append(rel)
+            seen.add(rel)
+        # Legacy format: *_assets/ directory (kept for backwards-compat).
         for assets in output_dir.rglob("*_assets"):
             if not assets.is_dir():
                 continue

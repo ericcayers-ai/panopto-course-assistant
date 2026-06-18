@@ -316,20 +316,11 @@ def test_pdf_and_materials_bad_path(client):
     assert c.get("/api/materials", params={"path": "C:/no/such/dir/xyz"}).status_code == 400
 
 
-def test_flashcards_generate_empty_then_success(client):
-    c, tmp = client
-    from app import core
-    assert c.post("/api/flashcards/generate", json={}).status_code == 404
-    # seed a definition-rich transcript
-    it = core.LectureItem(title="Week9_Transport", url="u")
-    text = "The Transmission Control Protocol (TCP) is reliable. Flow control is a mechanism that limits the sender."
-    core.write_outputs(it, [{"start": 0, "end": 5, "text": text}], text,
-                       core.output_dir_for(tmp, it, "week"), ["txt", "json"], 30, {})
-    r = c.post("/api/flashcards/generate", json={"course": "COMPX234", "deck": "d1"})
-    assert r.status_code == 200
-    body = r.json()
-    assert body["count"] >= 1
-    assert body["anki_tsv"].endswith(".txt") and body["csv"].endswith(".csv")
+def test_flashcards_generate_requires_llm(client):
+    c, _ = client
+    # Flashcard generation is LLM-only; without a configured provider it returns 503.
+    r = c.post("/api/flashcards/generate", json={})
+    assert r.status_code == 503
 
 
 def test_export_notion_csv_empty_then_success(client):
@@ -344,15 +335,14 @@ def test_export_notion_csv_empty_then_success(client):
     assert "Name" in body["columns"]
 
 
-def test_flashcards_categorize(client):
+def test_flashcards_categorize_requires_llm(client):
     c, _ = client
+    # Categorize is LLM-only; without a configured provider it returns 503.
     r = c.post("/api/flashcards/categorize", json={
         "text": "What is TCP?,A reliable transport protocol\nWhat is a router?,Forwards packets",
-        "course": "COMPX234", "extra_keywords": ["router"],
+        "course": "COMPX234",
     })
-    assert r.status_code == 200 and r.json()["count"] == 2
-    # empty input -> 400
-    assert c.post("/api/flashcards/categorize", json={"text": ""}).status_code == 400
+    assert r.status_code == 503
 
 
 # ---------------------------------------------------------------------------
