@@ -248,7 +248,7 @@ SEGS = [
 def test_render_txt_buckets_by_interval():
     out = core.render_txt(SEGS, interval=30)
     # second block is stamped with the first segment's actual start (35s), not the
-    # bucket boundary (30s) — segments 0-8s collapse into bucket 0, 35s into bucket 1
+    # bucket boundary (30s) - segments 0-8s collapse into bucket 0, 35s into bucket 1
     assert "[00:00:00]" in out and "[00:00:35]" in out
     assert out.endswith("\n")
 
@@ -311,7 +311,7 @@ def test_summarize_picks_salient_and_keeps_order():
 def test_render_summary_markdown():
     item = core.LectureItem(title="Week2_CPU", url="u")
     md = core.render_summary(item, SEGS, "")
-    assert md.startswith("# Summary — Week2_CPU")
+    assert md.startswith("# Summary: Week2_CPU")
     assert "Key points" in md
 
 
@@ -471,7 +471,7 @@ def test_export_all_sources_combines_everything(tmp_path):
     _seed(tmp_path, title="Week2_CPU_Scheduling", formats=("json",))
     docs = core.ensure_dir(tmp_path / core.DOCS_DIRNAME)
     (docs / "Lecture_Slides.md").write_text("# Slides\nslide content\n", encoding="utf-8")
-    (docs / "documents_pack.md").write_text("combined — must be skipped\n", encoding="utf-8")
+    (docs / "documents_pack.md").write_text("combined - must be skipped\n", encoding="utf-8")
     notion = core.ensure_dir(tmp_path / core.NOTION_DIRNAME)
     (notion / "Study_Notes.md").write_text("# Notes\nnotion content\n", encoding="utf-8")
 

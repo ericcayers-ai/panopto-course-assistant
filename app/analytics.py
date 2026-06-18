@@ -1,8 +1,8 @@
 """
-analytics.py — local-only usage insight (§13). **No cloud, no network.**
+analytics.py - local-only usage insight (§13). **No cloud, no network.**
 
 Everything here is derived from rows the app already stores (`jobs`, `exports`,
-`study_sessions`). There is deliberately no telemetry SDK and no outbound call —
+`study_sessions`). There is deliberately no telemetry SDK and no outbound call -
 the only egress path is a *user-initiated* diagnostics export (a local JSON file
 they choose to share), which is scrubbed of secrets/PII.
 
@@ -112,12 +112,12 @@ def feedback_prompt(stats: Dict[str, Any]) -> Optional[str]:
     cat, n = max(fails.items(), key=lambda kv: kv[1])
     if n >= 3:
         hints = {
-            "network": "Several jobs failed on the network — check your connection or cookies.",
-            "authentication": "Repeated auth failures — your session cookies/API key may be stale.",
-            "dependency": "A missing engine keeps failing jobs — see /api/status for what to install.",
-            "filesystem": "Filesystem errors recurring — check the output folder's space/permissions.",
+            "network": "Several jobs failed on the network - check your connection or cookies.",
+            "authentication": "Repeated auth failures - your session cookies/API key may be stale.",
+            "dependency": "A missing engine keeps failing jobs - see /api/status for what to install.",
+            "filesystem": "Filesystem errors recurring - check the output folder's space/permissions.",
         }
-        return hints.get(cat, f"{n} jobs failed with '{cat}' — worth a look.")
+        return hints.get(cat, f"{n} jobs failed with '{cat}' - worth a look.")
     return None
 
 
@@ -125,7 +125,7 @@ def diagnostics_export(db: Database, output_dir: Path,
                       course_id: Optional[int] = None) -> Dict[str, Any]:
     """Write an anonymised diagnostics JSON the user can *choose* to share.
 
-    Contains only aggregate counts — never paths, titles, tokens or content — so
+    Contains only aggregate counts - never paths, titles, tokens or content - so
     it carries no secrets/PII (asserted by test).
     """
     stats = compute(db, course_id)

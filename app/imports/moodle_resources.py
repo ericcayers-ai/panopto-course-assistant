@@ -1,5 +1,5 @@
 """
-imports/moodle_resources.py — download a Moodle course's resource files (§7).
+imports/moodle_resources.py - download a Moodle course's resource files (§7).
 
 The course page lists file-backed activities (``/mod/resource/view.php?id=…`` and
 ``/mod/folder/…``). Each, once you're logged in, redirects to the actual file
@@ -72,7 +72,7 @@ def download_resources(activities: List[Dict[str, Any]], dest_dir: Path, *,
 
     Returns a manifest: ``{downloaded, files[], skipped[], errors[]}``. A resource
     "view" page that returns HTML with a ``pluginfile`` link is followed one hop to
-    the real file. Never raises for a single bad file — it's recorded and skipped.
+    the real file. Never raises for a single bad file - it's recorded and skipped.
     """
     fetch = fetcher or _default_fetcher
     dest_dir = Path(dest_dir)

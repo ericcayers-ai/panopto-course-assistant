@@ -8,7 +8,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 # Run the app (auto-selects a free port starting at 8000)
 python run.py
 
-# Dev server on a fixed port (for the preview panel — uses .claude/launch.json)
+# Dev server on a fixed port (for the preview panel - uses .claude/launch.json)
 .venv/Scripts/python.exe -m uvicorn app.main:app --port 8123
 
 # Install core deps
@@ -43,8 +43,8 @@ app/main.py  (FastAPI routes, Pydantic request models)
   ↓  calls
 app/{core,transcribe,flashcards,study,exports,…}.py  (domain logic)
   ↓  reads/writes
-transcripts/   (file-based library — OUTPUT_DIR)
-transcripts/course_assistant.db   (SQLite — all persistent state)
+transcripts/   (file-based library - OUTPUT_DIR)
+transcripts/course_assistant.db   (SQLite - all persistent state)
 ```
 
 `app/main.py` is the only file with HTTP concerns. All business logic lives in the modules it imports; routes are thin.
@@ -53,14 +53,14 @@ transcripts/course_assistant.db   (SQLite — all persistent state)
 
 | Module | Responsibility |
 |---|---|
-| `core.py` | Feed parsing, `LectureItem`, `write_outputs`, `list_transcripts`, `list_library`, all exporters (NotebookLM, all-sources, subtitles), `split_sentences`, `summarize_text`. No heavy deps — stdlib + `requests` only. |
-| `database.py` | SQLite DAO. Single `RLock`-guarded connection. Schema migrations are append-only numbered steps in `_MIGRATIONS` — never edit a shipped migration. |
-| `jobs.py` | `JobManager` — thread pool, DB-backed state (`queued → running → done/failed/interrupted`). `manager.bind(db)` wires persistence. Without a bound DB it runs in-memory (used in unit tests). |
+| `core.py` | Feed parsing, `LectureItem`, `write_outputs`, `list_transcripts`, `list_library`, all exporters (NotebookLM, all-sources, subtitles), `split_sentences`, `summarize_text`. No heavy deps - stdlib + `requests` only. |
+| `database.py` | SQLite DAO. Single `RLock`-guarded connection. Schema migrations are append-only numbered steps in `_MIGRATIONS` - never edit a shipped migration. |
+| `jobs.py` | `JobManager` - thread pool, DB-backed state (`queued → running → done/failed/interrupted`). `manager.bind(db)` wires persistence. Without a bound DB it runs in-memory (used in unit tests). |
 | `transcribe.py` | Lazy-imports whisper/faster-whisper/yt-dlp. The rest of the app starts fine if these are absent. |
 | `exports.py` | Preset-driven export engine (intent × scope). Wraps the raw exporters in `core.py`. |
 | `flashcards.py` | Anki card extraction. Uses `core.split_sentences()` (not raw regex). |
 | `secrets.py` | Key/token storage: OS keyring → encrypted file → plaintext fallback. Never store secrets in the DB. |
-| `imports/moodle_api.py` | Moodle web-service API client. All HTTP is injectable (`http_post`/`http_get`) for offline testing. `build_course_model()` is pure — no I/O — so it can be unit-tested exhaustively. |
+| `imports/moodle_api.py` | Moodle web-service API client. All HTTP is injectable (`http_post`/`http_get`) for offline testing. `build_course_model()` is pure - no I/O - so it can be unit-tested exhaustively. |
 | `settings_store.py` | JSON-encoded key/value preferences in the `settings` DB table. |
 
 ### Output directory layout
@@ -69,8 +69,8 @@ Everything lands under `OUTPUT_DIR` (`./transcripts` by default, overridden by `
 
 ```
 transcripts/
-  course_assistant.db          # SQLite — all courses, jobs, settings, audit log
-  .secrets.json / .secrets.key # encrypted secrets store (dotfiles — excluded from library listing)
+  course_assistant.db          # SQLite - all courses, jobs, settings, audit log
+  .secrets.json / .secrets.key # encrypted secrets store (dotfiles - excluded from library listing)
   <week-folder>/
     <lecture-safe-title>.txt   # clean transcript text
     <lecture-safe-title>.md    # markdown with study summary
@@ -112,4 +112,4 @@ Three auth paths, in priority order:
 - **Moodle API**: inject `http_post`/`http_get` callables; `build_course_model` is pure and needs no HTTP mock
 - **API endpoints**: `TestClient` from `fastapi.testclient`; always set `PANOPTO_OUTPUT` to a `tmp_path` before importing `app.main`
 - **Export validity**: seed with `_seed_lecture()`, call exporters directly, assert on file contents
-- `_is_transcript_group()` is the canonical truth for what the library and all exporters treat as a real transcript — keep them consistent
+- `_is_transcript_group()` is the canonical truth for what the library and all exporters treat as a real transcript - keep them consistent

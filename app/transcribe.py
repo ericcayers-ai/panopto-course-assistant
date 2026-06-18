@@ -1,5 +1,5 @@
 """
-transcribe.py — optional download + transcription pipeline.
+transcribe.py - optional download + transcription pipeline.
 
 Heavy dependencies (torch, whisper, faster-whisper, yt-dlp) are imported lazily
 so that the web app starts and serves the feed/search/PDF features even when the
@@ -35,6 +35,24 @@ def _cpu_threads() -> int:
 # (and re-allocating VRAM) for every lecture. Keyed by (model, device, compute).
 _MODEL_CACHE: Dict[tuple, Any] = {}
 _MODEL_LOCK = threading.Lock()
+
+
+def _transcribe_concurrency() -> int:
+    """How many lectures may run the Whisper model at the same time. One by
+    default so a single GPU or modest amount of RAM is never asked to hold two
+    models at once. Override with PANOPTO_TRANSCRIBE_CONCURRENCY."""
+    env = os.environ.get("PANOPTO_TRANSCRIBE_CONCURRENCY")
+    if env:
+        try:
+            return max(1, int(env))
+        except ValueError:
+            pass
+    return 1
+
+
+# Downloads and other job types run in parallel; only the heavy transcription
+# step passes through this gate, so memory stays safe while the queue still moves.
+_TRANSCRIBE_SEM = threading.Semaphore(_transcribe_concurrency())
 
 
 def _faster_whisper_model(model_name: str, device: str):
@@ -75,7 +93,7 @@ def engine_status() -> Dict[str, Any]:
         "markitdown": _have("markitdown"),
         "torch": _have("torch"),
         "cuda": via is not None,
-        "cuda_via": via,                 # "ctranslate2" | "torch" | None — for diagnostics
+        "cuda_via": via,                 # "ctranslate2" | "torch" | None - for diagnostics
         "default_engine": "faster-whisper" if engines["faster-whisper"] else (
             "whisper" if engines["whisper"] else None
         ),
@@ -83,7 +101,7 @@ def engine_status() -> Dict[str, Any]:
 
 
 def recommend_settings() -> Dict[str, Any]:
-    """Best transcription settings for the current machine — used by Simple mode's
+    """Best transcription settings for the current machine - used by Simple mode's
     "auto-transcribe with best detected settings". Picks the strongest installed
     engine, the right device, and a model size that suits CPU-vs-GPU so the user
     needn't choose. Returns ``ready=False`` with a reason when no engine exists."""
@@ -104,7 +122,7 @@ def recommend_settings() -> Dict[str, Any]:
         "language": "en",
         "interval": 30,           # progress/segment cadence (seconds)
         "rationale": (f"{engine} on {'GPU (CUDA)' if cuda else 'CPU'} with the "
-                      f"{model} model — best speed/accuracy for this machine."),
+                      f"{model} model - best speed/accuracy for this machine."),
     }
 
 
@@ -112,7 +130,7 @@ def _cuda_backend() -> Optional[str]:
     """Which backend can see a CUDA GPU, or None.
 
     The recommended engine, faster-whisper, runs on **CTranslate2**, which ships
-    its own CUDA runtime and does *not* depend on PyTorch — so checking torch
+    its own CUDA runtime and does *not* depend on PyTorch - so checking torch
     alone wrongly reports "CPU only" on machines that have a working GPU but no
     torch installed. Probe CTranslate2 first, then fall back to torch (used by
     the optional openai-whisper engine).
@@ -237,7 +255,7 @@ def _transcribe_faster_whisper(media: Path, model_name: str, language: str, devi
     try:
         model = _faster_whisper_model(model_name, device)
     except Exception:
-        # GPU was requested but its libraries are missing/incompatible — don't
+        # GPU was requested but its libraries are missing/incompatible - don't
         # fail the whole job, fall back to CPU and record the real device used.
         if device == "cuda":
             model = _faster_whisper_model(model_name, "cpu")
@@ -358,19 +376,28 @@ def transcribe_lecture(
         progress=lambda f: report("downloading", f * 0.4), audio_only=audio_only,
     )
 
-    report("transcribing", 0.45)
-    t0 = time.time()
-    if engine == "whisper":
-        res = _transcribe_openai_whisper(media, model, language, device, beam_size)
-    else:
-        engine = "faster-whisper"
-        # Map the audio-position fraction into the 0.45–0.9 transcription band so
-        # the job's percentage climbs steadily (refreshed ~every `interval` secs).
-        res = _transcribe_faster_whisper(
-            media, model, language, device, beam_size, vad_filter,
-            progress=lambda f: report("transcribing", 0.45 + f * 0.45),
-            progress_period=float(interval or 30))
-    runtime = time.time() - t0
+    # Serialise the heavy model step. The download above already ran in parallel;
+    # here we wait for a free slot, reporting "waiting" each second so the job
+    # shows why it is paused and can still be cancelled cooperatively.
+    while not _TRANSCRIBE_SEM.acquire(timeout=1.0):
+        report("waiting", 0.44)
+    try:
+        report("transcribing", 0.45)
+        t0 = time.time()
+        if engine == "whisper":
+            res = _transcribe_openai_whisper(media, model, language, device, beam_size)
+        else:
+            engine = "faster-whisper"
+            # Map the audio-position fraction into the 0.45 to 0.9 transcription
+            # band so the job's percentage climbs steadily (refreshed ~every
+            # `interval` seconds).
+            res = _transcribe_faster_whisper(
+                media, model, language, device, beam_size, vad_filter,
+                progress=lambda f: report("transcribing", 0.45 + f * 0.45),
+                progress_period=float(interval or 30))
+        runtime = time.time() - t0
+    finally:
+        _TRANSCRIBE_SEM.release()
 
     report("writing", 0.9)
     meta = {

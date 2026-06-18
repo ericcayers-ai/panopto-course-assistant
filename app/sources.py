@@ -1,5 +1,5 @@
 """
-sources.py — parsers for non-transcript course material.
+sources.py - parsers for non-transcript course material.
 
 Currently:
   * Moodle course-page exports (the HTML you get from "save page" / a site
@@ -137,7 +137,7 @@ def _readable_topic(name: str) -> str:
     t = re.sub(r"\b(?:week|wk|lecture|lect|lec|module|mod|unit|topic|lab|tutorial|tut)\s*0*\d+\b",
                "", name, flags=re.I)
     t = re.sub(r"[\-–—:]+", " ", t)
-    t = _WS_RE.sub(" ", t).strip(" -–—:()")
+    t = _WS_RE.sub(" ", t).strip(" -–:()")
     if not t or _DATE_RANGE_RE.match(t) or _GENERIC_LEFTOVERS.match(t):
         return ""
     return t
@@ -215,7 +215,7 @@ def parse_moodle_course(path: Path) -> Dict[str, Any]:
 
     Uses the whole export folder when given one: the main course page provides
     the title/code/section outline and the list of named activities, and any
-    embedded resource documents elsewhere in the folder are picked up too — not
+    embedded resource documents elsewhere in the folder are picked up too - not
     just ``course/view_php.html``.
     """
     course_file = find_moodle_course_file(path)
@@ -295,7 +295,7 @@ def extract_panopto_feeds(raw: str) -> List[str]:
     """Best-effort discovery of Panopto podcast RSS feeds embedded in a course
     page, so the existing feed/transcribe flow can consume lecture recordings.
 
-    Moodle's Panopto block exposes each feed twice — an ``itpc://`` (iTunes
+    Moodle's Panopto block exposes each feed twice - an ``itpc://`` (iTunes
     "subscribe in Podcasts") link and the plain ``https://`` one. We normalise the
     ``itpc://`` scheme to ``https://`` and de-duplicate, preferring video (mp4)
     feeds, so the caller gets one usable URL per recording set rather than four."""

@@ -1,15 +1,15 @@
 """
-ai.py — AI-assisted study features (§4), each with a dependency-free fallback.
+ai.py - AI-assisted study features (§4), each with a dependency-free fallback.
 
 Every function works **with or without** an LLM:
 * LLM configured  -> richer output, flagged ``generated: "ai"``.
 * No LLM          -> extractive / heuristic output, flagged ``generated: "extractive"``.
 
-So the feature set never disappears when AI is off — it just gets simpler. All
+So the feature set never disappears when AI is off - it just gets simpler. All
 LLM calls go through :mod:`app.llm`; failures fall back rather than erroring.
 
 (Roadmap maps these to an ``app/ai/`` package; consolidated into one module here
-to avoid sprawl — summarise / flashcards / quiz / rag live in clearly marked
+to avoid sprawl - summarise / flashcards / quiz / rag live in clearly marked
 sections.)
 """
 from __future__ import annotations
@@ -102,7 +102,7 @@ def summarize(output_dir: Path, scope: str, target: str = "", *,
 
 
 # ---------------------------------------------------------------------------
-# Flashcards (§4) — AI Q&A/cloze, heuristic fallback
+# Flashcards (§4) - AI Q&A/cloze, heuristic fallback
 # ---------------------------------------------------------------------------
 
 _FLASH_SYSTEM = (
@@ -170,7 +170,7 @@ def llm_categorize_cards(cards: List[Dict[str, Any]], course: str = "",
         [{"front": c.get("front", ""), "back": c.get("back", ""), "tags": c.get("tags") or []}
          for c in cards[:150]],
         indent=2)
-    prompt = (f"Categorize these flashcards{course_hint} — add a topic tag to each:\n\n{cards_json}")
+    prompt = (f"Categorize these flashcards{course_hint} - add a topic tag to each:\n\n{cards_json}")
     raw = llm.complete(prompt, system=_CATEGORIZE_SYSTEM, config=cfg)
     result = _parse_json_array(raw)
     if result:
@@ -179,7 +179,7 @@ def llm_categorize_cards(cards: List[Dict[str, Any]], course: str = "",
 
 
 # ---------------------------------------------------------------------------
-# Quiz generation (§4) — extractive MCQ + cloze, LLM-enhanced when available
+# Quiz generation (§4) - extractive MCQ + cloze, LLM-enhanced when available
 # ---------------------------------------------------------------------------
 
 _DEF_RE = re.compile(
@@ -251,7 +251,7 @@ def generate_quiz(output_dir: Path, scope: str = "course", target: str = "", *,
 
 
 # ---------------------------------------------------------------------------
-# RAG chat — "Chat with your course" (§4)
+# RAG chat - "Chat with your course" (§4)
 # ---------------------------------------------------------------------------
 
 _RAG_SYSTEM = (

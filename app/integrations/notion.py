@@ -1,5 +1,5 @@
 """
-integrations/notion.py — live Notion API sync (§5).
+integrations/notion.py - live Notion API sync (§5).
 
 Pushes the course library into a Notion study database: one page per lecture,
 preserving the course · week · topic tags. Incremental + duplicate-aware (matches

@@ -1,5 +1,5 @@
 """
-models.py — light dataclasses mapping SQLite rows to/from dicts (§1).
+models.py - light dataclasses mapping SQLite rows to/from dicts (§1).
 
 These keep the API layer honest (one place that knows a row's shape) without
 pulling in a heavier ORM. ``from_row`` accepts a ``sqlite3.Row``; ``to_dict``

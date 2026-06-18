@@ -1,12 +1,12 @@
 """
-imports/moodle_web.py — import a Moodle course straight from its live URL (§7).
+imports/moodle_web.py - import a Moodle course straight from its live URL (§7).
 
 The user pastes the course page URL (e.g.
 ``https://elearn.waikato.ac.nz/course/view.php?id=77547``) and, because Moodle
 requires a login, supplies the session cookies from their already-logged-in
 browser. We fetch the main page with those cookies, discover the linked
 ``section.php`` pages (lecture materials, assignments, …), fetch each, and merge
-everything through the existing :mod:`app.sources` parser — so "the link alone"
+everything through the existing :mod:`app.sources` parser - so "the link alone"
 reconstructs the course outline + activities + Panopto feeds.
 
 The HTTP fetcher is injectable (``fetcher=``) so the crawl/merge logic is tested
@@ -38,7 +38,7 @@ def parse_cookies(raw: str) -> str:
     raw = (raw or "").strip()
     if not raw:
         return ""
-    # Bare session token — the most common copy/paste mistake is pasting just the
+    # Bare session token - the most common copy/paste mistake is pasting just the
     # MoodleSession *value* (no name). Wrap it so it becomes a usable cookie.
     if "=" not in raw and ";" not in raw and "\t" not in raw and len(raw.split()) == 1:
         return f"MoodleSession={raw}"
@@ -54,7 +54,7 @@ def parse_cookies(raw: str) -> str:
                 pairs.append(f"{cols[5]}={cols[6]}")
         if pairs:
             return "; ".join(pairs)
-    # Already a header / k=v list — collapse whitespace, keep as-is.
+    # Already a header / k=v list - collapse whitespace, keep as-is.
     return re.sub(r"\s*;\s*", "; ", raw).strip().rstrip(";")
 
 
@@ -74,7 +74,7 @@ def _default_fetcher(url: str, cookie_header: str) -> str:
 
 def _looks_logged_out(raw: str) -> bool:
     low = raw.lower()
-    # A logged-IN Moodle page always carries a logout link — use that as a strong
+    # A logged-IN Moodle page always carries a logout link - use that as a strong
     # "you're fine" signal before we sniff for login markers.
     if "login/logout.php" in low:
         return False
@@ -111,7 +111,7 @@ def import_course(url: str, cookies: str = "", *, fetcher: Optional[Fetcher] = N
     main = fetch(url, cookie_header)
     if _looks_logged_out(main):
         raise MoodleWebError(
-            "That page looks logged-out — paste your browser session cookies for "
+            "That page looks logged-out - paste your browser session cookies for "
             "the Moodle site so the course can be read.")
 
     extra_sections: List[Dict[str, Any]] = []

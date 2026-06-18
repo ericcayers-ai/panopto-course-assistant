@@ -1,8 +1,8 @@
 """
-study_planner.py — assessments, calendar, spaced repetition, progress (§6).
+study_planner.py - assessments, calendar, spaced repetition, progress (§6).
 
 Turns stored content into actionable study workflows. Pure-Python and
-deterministic (no AI here — §4 layers advice on top): given the same rows it
+deterministic (no AI here - §4 layers advice on top): given the same rows it
 always produces the same plan, `.ics`, and review schedule, so it's fully
 testable offline.
 
@@ -77,7 +77,7 @@ def delete_assessment(db: Database, assessment_id: int) -> bool:
 def schedule_after(quality: int, *, reps: int, interval: int, ease: float,
                   today: Optional[dt.date] = None) -> Dict[str, Any]:
     """SM-2 step. ``quality`` 0–5 (≥3 = recalled). Returns the next
-    ``reps/interval/ease/due`` — deterministic, so it's directly testable."""
+    ``reps/interval/ease/due`` - deterministic, so it's directly testable."""
     quality = max(0, min(5, int(quality)))
     today = today or dt.date.today()
     if quality < 3:                     # lapse: relearn from the start

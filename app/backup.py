@@ -1,12 +1,12 @@
 """
-backup.py — environment checker + portable backup/restore (§11).
+backup.py - environment checker + portable backup/restore (§11).
 
 Two non-technical-friendly safety nets:
 
-* :func:`environment_report` — what's present/missing on this machine (Python,
+* :func:`environment_report` - what's present/missing on this machine (Python,
   platform, transcription engines, optional deps, free disk), so the first-run
   wizard / "why is X disabled?" panel has one source of truth.
-* :func:`create_backup` / :func:`restore_backup` — zip up *everything* (the DB +
+* :func:`create_backup` / :func:`restore_backup` - zip up *everything* (the DB +
   the whole library) into one portable file and put it back on another machine.
   Pairs with the §9 course archive and the §1 migrations (restore re-opens the DB,
   which migrates forward automatically).

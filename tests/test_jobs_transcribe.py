@@ -1,5 +1,5 @@
 """Tests for the background job manager and the transcribe control flow
-(skip-existing / force / output filtering) — without the heavy ASR deps."""
+(skip-existing / force / output filtering) - without the heavy ASR deps."""
 from __future__ import annotations
 
 import time
@@ -68,7 +68,7 @@ def test_job_get_unknown_returns_none():
 
 
 def test_jobs_run_serially_with_single_worker():
-    """A single worker must run one job at a time — submitting a whole feed
+    """A single worker must run one job at a time - submitting a whole feed
     should queue the rest, not stampede the machine with concurrent jobs."""
     import threading
 

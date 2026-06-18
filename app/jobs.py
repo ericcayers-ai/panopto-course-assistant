@@ -1,11 +1,13 @@
 """
-jobs.py — background job manager (§1: now DB-backed for restart durability).
+jobs.py - background job manager (§1: now DB-backed for restart durability).
 
 Transcription is long-running and heavy (it downloads media and loads a Whisper
 model), so the API queues jobs and a small pool of **worker threads** drains the
-queue while the frontend polls ``/api/jobs``. Jobs run **serially by default**
-(one worker) so submitting a whole feed doesn't stampede the machine with a
-dozen simultaneous downloads / model loads.
+queue while the frontend polls ``/api/jobs``. The pool runs a few jobs at once so
+downloads, document conversion and exports overlap instead of waiting in line.
+The one genuinely memory-hungry step, running a Whisper model, is serialised by a
+semaphore in ``transcribe.py`` so several lectures can download in parallel while
+only one is transcribed at a time, which keeps GPU and RAM use safe.
 
 Persistence (§1)
 ----------------
@@ -13,7 +15,7 @@ When a ``Database`` is bound via :meth:`JobManager.bind` (done by ``app.main``
 after ``database.init``), every state change is written to the ``jobs`` table, so
 the job list and history **survive a restart**. On bind, any job left
 ``running``/``queued`` by a crash is marked ``interrupted`` (a known state the
-user can resume — §3 hardens auto-resume).
+user can resume - §3 hardens auto-resume).
 
 With no database bound (the direct ``JobManager()`` used in unit tests) the
 manager behaves exactly as before: pure in-memory, lost on restart.
@@ -41,7 +43,7 @@ class JobCancelled(Exception):
 def classify_failure(exc: BaseException) -> str:
     """Bucket an exception into a §3 failure category (drives UI hints + retry).
 
-    Heuristic: exception *type* first, then keywords in the message — good enough
+    Heuristic: exception *type* first, then keywords in the message - good enough
     to tell a flaky network apart from a missing dependency or a bad input."""
     name = type(exc).__name__
     msg = str(exc).lower()
@@ -138,10 +140,18 @@ class Job:
 
 
 def _worker_count() -> int:
-    try:
-        return max(1, int(os.environ.get("PANOPTO_WORKERS", "1")))
-    except Exception:
-        return 1
+    """How many jobs run at once. Defaults to a small parallel pool so light work
+    (exports, document conversion, CSV) and downloads overlap instead of queueing
+    behind one another. Heavy transcription is kept safe separately by a semaphore
+    in ``transcribe.py``. Override with PANOPTO_WORKERS."""
+    env = os.environ.get("PANOPTO_WORKERS")
+    if env:
+        try:
+            return max(1, int(env))
+        except ValueError:
+            pass
+    cpu = os.cpu_count() or 4
+    return min(4, max(2, cpu // 2))
 
 
 class JobManager:
@@ -218,7 +228,7 @@ class JobManager:
 
     def _ensure_workers(self) -> None:
         """Spin up the worker pool on first submit (lazy, so importing the app
-        never starts threads — keeps the test suite and tooling clean)."""
+        never starts threads - keeps the test suite and tooling clean)."""
         with self._lock:
             if self._started:
                 return

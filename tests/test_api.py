@@ -101,7 +101,7 @@ def test_docs_is_self_contained_offline(client):
     r = c.get("/docs")
     assert r.status_code == 200
     html = r.text
-    # no CDN/external fetches — the page must work with no internet
+    # no CDN/external fetches - the page must work with no internet
     assert "cdn." not in html and "https://" not in html and "http://" not in html
     assert "/openapi.json" in html          # it renders from the local schema
     # and the schema it reads is actually served locally
@@ -381,7 +381,7 @@ def test_flashcards_categorize_requires_llm(client):
 
 
 # ---------------------------------------------------------------------------
-# §1 — multi-course + persistence routes
+# §1 - multi-course + persistence routes
 # ---------------------------------------------------------------------------
 
 

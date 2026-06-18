@@ -1,14 +1,14 @@
 """
-imageextract.py — preserve imagery/diagrams when converting documents (§7/§9).
+imageextract.py - preserve imagery/diagrams when converting documents (§7/§9).
 
-`markitdown` gives us clean *text* but drops every image — so diagrams in lecture
+`markitdown` gives us clean *text* but drops every image - so diagrams in lecture
 slides, figures in assignments and worked-example screenshots are silently lost.
 This module pulls those images **out** of the source and saves them next to the
 converted Markdown, so the `.md` can reference the real pictures (accuracy-first)
 instead of describing them.
 
 Backends, cheapest first:
-* **Office / EPUB** (`.pptx .docx .xlsx .epub`) are ZIP containers — embedded
+* **Office / EPUB** (`.pptx .docx .xlsx .epub`) are ZIP containers - embedded
   images live under ``*/media/*`` and come out with the **standard library only**
   (no extra deps). This covers the cases the user named: slides and assignments.
 * **PDF** uses PyMuPDF (``fitz``) when present, else **pdfplumber + Pillow**
@@ -27,7 +27,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 # Raster/vector formats we can reference inline in Markdown (emf/wmf are preserved
-# on disk but not inlined — most renderers/NotebookLM can't display them).
+# on disk but not inlined - most renderers/NotebookLM can't display them).
 RENDERABLE = {".png", ".jpg", ".jpeg", ".gif", ".bmp", ".webp", ".svg"}
 _ALL_IMG = RENDERABLE | {".tif", ".tiff", ".emf", ".wmf"}
 
@@ -45,7 +45,7 @@ def _have(mod: str) -> bool:
 
 def capability() -> Dict[str, Any]:
     """What image extraction can do on this machine (for /api/status)."""
-    office = True                       # stdlib zip — always available
+    office = True                       # stdlib zip - always available
     pdf_backend = "pymupdf" if _have("fitz") else (
         "pdfplumber" if (_have("pdfplumber") and _have("PIL")) else None)
     return {
@@ -67,7 +67,7 @@ def supports(path: Path) -> bool:
 
 
 # ---------------------------------------------------------------------------
-# Office / EPUB (ZIP) — stdlib only
+# Office / EPUB (ZIP) - stdlib only
 # ---------------------------------------------------------------------------
 
 
@@ -99,7 +99,7 @@ def _extract_zip_media(src: Path, assets_dir: Path) -> List[Dict[str, Any]]:
 
 
 # ---------------------------------------------------------------------------
-# PDF — PyMuPDF preferred, pdfplumber + Pillow fallback
+# PDF - PyMuPDF preferred, pdfplumber + Pillow fallback
 # ---------------------------------------------------------------------------
 
 
@@ -159,7 +159,7 @@ def _pdf_image_to_file(stream, im, assets_dir: Path, idx: int, pno: int, Image) 
     w = int(attrs.get("Width") or im.get("width") or 0)
     h = int(attrs.get("Height") or im.get("height") or 0)
 
-    # JPEG-compressed image data is already a valid file — write it straight out.
+    # JPEG-compressed image data is already a valid file - write it straight out.
     if "DCTDecode" in names or "JPXDecode" in names:
         data = stream.get_data()
         ext = ".jpg" if "DCTDecode" in names else ".jp2"
@@ -224,7 +224,7 @@ def _extract_pdf(src: Path, assets_dir: Path) -> List[Dict[str, Any]]:
 def extract_images(src: Path, assets_dir: Path) -> List[Dict[str, Any]]:
     """Extract embedded images from ``src`` into ``assets_dir``. Returns a record
     per image: ``{file, index, ext, renderable, page?/source_member?}``. Never
-    raises on a bad source — returns ``[]`` so text conversion still succeeds."""
+    raises on a bad source - returns ``[]`` so text conversion still succeeds."""
     src = Path(src)
     ext = src.suffix.lower()
     try:
@@ -244,7 +244,7 @@ def images_markdown(images: List[Dict[str, Any]], assets_relname: str,
     if not images:
         return ""
     lines = ["", "## Images & diagrams",
-             f"_{len(images)} image(s) preserved from the original{(' — ' + title) if title else ''}._", ""]
+             f"_{len(images)} image(s) preserved from the original{(' - ' + title) if title else ''}._", ""]
     extra = 0
     for img in images:
         rel = f"{assets_relname}/{img['file']}"
@@ -263,7 +263,7 @@ def images_markdown(images: List[Dict[str, Any]], assets_relname: str,
 def pack_assets_to_zip(assets_dir: Path) -> Path:
     """Compress all files in ``assets_dir`` into a sibling ``<name>.zip``, then
     remove the directory. Returns the zip path. Safe to call even when the dir
-    is empty or doesn't exist — an empty zip is created in that case."""
+    is empty or doesn't exist - an empty zip is created in that case."""
     assets_dir = Path(assets_dir)
     zip_path = assets_dir.parent / (assets_dir.name + ".zip")
     files = sorted(f for f in assets_dir.iterdir() if f.is_file()) \
@@ -285,7 +285,7 @@ def images_markdown_packed(images: List[Dict[str, Any]], zip_name: str,
     n = len(images)
     lines = ["", "## Images & diagrams",
              f"_{n} image(s) preserved from the original"
-             f"{(' — ' + title) if title else ''}._",
+             f"{(' - ' + title) if title else ''}._",
              f"_Images are packed in `{zip_name}` alongside this file._", ""]
     for img in images:
         page = f" (p.{img['page']})" if img.get("page") else ""

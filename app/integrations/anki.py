@@ -1,5 +1,5 @@
 """
-integrations/anki.py — push flashcards into Anki via AnkiConnect (§5).
+integrations/anki.py - push flashcards into Anki via AnkiConnect (§5).
 
 Talks to the AnkiConnect add-on (default http://127.0.0.1:8765). Creates the
 deck if needed, adds notes tagged by course · week · topic, and is duplicate-aware

@@ -22,7 +22,7 @@ def _seed_lecture(out: Path, title: str, segs, fmts=("txt", "json", "md")):
 
 
 # ---------------------------------------------------------------------------
-# Fix 1 — an empty/interrupted transcript must not pollute the NotebookLM export
+# Fix 1 - an empty/interrupted transcript must not pollute the NotebookLM export
 # ---------------------------------------------------------------------------
 
 def test_empty_transcript_excluded_from_notebooklm(tmp_path: Path):
@@ -43,7 +43,7 @@ def test_empty_transcript_excluded_from_notebooklm(tmp_path: Path):
 
 
 # ---------------------------------------------------------------------------
-# Fix 2 — every section in a combined pack is anchored by its own heading
+# Fix 2 - every section in a combined pack is anchored by its own heading
 # ---------------------------------------------------------------------------
 
 def test_headerless_document_gets_heading_in_everything_pack(tmp_path: Path):
@@ -72,7 +72,7 @@ def test_with_heading_helper():
 
 
 # ---------------------------------------------------------------------------
-# Fix 3 — sentence splitting must not fragment on abbreviations
+# Fix 3 - sentence splitting must not fragment on abbreviations
 # ---------------------------------------------------------------------------
 
 def test_split_sentences_keeps_abbreviations_whole():
@@ -106,7 +106,7 @@ def test_summary_has_no_fragment_bullets(tmp_path: Path):
 
 
 # ---------------------------------------------------------------------------
-# Fix 4/5 — flashcards generate from natural prose and lowercase subjects
+# Fix 4/5 - flashcards generate from natural prose and lowercase subjects
 # ---------------------------------------------------------------------------
 
 def test_flashcards_from_natural_prose():
@@ -141,7 +141,7 @@ def test_flashcards_acronym_still_works():
 
 
 # ---------------------------------------------------------------------------
-# Labelling — hidden config dotfiles must never masquerade as transcripts
+# Labelling - hidden config dotfiles must never masquerade as transcripts
 # (found by the black-box E2E: connecting to Moodle writes .secrets.json into
 #  the output dir, whose .json was being counted as a phantom lecture).
 # ---------------------------------------------------------------------------
@@ -165,7 +165,7 @@ def test_secrets_dotfile_not_listed_as_transcript(tmp_path: Path):
 
 
 def test_course_outline_md_not_exported_as_transcript(tmp_path: Path):
-    """A saved course outline (lone .md) is a source, not a lecture — it must not
+    """A saved course outline (lone .md) is a source, not a lecture - it must not
     be counted/exported under 'Lecture transcripts' (label consistency between the
     library listing and the exporters)."""
     _seed_lecture(tmp_path, "Week1 Real Lecture", [

@@ -68,7 +68,7 @@ def test_auto_falls_back_to_date_then_uncategorized():
 
 
 # ---------------------------------------------------------------------------
-# Moodle parser — unit (synthetic HTML, both formats)
+# Moodle parser - unit (synthetic HTML, both formats)
 # ---------------------------------------------------------------------------
 
 WEEKLY_HTML = """<html><head><title>Paper: COMPX201-26A (HAM) - Data Structures | Moodle</title></head>
@@ -201,7 +201,7 @@ def test_save_outline(tmp_path: Path):
 
 
 # ---------------------------------------------------------------------------
-# Moodle parser — integration against the real example exports (if present)
+# Moodle parser - integration against the real example exports (if present)
 # ---------------------------------------------------------------------------
 
 EXAMPLES = Path(__file__).resolve().parents[2] / "vibecodeapp"

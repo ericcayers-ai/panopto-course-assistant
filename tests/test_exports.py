@@ -52,7 +52,7 @@ def test_export_notebooklm_runs(tmp_path: Path):
 
 def test_export_tolerates_corrupt_transcript_json(tmp_path: Path):
     """An empty/corrupt .json (e.g. an interrupted transcription) must not 500
-    the export — it falls back to the .txt source."""
+    the export - it falls back to the .txt source."""
     _seed(tmp_path, "Week1_Intro", "the transmission control protocol")
     # corrupt the json output for that lecture
     for p in tmp_path.rglob("*.json"):

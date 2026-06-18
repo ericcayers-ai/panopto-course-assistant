@@ -1,5 +1,5 @@
 """
-integrations/state.py — persisted connection config + last-sync timestamps (§5).
+integrations/state.py - persisted connection config + last-sync timestamps (§5).
 
 Sync targets (Notion, Anki) need a little durable state: credentials/endpoints,
 the editable field mapping, and when each target was last synced. It all lives
@@ -69,7 +69,7 @@ def notion_token(db: Database, override: str = "") -> str:
 
 
 def public_status(db: Database) -> Dict[str, Any]:
-    """Connection status for the UI — never leaks the token, only its presence."""
+    """Connection status for the UI - never leaks the token, only its presence."""
     cfg = get(db)
     return {
         "notion": {

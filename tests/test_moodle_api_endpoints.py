@@ -86,7 +86,7 @@ def test_full_connect_then_import(client):
         "url": "https://elearn.test/", "token": "PASTED"})
     assert r.status_code == 200, r.text
 
-    # import course 77 — download docs, no markitdown convert (kept hermetic)
+    # import course 77 - download docs, no markitdown convert (kept hermetic)
     r = c.post("/api/moodle/api-import", json={
         "url": "https://elearn.test/", "course_id": 77,
         "grab_docs": True, "convert": False, "grab_lectures": True})

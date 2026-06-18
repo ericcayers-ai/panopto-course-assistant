@@ -1,12 +1,12 @@
 """
-settings_store.py — persistent key/value preferences (§1).
+settings_store.py - persistent key/value preferences (§1).
 
 Replaces "prefs live only in the browser's localStorage". Values are JSON-encoded
 on the way in so numbers, booleans and nested dicts round-trip cleanly through the
 TEXT ``settings.value`` column.
 
 Reserved keys (not exposed through the public settings API):
-    schema_version   — owned by database.migrate()
+    schema_version   - owned by database.migrate()
 """
 from __future__ import annotations
 

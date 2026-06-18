@@ -1,5 +1,5 @@
 """
-llm.py — optional LLM provider abstraction (§4).
+llm.py - optional LLM provider abstraction (§4).
 
 Offline-first contract: **nothing here runs unless the user opts in.** With no
 provider configured the app behaves exactly as before (extractive summaries,
@@ -111,7 +111,7 @@ def is_enabled(config: Dict[str, Any]) -> bool:
 
 
 def detect() -> Dict[str, Any]:
-    """Report provider availability **without** network calls — based on installed
+    """Report provider availability **without** network calls - based on installed
     SDKs and presence of API keys. Surfaced in ``/api/status`` so the UI can
     enable/disable AI features with a reason."""
     def _have(mod: str) -> bool:

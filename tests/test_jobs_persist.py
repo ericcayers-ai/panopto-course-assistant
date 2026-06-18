@@ -43,7 +43,7 @@ def test_list_reads_from_db_and_survives_a_restart(db: Database):
     j = mgr.submit("keep-me", lambda p: {})
     _wait(j, mgr)
     # a brand-new manager (simulating a process restart) bound to the same DB
-    # still sees the job — it lives in the database, not memory.
+    # still sees the job - it lives in the database, not memory.
     restarted = JobManager()
     restarted.bind(db)
     listed = restarted.list()

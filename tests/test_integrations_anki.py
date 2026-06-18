@@ -1,4 +1,4 @@
-"""§5 Anki sync via AnkiConnect: deck creation, add, dedup, dry-run — offline."""
+"""§5 Anki sync via AnkiConnect: deck creation, add, dedup, dry-run - offline."""
 from __future__ import annotations
 
 import pytest

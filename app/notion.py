@@ -1,5 +1,5 @@
 """
-notion.py — convert a Notion page exported as HTML into clean Markdown.
+notion.py - convert a Notion page exported as HTML into clean Markdown.
 
 Notion's "Export → HTML" produces, per page, an `<article>` with an
 `<h1 class="page-title">` and a `<div class="page-body">` of well-structured
@@ -7,8 +7,8 @@ blocks (headings, paragraphs, lists, tables, callouts, code, quotes). The export
 download is a `.zip` (sometimes wrapping nested `ExportBlock-*.zip` parts); this
 module accepts that `.zip` directly, a single `.html` page, or an unzipped folder.
 
-It turns the export into Markdown — usable as a NotebookLM / AI source or as
-study notes — using only the standard library (html.parser + zipfile), so it
+It turns the export into Markdown - usable as a NotebookLM / AI source or as
+study notes - using only the standard library (html.parser + zipfile), so it
 needs no extra dependencies and behaves predictably on Notion's clean output.
 """
 from __future__ import annotations
@@ -23,7 +23,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from . import core
 
-# NB: do NOT skip <header> — Notion nests the page <h1 class="page-title"> in it.
+# NB: do NOT skip <header> - Notion nests the page <h1 class="page-title"> in it.
 _SKIP_TAGS = {"style", "script", "head"}
 _HEADING_LEVEL = {"h1": 1, "h2": 2, "h3": 3, "h4": 4, "h5": 5, "h6": 6}
 
@@ -341,7 +341,7 @@ def convert_notion_export(
 
     # A Notion "Export → HTML" download is a .zip (often wrapping nested
     # ExportBlock-*.zip parts). Unpack it to a temp dir and convert that.
-    # A *folder* may hold several such .zip exports (multiple courses/pages) —
+    # A *folder* may hold several such .zip exports (multiple courses/pages) -
     # extract every one of them into a staging tree and convert the lot together.
     tmp_dir: Optional[Path] = None
     if input_path.is_file() and input_path.suffix.lower() == ".zip":

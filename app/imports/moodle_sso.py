@@ -5,7 +5,7 @@ letting username/password fail with a generic "Invalid login".
 We deliberately do NOT try to replay the institutional SSO login headlessly: the
 Azure-AD "convergence" SAML flow (and MFA, conditional access, CAPTCHAs) make that
 brittle and unsafe. Instead, the user signs in through their real browser via
-Moodle's mobile launch endpoint and pastes back the resulting token — see
+Moodle's mobile launch endpoint and pastes back the resulting token - see
 :func:`app.imports.moodle_api.decode_launch_token`.
 """
 from __future__ import annotations

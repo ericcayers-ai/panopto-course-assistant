@@ -25,7 +25,7 @@ def _free_port(host: str, preferred: int, attempts: int = 20) -> int:
     """
     bind_host = "127.0.0.1" if host == "0.0.0.0" else host
     for port in range(preferred, preferred + attempts):
-        # Plain exclusive bind (no SO_REUSEADDR) to mirror uvicorn — on Windows
+        # Plain exclusive bind (no SO_REUSEADDR) to mirror uvicorn - on Windows
         # SO_REUSEADDR lets two sockets share a port, which would hide a clash.
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
             try:

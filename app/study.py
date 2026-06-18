@@ -1,5 +1,5 @@
 """
-study.py — export the transcript library as a Notion-importable study database.
+study.py - export the transcript library as a Notion-importable study database.
 
 Notion turns an imported CSV into a database: the first column becomes the
 *Name* (title) property and the rest become text properties you can retype as

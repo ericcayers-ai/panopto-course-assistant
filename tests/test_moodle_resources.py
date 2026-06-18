@@ -1,5 +1,5 @@
 """§7 Moodle resource downloader: direct files, HTML→pluginfile hop, naming,
-skip of non-document types — all offline via an injected fetcher."""
+skip of non-document types - all offline via an injected fetcher."""
 from __future__ import annotations
 
 from pathlib import Path

@@ -12,58 +12,58 @@ A **Python / FastAPI** backend with a plain **HTML + JavaScript** frontend
 
 ## What's new
 
-**v2.2 — download a whole course from its link.** `POST /api/moodle/fetch-course` parses the course, **downloads every resource file** (slides, assignment briefs, PDFs) using your browser session cookies, converts them to Markdown, and reports the Panopto feeds for transcription — one call from the course URL. The Moodle "Simple" window now runs this end-to-end (import → files → auto-transcribe → export). Resource download URLs are captured from the page, Panopto's duplicated `itpc://`/`https://` feeds are de-duplicated, and there's an **"include images & diagrams" toggle (on by default)** on both the document import and the Moodle flow.
+**v2.2 - download a whole course from its link.** `POST /api/moodle/fetch-course` parses the course, **downloads every resource file** (slides, assignment briefs, PDFs) using your browser session cookies, converts them to Markdown, and reports the Panopto feeds for transcription - one call from the course URL. The Moodle "Simple" window now runs this end-to-end (import → files → auto-transcribe → export). Resource download URLs are captured from the page, Panopto's duplicated `itpc://`/`https://` feeds are de-duplicated, and there's an **"include images & diagrams" toggle (on by default)** on both the document import and the Moodle flow.
 
-**v2.1 — imagery & diagrams are no longer lost.** Converting a PDF/PPTX/DOCX used to keep only the text; now embedded **figures, diagrams and screenshots are extracted and attached** to the Markdown (`![Figure N (p.X)](…_assets/…)`) so worked examples, assignment figures and lecture-slide diagrams survive into NotebookLM/AI exports and the course archive. Office/EPUB images come out with the standard library; PDFs use PyMuPDF or pdfplumber. Images are preserved even when text extraction fails, and Notion-export images are copied across too.
+**v2.1 - imagery & diagrams are no longer lost.** Converting a PDF/PPTX/DOCX used to keep only the text; now embedded **figures, diagrams and screenshots are extracted and attached** to the Markdown (`![Figure N (p.X)](…_assets/…)`) so worked examples, assignment figures and lecture-slide diagrams survive into NotebookLM/AI exports and the course archive. Office/EPUB images come out with the standard library; PDFs use PyMuPDF or pdfplumber. Images are preserved even when text extraction fails, and Notion-export images are copied across too.
 
 ### v2.0
 
 A big step from "single-session tool" toward a persistent, multi-course study platform:
 
-- **Pick how you work** — a launcher with two windows (*Full workspace* vs *Just my Moodle course*), each in **Simple** or **Advanced** mode. Simple uses best defaults; Advanced exposes every knob.
-- **Import a Moodle course from its link** — paste `…/course/view.php?id=…`; with your browser session it pulls the outline, activities and Panopto lecture feeds (crawls the linked section pages).
-- **Guided Simple flow** — import → auto-transcribe with the best detected settings for your machine → one export choice (NotebookLM or general AI). Transcription progress refreshes ~every 30 s.
-- **Study planner** — assessments, an SM-2 spaced-repetition scheduler, `.ics` calendar export, an hours-budgeted study plan, and progress/mastery tracking.
-- **Live sync** — incremental, duplicate-aware Notion & Anki sync with a dry-run preview.
-- **Export engine** — intent presets (revision/ai/exam/notion/anki/archive) × scopes, preview-before-write, and a portable course archive.
-- **Privacy & safety** — secrets in the OS keyring (never plaintext), data-egress labels, an audit log, local-only analytics, and one-file backup/restore.
+- **Pick how you work** - a launcher with two windows (*Full workspace* vs *Just my Moodle course*), each in **Simple** or **Advanced** mode. Simple uses best defaults; Advanced exposes every knob.
+- **Import a Moodle course from its link** - paste `…/course/view.php?id=…`; with your browser session it pulls the outline, activities and Panopto lecture feeds (crawls the linked section pages).
+- **Guided Simple flow** - import → auto-transcribe with the best detected settings for your machine → one export choice (NotebookLM or general AI). Transcription progress refreshes ~every 30 s.
+- **Study planner** - assessments, an SM-2 spaced-repetition scheduler, `.ics` calendar export, an hours-budgeted study plan, and progress/mastery tracking.
+- **Live sync** - incremental, duplicate-aware Notion & Anki sync with a dry-run preview.
+- **Export engine** - intent presets (revision/ai/exam/notion/anki/archive) × scopes, preview-before-write, and a portable course archive.
+- **Privacy & safety** - secrets in the OS keyring (never plaintext), data-egress labels, an audit log, local-only analytics, and one-file backup/restore.
 
 ## An all-in-one course workflow
 
 The app is organised as **one flow around a single course**, not a pile of
-separate tools. You **name your course once** (in the bar at the top — it tags
+separate tools. You **name your course once** (in the bar at the top - it tags
 every import and export automatically), then move through four steps:
 
 | Step | What it does |
 | --- | --- |
 | 🏠 **Home** | Overview: how the flow works, environment status, and at-a-glance counts for the current course. |
 | 🎓 **1 · Course** | Name your course, or **grab its real title + week/topic outline from a Moodle export** (any Moodle course) and use it as the course name in one click. |
-| 📥 **2 · Import** | One hub to **keep importing whatever you have**, with a sub-switch: **Lectures** (load a Panopto RSS feed — URL, local `.xml`, or upload — then transcribe one, a selection, or all pending), **Documents** (PDF / PowerPoint / Word / Excel / HTML / EPUB / CSV… → Markdown via [MarkItDown](https://github.com/microsoft/markitdown)), **Notion** (upload the export **`.zip`** — nested `ExportBlock` zips and all — or a single `.html`/folder → clean Markdown), and **Browse files** (find a folder path on disk). Everything lands in your Library. |
-| 📚 **3 · Library** | **Everything** you've imported, in one place and fully categorised — transcripts (with format chips), converted documents, Notion pages, generated exports and any other source files — with full-text **search**, a **viewer**, and **reorganize** into auto/week/lecture/module/date/topic folders. |
-| 📤 **4 · Export** | Turn the library into study material. **Export everything for AI** brings *all* your imported sources (transcripts + documents + Notion pages) together into one combined `everything_pack.md` for NotebookLM or any other AI; or export one kind at a time — **NotebookLM** sources, **subtitles & extra formats** (SRT/VTT/TXT/MD generated on demand), an **Anki** flashcard deck (auto-tagged by course·week·topic, plus categorize-an-existing-deck), and a **Notion study-database CSV** — all tagged with your course name. |
+| 📥 **2 · Import** | One hub to **keep importing whatever you have**, with a sub-switch: **Lectures** (load a Panopto RSS feed - URL, local `.xml`, or upload - then transcribe one, a selection, or all pending), **Documents** (PDF / PowerPoint / Word / Excel / HTML / EPUB / CSV… → Markdown via [MarkItDown](https://github.com/microsoft/markitdown)), **Notion** (upload the export **`.zip`** - nested `ExportBlock` zips and all - or a single `.html`/folder → clean Markdown), and **Browse files** (find a folder path on disk). Everything lands in your Library. |
+| 📚 **3 · Library** | **Everything** you've imported, in one place and fully categorised - transcripts (with format chips), converted documents, Notion pages, generated exports and any other source files - with full-text **search**, a **viewer**, and **reorganize** into auto/week/lecture/module/date/topic folders. |
+| 📤 **4 · Export** | Turn the library into study material. **Export everything for AI** brings *all* your imported sources (transcripts + documents + Notion pages) together into one combined `everything_pack.md` for NotebookLM or any other AI; or export one kind at a time - **NotebookLM** sources, **subtitles & extra formats** (SRT/VTT/TXT/MD generated on demand), an **Anki** flashcard deck (auto-tagged by course·week·topic, plus categorize-an-existing-deck), and a **Notion study-database CSV** - all tagged with your course name. |
 | ⚙️ **Jobs** | Live progress of transcription jobs with a count badge; finished jobs refresh the lecture badges. |
 
 ### Transcription options
 
-The **Transcription settings** panel is intentionally minimal — engine, model,
+The **Transcription settings** panel is intentionally minimal - engine, model,
 language and device (auto/cuda/cpu), plus **skip already-transcribed** and
 **audio-only download** (saves bandwidth) toggles, and an optional cookies-file
 path for auth-gated feeds. Every transcription writes a sensible **canonical
-set** — clean text, Markdown, rich JSON, and an extractive **study summary** (no
-LLM required) — which is enough to power the Library, search and every export.
+set** - clean text, Markdown, rich JSON, and an extractive **study summary** (no
+LLM required) - which is enough to power the Library, search and every export.
 Lectures are auto-organised into folders (`auto` detects whichever of
 Week/Lecture/Module/Unit/Session/Lab a title uses, so non-"Week N" courses still
 organise sensibly); you can re-sort any time from the Library.
 
 **Subtitles and other formats** (`srt`, `vtt`, extra `txt`/`md`) are generated on
-demand from the **Export** step rather than cluttering the transcribe screen —
+demand from the **Export** step rather than cluttering the transcribe screen -
 they're rebuilt from the stored JSON whenever you want them. Your settings, feed
 URL and course name are remembered in the browser between visits.
 
 The transcription engine ([faster-whisper](https://github.com/SYSTRAN/faster-whisper)
 or [openai-whisper](https://github.com/openai/whisper)) is **optional**. The app
 runs fine for feed parsing, search, viewing, PDF conversion, export and browsing
-without it — the **Import → Lectures** view simply shows that no engine is
+without it - the **Import → Lectures** view simply shows that no engine is
 installed and disables the transcribe buttons.
 
 ## Quick start (no terminal needed)
@@ -105,7 +105,7 @@ python run.py                     # http://127.0.0.1:8000
 ## Exporting to NotebookLM
 
 [NotebookLM](https://notebooklm.google.com/) works best when each source is
-clean, readable prose — per-segment timestamps fragment sentences and add noise.
+clean, readable prose - per-segment timestamps fragment sentences and add noise.
 The **Export → NotebookLM sources** button (or `POST /api/export/notebooklm`)
 turns your existing transcripts into NotebookLM-ready Markdown:
 
@@ -113,7 +113,7 @@ turns your existing transcripts into NotebookLM-ready Markdown:
   Week/Topic folder structure. Each file has a clear `# Title` heading, a compact
   metadata line (week · date · duration) to help NotebookLM ground its citations,
   and the transcript re-flowed into clean paragraphs with timestamps removed.
-- **Optional combined `course_pack.md`** — every lecture in one document with a
+- **Optional combined `course_pack.md`** - every lecture in one document with a
   table of contents, so you can upload the whole course as a single source.
 
 How to use it:
@@ -209,11 +209,11 @@ panopto-course-assistant/
 
 ## Notes
 
-- State (the job list) is in memory and resets when the server restarts — this
+- State (the job list) is in memory and resets when the server restarts - this
   is a single-user local tool, not a multi-user service.
 - Only download/transcribe content you are entitled to access. For auth-gated
   feeds, export cookies (Netscape format) and pass the path in the feed form.
 
 ## License
 
-MIT — see [LICENSE](LICENSE).
+MIT - see [LICENSE](LICENSE).

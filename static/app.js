@@ -1,4 +1,4 @@
-// Panopto Course Assistant — vanilla-JS frontend.
+// Panopto Course Assistant - vanilla-JS frontend.
 "use strict";
 
 const State = {
@@ -232,7 +232,7 @@ async function loadStatus() {
     const warn = $("engine-warning");
     if (warn) {
       if (!s.any_engine) {
-        warn.textContent = "No transcription engine installed — you can still import documents, browse, "
+        warn.textContent = "No transcription engine installed - you can still import documents, browse, "
           + "search and export. To transcribe Moodle lectures: pip install -r requirements-transcribe.txt";
         warn.classList.remove("hidden");
       } else {
@@ -240,7 +240,7 @@ async function loadStatus() {
       }
     }
 
-    // LLM availability — show/hide flashcard sections
+    // LLM availability - show/hide flashcard sections
     const llmReady = s.llm_ready === true;
     const fcMissing = $("fc-llm-missing");
     const fcCatMissing = $("fc-cat-llm-missing");
@@ -274,7 +274,7 @@ function selectedDocExts() {
 // ---- settings persistence -------------------------------------------------
 
 function gatherSettings() {
-  // Output formats / organisation are no longer chosen here — transcription
+  // Output formats / organisation are no longer chosen here - transcription
   // writes a sensible canonical set and the Export step owns the rest.
   return {
     engine: $("opt-engine").value,
@@ -326,7 +326,7 @@ async function loadCourses() {
   }
   sel.classList.remove("hidden");
   for (const c of Courses.list) {
-    const label = (c.code ? c.code + " — " : "") + c.name + (c.archived ? " (archived)" : "");
+    const label = (c.code ? c.code + " - " : "") + c.name + (c.archived ? " (archived)" : "");
     sel.appendChild(el("option", { value: String(c.id), text: label }));
   }
   if (Courses.active != null) {
@@ -350,7 +350,7 @@ async function activateCourse(id) {
 }
 
 async function createCourse() {
-  const name = await promptModal("New course name:", "e.g. COMPX234 — Networks");
+  const name = await promptModal("New course name:", "e.g. COMPX234 - Networks");
   if (!name) return;
   try {
     const c = await postJSON("/api/courses", { name });
@@ -368,7 +368,7 @@ if ($("course-new")) $("course-new").addEventListener("click", createCourse);
 
 // keep the top-bar field and the Course panel field in sync + persisted
 $("course-input")?.addEventListener("input", () => remember("course", $("course-input").value.trim()));
-// Legacy "set course" button — no longer in the markup; guard so a missing
+// Legacy "set course" button - no longer in the markup; guard so a missing
 // element can't throw and halt the rest of this script (theme, SSO, handlers).
 $("course-name-set")?.addEventListener("click", () => {
   const name = $("course-name-main").value.trim();
@@ -431,7 +431,7 @@ function renderLectures() {
           done ? el("span", { class: "badge done", text: "✓ transcribed" })
                : el("span", { class: "badge pending", text: "pending" }),
         ]),
-        el("div", { class: "hint", text: meta || "—" }),
+        el("div", { class: "hint", text: meta || "-" }),
       ]),
       el("div", { class: "lec-actions" }, actions),
     ]));
@@ -465,7 +465,7 @@ async function transcribeLectures(indexes, allowReTranscribe = false) {
     } catch (e) { toast(`Failed to queue "${State.lectures[i].title}": ${e.message}`, "warn"); }
   }
   if (queued) {
-    toast(`Queued ${queued} lecture(s). See the Jobs tab.`, "ok");
+    toast(`Queued ${queued} lecture(s). Transcription takes a few minutes each; track it in Jobs.`, "ok");
     showTab("jobs");
     startJobsPolling();
   }
@@ -570,7 +570,7 @@ async function loadTranscripts() {  // loads the whole Library
       ]));
     });
 
-    // Documents — separate image assets from primary docs
+    // Documents - separate image assets from primary docs
     const _IMG_EXTS = new Set([".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg", ".bmp", ".tif", ".tiff"]);
     const isImg = (f) => _IMG_EXTS.has((f.name || f.path || "").toLowerCase().replace(/.*\./, "."));
     const docFiles = cats.documents.filter((f) => !isImg(f));
@@ -644,7 +644,7 @@ $("lib-clear").addEventListener("click", () => {
 $("export-all").addEventListener("click", async () => {
   const out = $("export-all-results");
   const btn = $("export-all");
-  const dest = await askExportDest({ title: "Export everything for AI — where to?",
+  const dest = await askExportDest({ title: "Export everything for AI - where to?",
     defaultValue: $("export-all-dest")?.value.trim() || "" });
   if (dest === null) return;                      // cancelled
   if ($("export-all-dest")) $("export-all-dest").value = dest;
@@ -656,7 +656,7 @@ $("export-all").addEventListener("click", async () => {
     });
     clear(out);
     out.appendChild(el("p", { class: "ok-text",
-      text: `✓ ${data.count} source(s) — ${data.transcripts} transcript(s), ${data.documents} document(s), ${data.notion} Notion page(s)` }));
+      text: `✓ ${data.count} source(s) - ${data.transcripts} transcript(s), ${data.documents} document(s), ${data.notion} Notion page(s)` }));
     if (data.combined) out.appendChild(el("div", {}, [
       el("button", { class: "tag", text: "view everything_pack.md", onclick: () => { viewTranscript(data.combined); showTab("library"); } }),
     ]));
@@ -670,7 +670,7 @@ $("export-all").addEventListener("click", async () => {
 $("nlm-export").addEventListener("click", async () => {
   const out = $("nlm-results");
   const btn = $("nlm-export");
-  const dest = await askExportDest({ title: "Export NotebookLM sources — where to?",
+  const dest = await askExportDest({ title: "Export NotebookLM sources - where to?",
     defaultValue: $("nlm-dest")?.value.trim() || "" });
   if (dest === null) return;
   if ($("nlm-dest")) $("nlm-dest").value = dest;
@@ -698,7 +698,7 @@ $("nlm-export").addEventListener("click", async () => {
 $("studycsv-go").addEventListener("click", async () => {
   const out = $("studycsv-results");
   const btn = $("studycsv-go");
-  const dest = await askExportDest({ title: "Export Notion study CSV — where to?",
+  const dest = await askExportDest({ title: "Export Notion study CSV - where to?",
     defaultValue: $("studycsv-dest")?.value.trim() || "" });
   if (dest === null) return;
   if ($("studycsv-dest")) $("studycsv-dest").value = dest;
@@ -709,8 +709,8 @@ $("studycsv-go").addEventListener("click", async () => {
       body: JSON.stringify({ course: currentCourse(), output_dir: dest || undefined }),
     });
     clear(out);
-    if (data.job_id) {
-      out.appendChild(el("p", { class: "ok-text", text: `✓ Job queued — check Jobs panel for progress.` }));
+    if (data.id) {
+      out.appendChild(el("p", { class: "ok-text", text: `✓ Job queued - check Jobs panel for progress.` }));
       out.appendChild(el("button", { class: "tag", text: "Go to Jobs", onclick: () => showTab("jobs") }));
       toast("Study CSV job started.", "ok");
       startJobsPolling();
@@ -726,11 +726,11 @@ $("studycsv-go").addEventListener("click", async () => {
   finally { btn.disabled = false; }
 });
 
-// Lecture SRT export — writes SRT files to a user-chosen folder alongside videos
+// Lecture SRT export - writes SRT files to a user-chosen folder alongside videos
 $("srt-export").addEventListener("click", async () => {
   const out = $("srt-results");
   const dest = await askExportDest({
-    title: "Export SRT + recordings — choose a folder",
+    title: "Export SRT + recordings - choose a folder",
     hint: "Subtitles and each lecture's video are saved here together so players auto-load them.",
     placeholder: "C:\\Videos\\Lectures",
     defaultValue: $("srt-dest").value.trim(),
@@ -815,7 +815,7 @@ $("search-q").addEventListener("keydown", (e) => { if (e.key === "Enter") doSear
 
 function renderDeckResult(out, data, label) {
   clear(out);
-  out.appendChild(el("p", { class: "ok-text", text: `✓ ${data.count} card(s) — ${label}` }));
+  out.appendChild(el("p", { class: "ok-text", text: `✓ ${data.count} card(s) - ${label}` }));
   out.appendChild(el("div", { class: "row" }, [
     el("button", { class: "tag", text: "view Anki .txt", onclick: () => { viewTranscript(data.anki_tsv); showTab("library"); } }),
     el("button", { class: "tag", text: "view .csv", onclick: () => { viewTranscript(data.csv); showTab("library"); } }),
@@ -833,7 +833,7 @@ function renderDeckResult(out, data, label) {
 $("fc-generate").addEventListener("click", async () => {
   const out = $("fc-gen-results");
   const btn = $("fc-generate");
-  const dest = await askExportDest({ title: "Generate flashcards — where to save the deck?",
+  const dest = await askExportDest({ title: "Generate flashcards - where to save the deck?",
     defaultValue: $("fc-output-dir")?.value.trim() || "" });
   if (dest === null) return;
   if ($("fc-output-dir")) $("fc-output-dir").value = dest;
@@ -849,8 +849,8 @@ $("fc-generate").addEventListener("click", async () => {
       }),
     });
     clear(out);
-    if (data.job_id) {
-      out.appendChild(el("p", { class: "ok-text", text: "✓ Flashcard job queued — check Jobs panel for progress." }));
+    if (data.id) {
+      out.appendChild(el("p", { class: "ok-text", text: "✓ Flashcard job queued - check Jobs panel for progress." }));
       out.appendChild(el("button", { class: "tag", text: "Go to Jobs", onclick: () => showTab("jobs") }));
       toast("Flashcard generation started.", "ok");
       startJobsPolling();
@@ -879,8 +879,8 @@ $("fc-categorize").addEventListener("click", async () => {
       }),
     });
     clear(out);
-    if (data.job_id) {
-      out.appendChild(el("p", { class: "ok-text", text: "✓ Categorization job queued — check Jobs panel for progress." }));
+    if (data.id) {
+      out.appendChild(el("p", { class: "ok-text", text: "✓ Categorization job queued - check Jobs panel for progress." }));
       out.appendChild(el("button", { class: "tag", text: "Go to Jobs", onclick: () => showTab("jobs") }));
       toast("Categorization job started.", "ok");
       startJobsPolling();
@@ -934,6 +934,17 @@ $("pdf-go").addEventListener("click", async () => {
 
 // ---- jobs -----------------------------------------------------------------
 
+// Friendly, plain-language labels for a job's internal stage.
+function stageLabel(stage) {
+  return ({
+    downloading: "Downloading",
+    waiting: "Waiting for a free transcription slot",
+    transcribing: "Transcribing",
+    writing: "Saving files",
+    done: "Done",
+  })[stage] || (stage ? stage.charAt(0).toUpperCase() + stage.slice(1) : "");
+}
+
 async function loadJobs() {
   const out = $("jobs-list");
   try {
@@ -945,19 +956,28 @@ async function loadJobs() {
     badge.classList.toggle("hidden", active === 0);
 
     if (!data.jobs.length) { out.appendChild(el("p", { class: "empty", text: "No jobs yet." })); stopJobsPolling(); return; }
+    // A calm heads-up while transcriptions run: they are slow and that is normal.
+    const transcribing = data.jobs.some((j) =>
+      j.type === "transcribe" && (j.status === "queued" || j.status === "running"));
+    if (transcribing) {
+      out.appendChild(el("p", { class: "hint",
+        text: "Transcription runs in the background and can take a few minutes per lecture. "
+          + "You can keep using the app; this list updates on its own." }));
+    }
     data.jobs.forEach((j) => {
       const pct = Math.round(j.progress * 100);
+      const stageText = stageLabel(j.stage);
       const card = el("div", { class: "card job " + j.status }, [
         el("div", { class: "job-head" }, [
           el("strong", { text: j.title }),
           el("span", { class: "badge " + j.status, text: j.status }),
         ]),
         el("div", { class: "progress" }, [el("div", { class: "bar", style: `width:${pct}%` })]),
-        el("div", { class: "hint", text: `${j.stage || ""} ${pct}%` }),
+        el("div", { class: "hint", text: stageText ? `${stageText} · ${pct}%` : `${pct}%` }),
       ]);
       if (j.status === "done" && j.result) {
         if (j.result.status === "skipped") {
-          card.appendChild(el("div", { class: "hint", text: "skipped — outputs already exist" }));
+          card.appendChild(el("div", { class: "hint", text: "skipped - outputs already exist" }));
         } else if (j.result.outputs) {
           card.appendChild(el("div", { class: "hint", text: "wrote: " + Object.keys(j.result.outputs).join(", ") }));
         }
@@ -1098,7 +1118,7 @@ async function saveMoodleOutline(path) {
   } catch (e) { toast(e.message, "warn"); }
 }
 
-// Notion export — render a conversion result into #notion-results
+// Notion export - render a conversion result into #notion-results
 function renderNotionResult(d) {
   const out = $("notion-results");
   clear(out);
@@ -1113,7 +1133,7 @@ function renderNotionResult(d) {
   toast(`Converted ${d.count} Notion page(s).`, "ok");
 }
 
-// Notion export — upload a .zip / .html directly
+// Notion export - upload a .zip / .html directly
 $("notion-file").addEventListener("change", async (ev) => {
   const file = ev.target.files[0];
   if (!file) return;
@@ -1213,7 +1233,7 @@ function setConnectStatus(state, text) {
   if (t) t.textContent = text;
 }
 
-// SSO polling — started when the user opens the sign-in page.  Polls
+// SSO polling - started when the user opens the sign-in page.  Polls
 // /api/moodle/sso-poll every 2 s; the OS protocol handler (Windows) calls
 // /api/moodle/sso-callback when courseassistant:// lands, and the poll picks it up.
 let _ssoPollTimer = null;
@@ -1234,7 +1254,7 @@ function _startSsoPoll() {
       const d = await api("/api/moodle/sso-poll");
       if (d.token) {
         _stopSsoPoll();
-        toast("Signed in — connecting…", "ok");
+        toast("Signed in - connecting…", "ok");
         await _moodleConnect($("mq-url").value.trim(), d.token);
       }
     } catch (_) { /* ignore poll errors */ }
@@ -1246,7 +1266,7 @@ $("mq-sso-cancel")?.addEventListener("click", (e) => {
   _stopSsoPoll();
 });
 
-// "Open sign-in page ↗" — Option B: browser SSO launch flow.
+// "Open sign-in page ↗" - Option B: browser SSO launch flow.
 // IMPORTANT: window.open must run synchronously inside the click handler or the
 // browser treats it as a programmatic popup and blanks/blocks it. So we build the
 // launch.php URL on the client (no await before opening the tab).
@@ -1273,7 +1293,7 @@ $("mq-launch-sso")?.addEventListener("click", () => {
 
 async function _moodleConnect(url, token) {
   if (!url) { toast("Enter your Moodle site link first.", "warn"); return; }
-  if (!token) { toast("No token received — try signing in again.", "warn"); return; }
+  if (!token) { toast("No token received - try signing in again.", "warn"); return; }
   setConnectStatus("warn", "Connecting to Moodle…");
   try {
     const d = await postJSON("/api/moodle/connect", { url, token });
@@ -1313,7 +1333,7 @@ function renderMqImport(data, { grabLectures = true, grabTranscripts = true, gra
   const imgs = (conv.files || []).reduce((n, f) => n + (f.images || 0), 0);
   const feeds = data.panopto_feeds || [];
 
-  const bits = [`Imported <strong>${c.fullname || c.code || "course"}</strong> — ${counts.sections || 0} section(s)`];
+  const bits = [`Imported <strong>${c.fullname || c.code || "course"}</strong> - ${counts.sections || 0} section(s)`];
   if (grabDocs)
     bits.push(`${res.downloaded || 0} of ${counts.documents || 0} document(s) downloaded, ${conv.count || 0} converted to Markdown`
       + (imgs ? ` (${imgs} image(s) attached)` : ""));
@@ -1321,7 +1341,7 @@ function renderMqImport(data, { grabLectures = true, grabTranscripts = true, gra
     bits.push(`${counts.lectures || 0} lecture(s), ${feeds.length} transcribable feed(s)`);
   out.appendChild(el("div", { class: "ok-box", html: bits.join(" · ") + "." }));
 
-  // Labelled tallies — each item type is counted distinctly from the typed API.
+  // Labelled tallies - each item type is counted distinctly from the typed API.
   out.appendChild(el("div", { class: "row mq-counts" }, [
     el("span", { class: "tag", text: `${counts.lectures || 0} lectures` }),
     el("span", { class: "tag", text: `${counts.documents || 0} documents` }),
@@ -1364,7 +1384,7 @@ $("mq-import")?.addEventListener("click", async () => {
   const grabLectures = grabTranscripts;
   const keepImages = $("mq-images")?.checked ?? true;
   if (!grabDocs && !grabTranscripts) {
-    toast("Pick at least one thing to include — documents or lectures.", "warn"); return;
+    toast("Pick at least one thing to include - documents or lectures.", "warn"); return;
   }
   const btn = $("mq-import"); btn.disabled = true; btn.textContent = "Importing…";
   const out = $("mq-import-result"); clear(out);
@@ -1397,11 +1417,11 @@ function renderMqFeeds() {
   }
   if (feeds.length) {
     box.appendChild(el("p", { class: "muted small",
-      text: `${feeds.length} lecture feed(s) detected — paste the Panopto RSS link above to load them.` }));
+      text: `${feeds.length} lecture feed(s) detected - paste the Panopto RSS link above to load them.` }));
     return;
   }
   box.appendChild(el("p", { class: "muted small", text:
-    "No recordings loaded yet — paste the Panopto “Video podcast (RSS)” link above." }));
+    "No recordings loaded yet - paste the Panopto “Video podcast (RSS)” link above." }));
 }
 
 // Load recordings from a pasted Panopto podcast RSS URL.
@@ -1435,7 +1455,7 @@ async function autoTranscribeMq() {
 
   // "Recording without transcript" → just download the videos to a chosen folder.
   if (!makeTranscript) {
-    const dest = await askExportDest({ title: "Download recordings — choose a folder",
+    const dest = await askExportDest({ title: "Download recordings - choose a folder",
       hint: "Each lecture's video is saved here.", placeholder: "C:\\Videos\\Lectures" });
     if (dest === null) return;
     if (!dest) { toast("Choose a folder for the recordings.", "warn"); return; }
@@ -1458,7 +1478,10 @@ async function autoTranscribeMq() {
       queued++;
     } catch (e) { toast("Transcribe error: " + e.message, "warn"); }
   }
-  if (queued) { toast(`Queued ${queued} recording(s) — progress updates every 30s.`, "ok"); showTab("jobs"); startJobsPolling(); }
+  if (queued) {
+    toast(`Queued ${queued} recording(s). Transcription takes a few minutes each and runs in the background; track it in Jobs.`, "ok");
+    showTab("jobs"); startJobsPolling();
+  }
 }
 $("mq-autotranscribe")?.addEventListener("click", autoTranscribeMq);
 
@@ -1467,16 +1490,16 @@ $("mq-export-ai")?.addEventListener("click", () => mqExport("all"));
 async function mqExport(kind) {
   const out = $("mq-export-result");
   const dest = await askExportDest({
-    title: `Export for ${kind === "notebooklm" ? "NotebookLM" : "a general AI"} — where to?` });
+    title: `Export for ${kind === "notebooklm" ? "NotebookLM" : "a general AI"} - where to?` });
   if (dest === null) return;
   clear(out);
   try {
     const path = kind === "notebooklm" ? "/api/export/notebooklm" : "/api/export/all";
     const body = { combined: true, course: currentCourse(), output_dir: dest || undefined };
     const data = await postJSON(path, body);
-    const dest = data.combined || data.dest || data.path || "the library";
+    const exportDest = data.combined || data.dest || data.path || "the library";
     out.appendChild(el("div", { class: "ok-box", html:
-      `Exported for <strong>${kind === "notebooklm" ? "NotebookLM" : "general AI"}</strong> → <code>${dest}</code>` }));
+      `Exported for <strong>${kind === "notebooklm" ? "NotebookLM" : "general AI"}</strong> → <code>${exportDest}</code>` }));
     toast("Export ready.", "ok");
   } catch (e) { out.appendChild(el("div", { class: "warn-box", text: "Export failed: " + e.message })); }
 }

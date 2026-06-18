@@ -1,9 +1,9 @@
 """
-imports/preflight.py — validate an import before it runs (§7).
+imports/preflight.py - validate an import before it runs (§7).
 
 Before kicking off a (possibly long) import, surface: missing engines/deps,
 oversized files, and the *expected output* (counts + target) so the user can
-confirm. Pure inspection — never writes, never transcribes.
+confirm. Pure inspection - never writes, never transcribes.
 """
 from __future__ import annotations
 
@@ -27,7 +27,7 @@ def _has(mod: str) -> bool:
 
 def preflight_folder(path: Path) -> Dict[str, Any]:
     """Inspect a folder import: counts, expected targets, and dependency/size
-    warnings — everything the UI needs to confirm before starting."""
+    warnings - everything the UI needs to confirm before starting."""
     manifest = folder_import.scan(path)
     warnings: List[str] = []
     deps: Dict[str, Any] = {}
@@ -39,13 +39,13 @@ def preflight_folder(path: Path) -> Dict[str, Any]:
         deps["transcription"] = {"required": True, "ready": ready}
         if not ready:
             warnings.append(f"{counts['media']} media file(s) need a transcription "
-                            "engine (whisper/faster-whisper) — none detected.")
+                            "engine (whisper/faster-whisper) - none detected.")
     if counts.get("document"):
         ready = _has("markitdown")
         deps["markitdown"] = {"required": True, "ready": ready}
         if not ready:
             warnings.append(f"{counts['document']} document(s) convert best with "
-                            "markitdown — not installed (plain text still works).")
+                            "markitdown - not installed (plain text still works).")
 
     big = [it for it in manifest["items"] if it["size"] > _BIG_FILE_BYTES]
     for it in big:

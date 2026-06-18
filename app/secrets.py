@@ -1,5 +1,5 @@
 """
-secrets.py — secret storage + data-transparency helpers (§10).
+secrets.py - secret storage + data-transparency helpers (§10).
 
 Goals
 -----
@@ -75,7 +75,7 @@ def _store_path(root: Path) -> Path:
 def _fernet(root: Path):
     """Derive a stable Fernet key kept in a sibling file (0600). Best-effort:
     this protects against casual disk inspection, not a determined local attacker
-    (a single-user local app — the threat model is shoulder-surfing/backups)."""
+    (a single-user local app - the threat model is shoulder-surfing/backups)."""
     from cryptography.fernet import Fernet
     key_path = Path(root) / ".secrets.key"
     if key_path.exists():
@@ -124,7 +124,7 @@ def _save_file(root: Path, data: Dict[str, str]) -> None:
 
 
 # ---------------------------------------------------------------------------
-# Public API — get / set / delete / list (names only)
+# Public API - get / set / delete / list (names only)
 # ---------------------------------------------------------------------------
 
 
@@ -167,7 +167,7 @@ def delete_secret(name: str, *, root: Path) -> bool:
 
 
 def list_secret_names(root: Path) -> List[str]:
-    """Names only — values are never enumerated through the API."""
+    """Names only - values are never enumerated through the API."""
     if _keyring() is not None:
         return _tracked(root)
     return sorted(_load_file(root).keys())
@@ -212,7 +212,7 @@ LOCAL_ONLY = "local-only"
 LOCAL_INTERNET = "local+internet"
 CLOUD = "cloud-processed"
 
-# Where each feature's data goes — surfaced in the UI before an action runs.
+# Where each feature's data goes - surfaced in the UI before an action runs.
 FEATURE_LABELS: Dict[str, str] = {
     "transcribe": LOCAL_ONLY,
     "import_folder": LOCAL_ONLY,

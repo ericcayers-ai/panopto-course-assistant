@@ -1,5 +1,5 @@
 """
-imports/moodle_api.py — import a Moodle course through the official Moodle
+imports/moodle_api.py - import a Moodle course through the official Moodle
 Mobile **web-service API** instead of scraping HTML or reading browser cookies.
 
 Why this exists
@@ -8,12 +8,12 @@ The earlier importer fetched the rendered course page with the browser's session
 cookies and recovered structure with regexes. That is fragile: file names come
 from anchor text (often truncated or wrong), the activity *type* has to be
 guessed, and Panopto/other content is easy to miss. Moodle already exposes a
-clean, typed REST API used by its own mobile app — given a *web-service token*
+clean, typed REST API used by its own mobile app - given a *web-service token*
 it returns the exact course tree: every section, every module with its real
 ``modname`` (resource / folder / page / url / quiz / assign / lti / …), and
 every file with its exact ``filename``, ``mimetype``, ``filesize`` and a
 downloadable ``fileurl``. That is what lets us label lectures, documents and
-links with 100% fidelity — no guessing.
+links with 100% fidelity - no guessing.
 
 Acknowledgement
 ---------------
@@ -28,8 +28,8 @@ that project.
 Testability
 -----------
 All network is funnelled through two small, injectable callables
-(``http_post`` / ``http_get``). :func:`build_course_model` — which holds the
-labelling logic the rest of the app depends on — is pure: it turns a raw
+(``http_post`` / ``http_get``). :func:`build_course_model` - which holds the
+labelling logic the rest of the app depends on - is pure: it turns a raw
 ``core_course_get_contents`` payload into a labelled model with no I/O, so it is
 covered exhaustively offline with recorded API fixtures.
 """
@@ -56,7 +56,7 @@ class MoodleApiError(Exception):
 
 
 # ---------------------------------------------------------------------------
-# Labelling vocabulary — the single source of truth for how Moodle module and
+# Labelling vocabulary - the single source of truth for how Moodle module and
 # file types map onto the assistant's lecture / document / link / activity
 # buckets. Kept here (not scattered) so labelling is consistent and testable.
 # ---------------------------------------------------------------------------
@@ -66,7 +66,7 @@ class MoodleApiError(Exception):
 # because this site uses SSO / external authentication."  The user must paste a
 # token obtained from their Moodle security keys page instead.
 _SSO_CODES = frozenset({
-    "loginerrorothers",      # external-auth plugin — password login disabled
+    "loginerrorothers",      # external-auth plugin - password login disabled
     "loginerrorexternal",    # variant used by some SSO plugins
     "webservicesnotenabled", # mobile web services completely disabled
 })
@@ -208,7 +208,7 @@ def fetch_token(base_url: str, username: str, password: str, *,
     err_msg = payload.get("error") or err_code or "unknown error"
     if err_code in _SSO_CODES:
         raise MoodleApiError(
-            "SSO_REJECTED: This Moodle site uses SSO or external authentication — "
+            "SSO_REJECTED: This Moodle site uses SSO or external authentication - "
             "username/password sign-in is disabled. Open your Moodle security keys "
             "page to get a token, then use the ‘Paste a token’ tab."
         )
@@ -280,7 +280,7 @@ def decode_launch_token(raw: str, *, expected_passport: str = "") -> str:
         # Standard format: passport:::token:::privatetoken
         # The token is ALWAYS the second field. Note the passport is itself a
         # 32-hex string (Moodle re-issues it), so a "looks like a token" heuristic
-        # would wrongly pick the passport — we must index positionally.
+        # would wrongly pick the passport - we must index positionally.
         if ":::" in text:
             parts = text.split(":::")
             if len(parts) >= 2 and parts[1].strip():
@@ -349,7 +349,7 @@ class MoodleClient:
             code = result.get("errorcode", "")
             msg = result.get("message") or result.get("exception") or "request rejected"
             if code in ("invalidtoken", "accessexception"):
-                raise MoodleApiError("Your Moodle token is invalid or expired — reconnect to get a new one.")
+                raise MoodleApiError("Your Moodle token is invalid or expired - reconnect to get a new one.")
             raise MoodleApiError(f"Moodle rejected the request ({code}): {msg}")
         return result
 
@@ -357,7 +357,7 @@ class MoodleClient:
     def site_info(self) -> Dict[str, Any]:
         info = self.call("core_webservice_get_site_info")
         if not isinstance(info, dict) or "userid" not in info:
-            raise MoodleApiError("Could not read site info — the token may lack the required permissions.")
+            raise MoodleApiError("Could not read site info - the token may lack the required permissions.")
         return info
 
     def list_courses(self, userid: Optional[int] = None) -> List[Dict[str, Any]]:
@@ -414,10 +414,10 @@ def build_course_model(sections: List[Dict[str, Any]], course_meta: Dict[str, An
 
     Buckets are mutually exclusive and exhaustive per the rules above:
 
-    * ``lectures``   — video/audio modules and recordings (transcription input)
-    * ``documents``  — downloadable course files (pdf/pptx/docx/… → Markdown)
-    * ``links``      — external URL modules that are *not* recordings
-    * ``activities`` — assignments/quizzes/forums/… (outline metadata only)
+    * ``lectures``   - video/audio modules and recordings (transcription input)
+    * ``documents``  - downloadable course files (pdf/pptx/docx/… → Markdown)
+    * ``links``      - external URL modules that are *not* recordings
+    * ``activities`` - assignments/quizzes/forums/… (outline metadata only)
 
     Every file keeps its **exact** Moodle ``filename``/``mimetype``/``filesize``
     and a downloadable ``fileurl`` so nothing is misnamed or mislabelled.
@@ -447,7 +447,7 @@ def build_course_model(sections: List[Dict[str, Any]], course_meta: Dict[str, An
 
             entry = {"name": mod_name, "modname": modname, "section": sec_name}
 
-            # label modules carry only text — skip from buckets but keep in outline
+            # label modules carry only text - skip from buckets but keep in outline
             if modname == "label":
                 sec_modules_out.append({**entry, "kind": "label"})
                 continue
@@ -589,7 +589,7 @@ def render_outline(model: Dict[str, Any]) -> str:
     for sec in model["sections"]:
         header = sec["name"] or "(unnamed section)"
         wk = sec.get("week")
-        lines.append(f"### {('Week %d — ' % wk) if wk is not None else ''}{header}")
+        lines.append(f"### {('Week %d - ' % wk) if wk is not None else ''}{header}")
         mods = [m for m in sec["modules"] if m.get("kind") != "label" and m.get("name")]
         if not mods:
             lines.append("_(no items)_")
@@ -627,7 +627,7 @@ def render_outline(model: Dict[str, Any]) -> str:
 def import_course(client: MoodleClient, course_id: int,
                   course_meta: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     """Fetch and label one course's full content tree. No files are downloaded
-    here — :func:`download_documents` does that step so the caller controls it."""
+    here - :func:`download_documents` does that step so the caller controls it."""
     if course_meta is None:
         course_meta = {"id": course_id}
         for c in client.list_courses():
@@ -642,7 +642,7 @@ def download_documents(client: MoodleClient, documents: List[Dict[str, Any]],
                        dest_dir: Path, *, max_files: int = 300) -> Dict[str, Any]:
     """Download labelled document files into ``dest_dir`` using their **exact**
     Moodle filenames (de-duplicated). Returns a manifest; never raises for a
-    single bad file — it is recorded under ``errors``."""
+    single bad file - it is recorded under ``errors``."""
     dest_dir = Path(dest_dir)
     dest_dir.mkdir(parents=True, exist_ok=True)
     saved: List[Dict[str, Any]] = []

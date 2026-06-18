@@ -1,5 +1,5 @@
 """
-search.py — unified library index + search (§2).
+search.py - unified library index + search (§2).
 
 Turns the categorised filesystem listing (``core.list_library``) into a single
 flat, **filterable / sortable** index with inferred metadata (week, topic, type,

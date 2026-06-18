@@ -1,5 +1,5 @@
 """
-flashcards.py — generate Anki-style flashcards from course text, and tag/
+flashcards.py - generate Anki-style flashcards from course text, and tag/
 categorise existing flashcards. Dependency-free (stdlib only).
 
 Two jobs:
@@ -79,7 +79,7 @@ _DEF_RE = re.compile(
 _PRONOUNS = {"it", "this", "that", "these", "those", "there", "they", "he", "she", "we", "you", "i",
              "here", "today", "now", "so", "then", "okay", "ok", "well", "right",
              "yeah", "alright", "basically", "essentially", "anyway"}
-# Discourse fillers that lecturers prefix sentences with — stripped before
+# Discourse fillers that lecturers prefix sentences with - stripped before
 # matching so a definition isn't lost (or mis-subjected as "Okay so throughput").
 _FILLER_PREFIX = re.compile(
     r"^(?:(?:okay|ok|so|now|well|um+|uh+|right|yeah|yep|alright|basically|"

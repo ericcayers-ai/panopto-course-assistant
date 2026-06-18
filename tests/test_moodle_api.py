@@ -1,7 +1,7 @@
 """White-box tests for the Moodle web-service importer (app/imports/moodle_api.py).
 
 Everything is exercised offline through the injectable ``http_post`` / ``http_get``
-callables and the pure :func:`build_course_model` labeller — no real Moodle.
+callables and the pure :func:`build_course_model` labeller - no real Moodle.
 """
 from __future__ import annotations
 
@@ -57,7 +57,7 @@ def test_file_category(name, mime, cat):
 
 
 # ---------------------------------------------------------------------------
-# build_course_model — the labelling heart
+# build_course_model - the labelling heart
 # ---------------------------------------------------------------------------
 
 def _sample_sections():
@@ -154,10 +154,10 @@ def test_outline_markdown_is_clean(model):
     assert md.startswith("# COMPX234-25B Computer Networks")
     assert "## Lectures / recordings" in md
     assert "## Documents" in md
-    # plain text only — no emoji decoration (kept UTF-8 clean for AI sources)
+    # plain text only - no emoji decoration (kept UTF-8 clean for AI sources)
     assert not any(ord(ch) >= 0x1F000 for ch in md)
     # section grouping present
-    assert "### Week 1 — Week 1 - Foundations" in md
+    assert "### Week 1 - Week 1 - Foundations" in md
 
 
 def test_empty_sections_safe():
@@ -167,7 +167,7 @@ def test_empty_sections_safe():
 
 
 # ---------------------------------------------------------------------------
-# MoodleClient — REST envelope, errors, token append
+# MoodleClient - REST envelope, errors, token append
 # ---------------------------------------------------------------------------
 
 def _mock_post(routes):
@@ -260,7 +260,7 @@ def test_fetch_token_non_json():
 
 
 def test_fetch_token_sso_rejection():
-    """SSO sites return loginerrorothers — must raise with SSO_REJECTED: prefix
+    """SSO sites return loginerrorothers - must raise with SSO_REJECTED: prefix
     so the frontend can auto-switch to the token tab."""
     post = lambda url, data: (200, json.dumps(
         {"error": "Authentication with username and password is not used on this site.",
@@ -270,7 +270,7 @@ def test_fetch_token_sso_rejection():
 
 
 # ---------------------------------------------------------------------------
-# build_launch_url / decode_launch_token — browser SSO token flow
+# build_launch_url / decode_launch_token - browser SSO token flow
 # ---------------------------------------------------------------------------
 
 def _b64(s: str) -> str:
@@ -286,7 +286,7 @@ def test_build_launch_url():
 
 def test_decode_launch_token_standard():
     # Real Moodle format: base64(passport:::token:::privatetoken). The passport is
-    # ALSO 32-hex, so a "looks like a token" heuristic would wrongly pick it — the
+    # ALSO 32-hex, so a "looks like a token" heuristic would wrongly pick it - the
     # decoder must take the second field positionally.
     passport = "5fa1d9bdd6ccb22c871d58b275ed593d"
     token = "058dc43834290df552f52c70885af368"
@@ -317,7 +317,7 @@ def test_decode_launch_token_rejects_garbage():
 
 
 # ---------------------------------------------------------------------------
-# download_documents — exact names, dedup, error capture
+# download_documents - exact names, dedup, error capture
 # ---------------------------------------------------------------------------
 
 def test_download_documents(tmp_path: Path):
@@ -354,7 +354,7 @@ def test_download_documents_records_errors(tmp_path: Path):
 
 
 # ---------------------------------------------------------------------------
-# import_course — end-to-end orchestration with a mock client
+# import_course - end-to-end orchestration with a mock client
 # ---------------------------------------------------------------------------
 
 def test_import_course_end_to_end():

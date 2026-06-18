@@ -3,7 +3,7 @@
 After Moodle's launch.php flow completes with urlscheme=courseassistant, the browser
 navigates to courseassistant://token=BASE64.  On Windows, the registered handler
 intercepts this, POSTs to /api/moodle/sso-callback, and the frontend polling loop
-picks up the token automatically — no copy-paste required.
+picks up the token automatically - no copy-paste required.
 
 No admin privileges needed: the handler is written to HKCU.
 """

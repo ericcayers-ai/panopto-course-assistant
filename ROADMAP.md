@@ -1,4 +1,4 @@
-# Course Assistant — Engineering Roadmap
+# Course Assistant - Engineering Roadmap
 
 > Format optimized for AI-agent execution: each phase is `Goal · Depends · Files · API/Schema · Done-when`.
 > Grounded in the current codebase (`app/`, `static/`, `tests/`). Read **§0 Baseline** and **§Conventions** before implementing any phase.
@@ -10,40 +10,40 @@
 Evolve from a **single-session, single-course, file + in-memory tool** into a **persistent, multi-course, offline-first learning platform** that manages an entire degree from first lecture to final exam.
 
 **Invariants (must hold after every phase):**
-- Offline-first — core flow works with no internet, no API key, no GPU.
-- Privacy-first — no data leaves the machine unless the user opts into a cloud provider/integration.
-- Optional heavy deps — whisper, markitdown, OCR, LLM, OCR stay optional; absence degrades gracefully (see `/api/status`).
-- Course-centric — every artifact is scoped to a course.
-- Local-fast — sub-second library/search on a typical course; no mandatory background services.
-- Single-user local app — no auth/multi-tenant assumptions.
+- Offline-first - core flow works with no internet, no API key, no GPU.
+- Privacy-first - no data leaves the machine unless the user opts into a cloud provider/integration.
+- Optional heavy deps - whisper, markitdown, OCR, LLM, OCR stay optional; absence degrades gracefully (see `/api/status`).
+- Course-centric - every artifact is scoped to a course.
+- Local-fast - sub-second library/search on a typical course; no mandatory background services.
+- Single-user local app - no auth/multi-tenant assumptions.
 - Test coverage tracks features (currently 160+ tests; never let a phase ship untested).
 
 ---
 
-## §0 Baseline (current state — what exists today)
+## §0 Baseline (current state - what exists today)
 
 | Module | LoC | Responsibility | Persistence |
 | --- | --- | --- | --- |
 | `app/core.py` | 1236 | feed parse, organise, writers, full-text search, extractive summary, NotebookLM render, docs→MD | files under `OUTPUT_DIR` |
-| `app/sources.py` | 294 | Moodle HTML export parser → outline | — |
+| `app/sources.py` | 294 | Moodle HTML export parser → outline | - |
 | `app/notion.py` | 392 | Notion HTML/zip export → Markdown (stdlib only, **import side only**) | files |
 | `app/flashcards.py` | 289 | Anki cards via **heuristics** (definitions/acronyms) + categorise | files (`_flashcards/`) |
 | `app/study.py` | 121 | Notion study-DB **CSV export** only (no scheduling) | files (`_exports/`) |
 | `app/transcribe.py` | 351 | optional yt-dlp download + whisper engines (lazy import) | files |
 | `app/jobs.py` | 157 | **in-memory** job manager, single worker, lost on restart | **none** |
-| `app/main.py` | 631 | FastAPI app + ~25 routes | — |
-| `static/` | — | vanilla JS SPA (no build step), sidebar, light/dark | browser `localStorage` |
-| `tests/` | — | pytest suite (core, sources, notion, docs, flashcards, study, jobs, API) | — |
+| `app/main.py` | 631 | FastAPI app + ~25 routes | - |
+| `static/` | - | vanilla JS SPA (no build step), sidebar, light/dark | browser `localStorage` |
+| `tests/` | - | pytest suite (core, sources, notion, docs, flashcards, study, jobs, API) | - |
 
 **Key gaps the roadmap closes:**
 1. No database. `jobs.manager` is in-memory; "course" is a free-text string passed per request; user prefs live in `localStorage`. → **§1**
-2. No durable index — search re-walks the filesystem. → **§2**
-3. Jobs are fire-and-forget — no retry/resume/cancel/persistent logs. → **§3**
+2. No durable index - search re-walks the filesystem. → **§2**
+3. Jobs are fire-and-forget - no retry/resume/cancel/persistent logs. → **§3**
 4. Flashcards/quizzes are heuristic only; no LLM, no summaries-on-demand, no chat. → **§4**
-5. Notion/Anki are export-file only — no live API sync. → **§5**
+5. Notion/Anki are export-file only - no live API sync. → **§5**
 6. No assessments, calendar, spaced-repetition, or progress tracking. → **§6**
 7. Imports limited to Panopto RSS + Moodle + Notion + markitdown docs. → **§7**
-8. No local usage signals — can't see which workflows succeed/stall without cloud tracking. → **§13**
+8. No local usage signals - can't see which workflows succeed/stall without cloud tracking. → **§13**
 
 ---
 
@@ -74,7 +74,7 @@ app/
 ## Dependency graph & build order
 
 ```
-§1 Persistence + Multi-course  ──────────────┐  (FOUNDATION — nothing else starts cleanly without it)
+§1 Persistence + Multi-course  ──────────────┐  (FOUNDATION - nothing else starts cleanly without it)
    ├─► §2 Library & Search (needs DB index)
    ├─► §3 Job Reliability (hardens §1 DB queue)
    ├─► §6 Study Planner (needs assessments/study_sessions tables)
@@ -95,7 +95,7 @@ Rationale: lock the data layer (§1) and make it reliable (§3) before building 
 ## Conventions (apply to every phase)
 
 - **DB access:** all SQL lives in `app/database.py` + per-entity DAOs. No raw SQL in routes or feature modules. Single `sqlite3` connection per request/thread; `WAL` mode; foreign keys ON.
-- **Migrations:** `schema_version` row in `settings`. `database.migrate()` applies ordered, idempotent steps on startup. Never mutate a shipped migration — add a new one. Every migration has a round-trip test (§12).
+- **Migrations:** `schema_version` row in `settings`. `database.migrate()` applies ordered, idempotent steps on startup. Never mutate a shipped migration - add a new one. Every migration has a round-trip test (§12).
 - **Backward compatibility:** first run with an existing `transcripts/` folder must **import existing files into the DB index** (one-time backfill), not orphan them.
 - **Optional deps:** gate every heavy import behind a capability check surfaced in `GET /api/status`; UI disables the feature with a reason string when missing (mirror the existing whisper pattern).
 - **Offline default:** any feature that can reach the network defaults to off/local; cloud requires explicit per-course opt-in + a stored secret.
@@ -105,12 +105,12 @@ Rationale: lock the data layer (§1) and make it reliable (§3) before building 
 
 ---
 
-## §1 — Persistence & Multi-Course Foundation
+## §1 - Persistence & Multi-Course Foundation
 
 **Status:** ✅ **Shipped.** `database.py`/`models.py`/`courses.py`/`settings_store.py` added, `jobs.py` is DB-backed with restart recovery, course + settings routes live, existing `transcripts/` backfilled on startup, top-bar course switcher wired. 212 tests green (30 new); verified in-browser (create/switch/persist across reload).
 
 **Goal:** Replace transient state (in-memory jobs, string-tag course, localStorage prefs) with durable SQLite; support N concurrent courses with an active-course concept.
-**Depends:** — (foundation)
+**Depends:** - (foundation)
 **Files:** `app/database.py` [NEW], `app/models.py` [NEW], `app/courses.py` [NEW], `app/settings_store.py` [NEW], `app/jobs.py` [REWRITE → DB-backed], `app/main.py` [+routes], `static/app.js` [course switcher wiring]. DB file: `OUTPUT_DIR/course_assistant.db`.
 
 **Schema** (SQLite; `*_at` = ISO8601 TEXT; FKs ON DELETE CASCADE unless noted):
@@ -152,7 +152,7 @@ GET/PUT /api/settings            persistent prefs (active_course, theme, export 
 
 ---
 
-## §2 — Library & Search System
+## §2 - Library & Search System
 
 **Status:** ✅ **Shipped (on-demand index).** `search.py` flattens the library into an index with inferred week/topic/type/tags/mtime; `/api/index` does filter (week/type/tag) + sort (date/name/week); `/api/search` adds metadata filters + a fuzzy title fallback; `/api/related` surfaces same-week/topic/type; saved views (7 built-ins + DB-persisted user views). Library tab gained a filter/sort bar. (Durable DB-index reindex + semantic/embedding search remain for a later pass.)
 
@@ -182,7 +182,7 @@ GET  /api/collections?course=&lecture=       all assets linked to a lecture/week
 
 ---
 
-## §3 — Reliability & Job Infrastructure
+## §3 - Reliability & Job Infrastructure
 
 **Status:** ✅ **Shipped (core).** Cooperative cancel, retry-from-payload (job-factory registry), classified failures (`network|authentication|dependency|filesystem|invalid_source|unknown`), persisted per-job logs, dead-letter via `status='error'` listing; Jobs panel gained Cancel/Retry/Logs controls. (Pause/duplicate + backoff scheduler remain for a later pass.)
 
@@ -210,9 +210,9 @@ GET  /api/jobs?status=dead_letter            inspect unrecoverable jobs
 
 ---
 
-## §4 — AI / LLM Layer (Optional)
+## §4 - AI / LLM Layer (Optional)
 
-**Status:** ✅ **Shipped (backend).** `llm.py` provider abstraction (ollama, llama.cpp/LM-Studio, openai, anthropic; default cloud model `claude-opus-4-8`); import never touches the network; per-course AI config in settings with API keys redacted from all responses (keyring is §10). `ai.py` ships summarise / flashcards / quiz / RAG-chat — each with a dependency-free extractive fallback so features never vanish when AI is off; outputs labelled `generated: ai|extractive`. Routes under `/api/llm/*`; `/api/status.ai` reports detected providers. (Chat/settings UI lands in the §8 frontend pass; topic-synthesis/outline-cleanup later.)
+**Status:** ✅ **Shipped (backend).** `llm.py` provider abstraction (ollama, llama.cpp/LM-Studio, openai, anthropic; default cloud model `claude-opus-4-8`); import never touches the network; per-course AI config in settings with API keys redacted from all responses (keyring is §10). `ai.py` ships summarise / flashcards / quiz / RAG-chat - each with a dependency-free extractive fallback so features never vanish when AI is off; outputs labelled `generated: ai|extractive`. Routes under `/api/llm/*`; `/api/status.ai` reports detected providers. (Chat/settings UI lands in the §8 frontend pass; topic-synthesis/outline-cleanup later.)
 
 **Goal:** Advanced AI features behind a provider abstraction, with zero impact on offline-first when disabled.
 **Depends:** §2 (index for RAG), §10 (secrets for cloud keys).
@@ -235,7 +235,7 @@ GET  /api/jobs?status=dead_letter            inspect unrecoverable jobs
 
 **AI settings (per-course, in `settings`/course config):** `provider, model, temperature, max_tokens, retrieval_depth`.
 **Controls & safety:**
-- **Source toggles** per request: transcripts / documents / Moodle / Notion / combined pack — user chooses what context is sent.
+- **Source toggles** per request: transcripts / documents / Moodle / Notion / combined pack - user chooses what context is sent.
 - **Prompt templates:** stored, editable, per-feature defaults (so users can tune summarise/quiz/flashcard prompts).
 - **Token & usage controls:** show/limit tokens per call; surface estimated usage before a cloud call runs.
 - **Metadata redaction:** optional stripping of sensitive metadata (paths, names) before any cloud send.
@@ -258,7 +258,7 @@ POST /api/ai/cleanup    {scope, course}                        → suggested out
 
 ---
 
-## §5 — Integrations (write/sync side)
+## §5 - Integrations (write/sync side)
 
 **Status:** ✅ **Shipped (core sync).** `integrations/notion.py` (live API: create DB/page/update, incremental + title-dedup, editable field map, dry-run) and `integrations/anki.py` (AnkiConnect: auto-create deck, tagged notes, duplicate-aware, dry-run) both ship with injectable transports so the planning/dedup logic is fully tested offline. `integrations/state.py` persists connection config + last-sync timestamps under the `sync` settings key (tokens never echoed). Routes: `/api/sync/{notion,anki}` + `/dryrun`, `/api/sync/status`, `PUT /api/sync/mapping`. Anki cards are sourced from the §4 flashcard generator. (Conflict-resolution UI + a dedicated retry queue beyond §3's job infra remain for a later pass; token storage moves to the keyring in §10.)
 
@@ -285,7 +285,7 @@ PUT  /api/sync/mapping       {target, fields}      editable field mapping
 
 ---
 
-## §6 — Study Planner
+## §6 - Study Planner
 
 **Status:** ✅ **Shipped.** `study_planner.py` adds: assessment CRUD over the 4 status states; an SM-2 spaced-repetition scheduler (`schedule_after`/`grade_review`, deterministic) seeded from flashcards into `review_items`; a dependency-free RFC-5545 `.ics` builder for deadlines; a day-by-day `generate_plan` bounded by a weekly hours budget with assessment-prep ramp + missed-lecture catch-up; and `progress` (completion %, study hours, streak, mastery from `quiz_attempts`). Routes: `/api/assessments` (CRUD), `/api/plan`, `/api/calendar.ics`, `/api/study-sessions`, `/api/reviews` + `/{id}/grade`, `/api/quiz-attempts`, `/api/progress`. `tests/test_study_planner.py` green. (AI advisory layer over the plan is §4's `synth`, later.)
 
@@ -316,9 +316,9 @@ GET  /api/progress?course=
 
 ---
 
-## §7 — Import Expansion
+## §7 - Import Expansion
 
-**Status:** ✅ **Shipped (core).** New `app/imports/` package: `moodle_web.py` imports a course straight from its **live URL** using the browser's session cookies — fetches the main page, crawls linked `section.php` pages, merges sections/activities, and discovers Panopto podcast RSS feeds (fetcher injected → fully offline-tested; `sources.parse_moodle_html` refactored out for string input); `folder.py` does recursive, structure-preserving folder import (categorises document/media/subtitle, infers week/topic, skips our own outputs, indexes docs/subs, lists media for a later transcription job); `preflight.py` validates before running (counts, expected output, dependency + size warnings). Routes: `POST /api/moodle/import-url`, `/api/import/preflight`, `/api/import/folder`. `tests/test_imports.py` green. (Broader LMS shapes (Canvas/Blackboard), OCR, and subtitle-reuse-in-transcription remain for a later pass.)
+**Status:** ✅ **Shipped (core).** New `app/imports/` package: `moodle_web.py` imports a course straight from its **live URL** using the browser's session cookies - fetches the main page, crawls linked `section.php` pages, merges sections/activities, and discovers Panopto podcast RSS feeds (fetcher injected → fully offline-tested; `sources.parse_moodle_html` refactored out for string input); `folder.py` does recursive, structure-preserving folder import (categorises document/media/subtitle, infers week/topic, skips our own outputs, indexes docs/subs, lists media for a later transcription job); `preflight.py` validates before running (counts, expected output, dependency + size warnings). Routes: `POST /api/moodle/import-url`, `/api/import/preflight`, `/api/import/folder`. `tests/test_imports.py` green. (Broader LMS shapes (Canvas/Blackboard), OCR, and subtitle-reuse-in-transcription remain for a later pass.)
 
 **Goal:** Ingest more real-world sources into the same index.
 **Depends:** §1/§2 (write to index); reuses `app/sources.py`, `app/transcribe.py`, `app/core.py` docs→MD.
@@ -326,7 +326,7 @@ GET  /api/progress?course=
 
 - **Video:** YouTube playlists/channels, Vimeo, Media RSS (via yt-dlp, already a dep). **Capture existing subtitles** where available (skip transcription when the source already has captions).
 - **Documents:** PDF, DOCX, PPTX, XLSX, HTML, EPUB, Markdown, CSV, TXT (markitdown; broaden coverage).
-- **OCR (optional):** Tesseract / PaddleOCR for scanned PDFs, slides, images — gated in `/api/status`; page-level fallback when text extraction yields nothing.
+- **OCR (optional):** Tesseract / PaddleOCR for scanned PDFs, slides, images - gated in `/api/status`; page-level fallback when text extraction yields nothing.
 - **LMS:** expand `sources.py` beyond Moodle (support more export shapes + nested resource folders) → Canvas, Blackboard, Brightspace.
 - **Folder imports:** recursive scan, mixed-content-type detection, structure-preserving auto-categorization, bulk import.
 - **Preflight validation:** before an import runs, warn on huge files, missing engines/deps, and show the **expected output** (counts, target folders) so the user confirms before work starts.
@@ -335,7 +335,7 @@ GET  /api/progress?course=
 
 ---
 
-## §8 — Frontend Modernization
+## §8 - Frontend Modernization
 
 **Status:** 🟡 **Partial.** Course switcher, library filter/sort, jobs panel with controls, and toast notifications already shipped in earlier passes. This pass added the **window/mode launcher**: pick *Full workspace* vs *Just my Moodle course*, each with *Simple* vs *Advanced*; the choice persists (localStorage + `/api/settings`) and reflows the UI (the Moodle window hides the course/import tabs and drives a guided quick-import → auto-transcribe → one-click export flow; Simple mode hides advanced transcription knobs in favour of best defaults). Remaining for a later pass: full dashboard metric tiles, drag-and-drop import zones, an automated axe a11y check, and deeper mobile layouts.
 
@@ -354,7 +354,7 @@ GET  /api/progress?course=
 
 ---
 
-## §9 — Export Engine
+## §9 - Export Engine
 
 **Status:** ✅ **Shipped (core).** `exports.py` aggregates the existing exporters behind presets (`revision | ai | exam | notion | anki | archive`) and a shared scope rule (`lecture | week | topic | course | all`, computed from the §2 index). `preview()` lists every artifact that *would* be written and touches nothing (asserted by test). `course_archive()` writes a portable `.zip` (course metadata + every library file + manifest) that backs the §1 `POST /api/courses/{id}/export` (was a 501 stub) and round-trips for §11. Routes: `/api/export/presets`, `/api/export/preview`, `/api/export/run`. `tests/test_exports.py` green. (Diff-based re-export + per-course naming templates remain for a later pass.)
 
@@ -378,7 +378,7 @@ GET  /api/export/{id}
 
 ---
 
-## §10 — Security & Privacy (cross-cutting)
+## §10 - Security & Privacy (cross-cutting)
 
 **Status:** ✅ **Shipped (core).** `secrets.py`: secrets go to the OS keyring when available, else a `cryptography`-encrypted file, else an obfuscated file with an explicit "not encrypted" warning surfaced in `backend_status` (asserted by test: the raw value never appears on disk). Names are tracked in a sidecar so they can be listed without exposing values. Data-transparency labels (`local-only | local+internet | cloud-processed`) map every feature; an `audit_log` table (migration v3) records every external/cloud action (sync, cloud AI). Routes: `/api/secrets` (PUT/DELETE/list names only, `/clear`), `/api/privacy`, `/api/audit` (+`/clear`); `/api/status` reports the secret backend + transparency. Notion token now resolves from the keyring first. `tests/test_secrets.py` green. (Dependency-integrity checks + a full per-feature privacy panel UI remain for §8/§11.)
 
@@ -396,7 +396,7 @@ GET  /api/export/{id}
 
 ---
 
-## §11 — Packaging & Distribution
+## §11 - Packaging & Distribution
 
 **Status:** 🟡 **Partial.** `backup.py` ships the recovery essentials: `environment_report` (one snapshot of Python/platform/engines/optional-deps/free-disk for the first-run wizard + "why is X disabled?" panel) and a portable `create_backup`/`restore_backup` pair (zip of DB + whole library, **secrets excluded**, path-traversal-guarded, safe-merge by default; restored DB migrates forward on next launch). Routes: `GET /api/environment`, `POST /api/backup`, `POST /api/restore`. `run.py` already auto-selects a free port. `tests/test_backup.py` green. Remaining: lite/full guided installers, auto-update with changelog.
 
@@ -412,7 +412,7 @@ GET  /api/export/{id}
 
 ---
 
-## §12 — Testing & Quality (cross-cutting, continuous)
+## §12 - Testing & Quality (cross-cutting, continuous)
 
 **Goal:** Reliability scales with complexity. Every phase contributes tests; this section is the standing checklist.
 
@@ -426,20 +426,20 @@ GET  /api/export/{id}
 
 ---
 
-## §13 — Analytics & Local Feedback (cross-cutting, **no cloud tracking**)
+## §13 - Analytics & Local Feedback (cross-cutting, **no cloud tracking**)
 
-**Status:** ✅ **Shipped.** `analytics.py` derives feature-usage counts, an import→transcribe→export funnel, failed-job counts by §3 category, and job-duration percentiles purely from local `jobs`/`exports`/`study_sessions` rows — a test asserts the module imports no network library. A local-only `feedback_prompt` fires after ≥3 same-category failures (no submission). `diagnostics_export` writes an aggregate-only JSON (a test asserts no paths/titles/secrets leak). Routes: `GET /api/analytics`, `POST /api/analytics/export`. `tests/test_analytics.py` green.
+**Status:** ✅ **Shipped.** `analytics.py` derives feature-usage counts, an import→transcribe→export funnel, failed-job counts by §3 category, and job-duration percentiles purely from local `jobs`/`exports`/`study_sessions` rows - a test asserts the module imports no network library. A local-only `feedback_prompt` fires after ≥3 same-category failures (no submission). `diagnostics_export` writes an aggregate-only JSON (a test asserts no paths/titles/secrets leak). Routes: `GET /api/analytics`, `POST /api/analytics/export`. `tests/test_analytics.py` green.
 
-**Goal:** Understand which workflows succeed or stall — entirely from local data, never phoning home. This is privacy-first telemetry: nothing leaves the machine unless the user explicitly exports it.
+**Goal:** Understand which workflows succeed or stall - entirely from local data, never phoning home. This is privacy-first telemetry: nothing leaves the machine unless the user explicitly exports it.
 **Depends:** §1 (reads `jobs`, `exports`, `study_sessions` rows; optional `events` table).
 **Files:** `app/analytics.py` [NEW]; reads existing tables, writes an optional local `events` table.
 
-- **Local usage stats:** counts per feature (imports, transcriptions, exports, syncs, AI calls) — derived from existing rows, no new tracking required.
+- **Local usage stats:** counts per feature (imports, transcriptions, exports, syncs, AI calls) - derived from existing rows, no new tracking required.
 - **Completion funnels:** import→transcribe→export drop-off; where users abandon a workflow.
 - **Failure insights:** failed-job counts by §3 category; surfaces recurring pain points.
 - **Throughput:** time-to-process metrics (job duration percentiles), export frequency by type.
 - **Feedback prompt:** after repeated failures of the same kind, offer a user-facing prompt (purely local; no submission).
-- **Optional diagnostics export:** a single anonymised local JSON the user can choose to share when reporting a bug — explicit, manual, never automatic.
+- **Optional diagnostics export:** a single anonymised local JSON the user can choose to share when reporting a bug - explicit, manual, never automatic.
 
 **API:**
 ```
@@ -447,7 +447,7 @@ GET  /api/analytics?course=        local usage stats + funnels + failure insight
 POST /api/analytics/export         write an anonymised diagnostics JSON (user-initiated)
 ```
 
-**Invariants:** off-by-default network posture preserved — analytics are computed and stored locally; the only egress path is a user-initiated diagnostics export. No third-party analytics SDK.
+**Invariants:** off-by-default network posture preserved - analytics are computed and stored locally; the only egress path is a user-initiated diagnostics export. No third-party analytics SDK.
 **Done-when:** stats/funnels/failure-insights computed from local rows; diagnostics export is opt-in and contains no secrets/PII (asserted by test); no network call exists in `analytics.py`; `tests/test_analytics.py` green.
 
 ---

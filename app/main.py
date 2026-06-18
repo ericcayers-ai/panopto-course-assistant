@@ -1,5 +1,5 @@
 """
-main.py — FastAPI backend for the Panopto Course Assistant.
+main.py - FastAPI backend for the Panopto Course Assistant.
 
 Endpoints
 ---------
@@ -60,7 +60,7 @@ from .jobs import manager
 BASE_DIR = Path(__file__).resolve().parent.parent
 # Static assets live next to the app; CA_STATIC_DIR can override the location.
 STATIC_DIR = Path(os.environ.get("CA_STATIC_DIR", BASE_DIR / "static"))
-APP_VERSION = "2.5.1"
+APP_VERSION = "2.6.0"
 # Where transcripts are written/read. Override with PANOPTO_OUTPUT.
 OUTPUT_DIR = Path(os.environ.get("PANOPTO_OUTPUT", BASE_DIR / "transcripts")).resolve()
 core.ensure_dir(OUTPUT_DIR)
@@ -117,7 +117,7 @@ class NoCacheStaticFiles(StaticFiles):
     """StaticFiles that tells browsers to always revalidate.
 
     Without this, assets are served with only an ETag/Last-Modified and browsers
-    apply *heuristic caching* — happily serving a stale app.js/style.css after an
+    apply *heuristic caching* - happily serving a stale app.js/style.css after an
     update without checking. ``no-cache`` keeps the ETag fast-path (304 when
     unchanged) but forces a revalidation every load, so updates show immediately.
     """
@@ -367,7 +367,7 @@ class MoodleFetchReq(BaseModel):
     cookies: str = ""                  # browser session cookies (header/txt)
     keep_images: bool = True           # attach images to converted docs (default on)
     convert: bool = True               # convert downloaded files to Markdown
-    export: str = ""                   # ""|"notebooklm"|"all" — also export after
+    export: str = ""                   # ""|"notebooklm"|"all" - also export after
     grab_lectures: bool = True         # detect & return Panopto lecture feeds
     grab_docs: bool = True             # download + convert resource documents
 
@@ -390,7 +390,7 @@ class MoodleApiImportReq(BaseModel):
     convert: bool = True               # convert downloaded files to Markdown
     keep_images: bool = True           # attach images to converted docs
     create_course: bool = False        # create + activate a local course from the title
-    export: str = ""                   # ""|"notebooklm"|"all" — also export after
+    export: str = ""                   # ""|"notebooklm"|"all" - also export after
 
 
 class FolderImportReq(BaseModel):
@@ -456,7 +456,7 @@ def api_transcribe_recommend() -> Dict[str, Any]:
 
 
 def _safe_ai_config(cfg: Dict[str, Any]) -> Dict[str, Any]:
-    """Never echo a stored API key back to the client — report only its presence."""
+    """Never echo a stored API key back to the client - report only its presence."""
     out = {k: v for k, v in cfg.items() if k != "api_key"}
     out["has_api_key"] = bool(cfg.get("api_key"))
     return out
@@ -514,7 +514,7 @@ def _export_recordings(dest_dir: Path, cookies: str = "") -> Dict[str, Any]:
                 continue
             except OSError:
                 pass
-        # Not kept in the library — re-download from the stored source URL.
+        # Not kept in the library - re-download from the stored source URL.
         # Prefer the mp4 video URL (we transcribe from audio, so `url` may be mp3).
         try:
             data = json.loads(json_path.read_text(encoding="utf-8", errors="replace"))
@@ -534,7 +534,7 @@ def _export_recordings(dest_dir: Path, cookies: str = "") -> Dict[str, Any]:
 
 
 # ---------------------------------------------------------------------------
-# Courses (§1 — multi-course foundation)
+# Courses (§1 - multi-course foundation)
 # ---------------------------------------------------------------------------
 
 
@@ -598,7 +598,7 @@ def api_courses_activate(course_id: int) -> Dict[str, Any]:
 
 @app.post("/api/courses/{course_id}/export")
 def api_courses_export(course_id: int) -> Dict[str, Any]:
-    """Portable course archive (metadata + library + settings) — §9 Export Engine."""
+    """Portable course archive (metadata + library + settings) - §9 Export Engine."""
     row = db.get_course(course_id)
     if not row:
         raise HTTPException(status_code=404, detail="Course not found")
@@ -607,7 +607,7 @@ def api_courses_export(course_id: int) -> Dict[str, Any]:
 
 
 # ---------------------------------------------------------------------------
-# Settings (§1 — persistent preferences)
+# Settings (§1 - persistent preferences)
 # ---------------------------------------------------------------------------
 
 
@@ -622,7 +622,7 @@ def api_settings_update(req: SettingsUpdate) -> Dict[str, Any]:
 
 
 # ---------------------------------------------------------------------------
-# Optional AI / LLM (§4) — every endpoint degrades to an extractive fallback
+# Optional AI / LLM (§4) - every endpoint degrades to an extractive fallback
 # ---------------------------------------------------------------------------
 
 
@@ -677,7 +677,7 @@ def api_llm_chat(req: ChatReq) -> Dict[str, Any]:
 
 
 # ---------------------------------------------------------------------------
-# Integrations — live Notion / Anki sync (§5). Every write is incremental,
+# Integrations - live Notion / Anki sync (§5). Every write is incremental,
 # duplicate-aware, and offered as a dry-run first. Tokens are stored via §10.
 # ---------------------------------------------------------------------------
 
@@ -757,7 +757,7 @@ def api_sync_anki(req: AnkiSyncReq) -> Dict[str, Any]:
 
 
 # ---------------------------------------------------------------------------
-# Study planner (§6) — assessments, calendar, spaced repetition, progress.
+# Study planner (§6) - assessments, calendar, spaced repetition, progress.
 # All deterministic; `course` defaults to the active course.
 # ---------------------------------------------------------------------------
 
@@ -856,7 +856,7 @@ def api_progress(course: Optional[int] = None) -> Dict[str, Any]:
 
 
 # ---------------------------------------------------------------------------
-# Security & privacy (§10) — secret storage (names only over the wire), data
+# Security & privacy (§10) - secret storage (names only over the wire), data
 # transparency labels, and an audit trail of anything that left the machine.
 # ---------------------------------------------------------------------------
 
@@ -916,7 +916,7 @@ def api_audit_clear() -> Dict[str, Any]:
 
 
 # ---------------------------------------------------------------------------
-# Export engine (§9) — preset-driven, scoped, preview-first.
+# Export engine (§9) - preset-driven, scoped, preview-first.
 # ---------------------------------------------------------------------------
 
 
@@ -949,7 +949,7 @@ def api_export_run(req: ExportReq) -> Dict[str, Any]:
 
 
 # ---------------------------------------------------------------------------
-# Analytics & local feedback (§13) — computed from local rows; never phones home.
+# Analytics & local feedback (§13) - computed from local rows; never phones home.
 # ---------------------------------------------------------------------------
 
 
@@ -968,7 +968,7 @@ def api_analytics_export() -> Dict[str, Any]:
 
 
 # ---------------------------------------------------------------------------
-# Packaging & recovery (§11) — environment checker + portable backup/restore.
+# Packaging & recovery (§11) - environment checker + portable backup/restore.
 # ---------------------------------------------------------------------------
 
 
@@ -1016,8 +1016,8 @@ def api_feed(req: FeedRequest) -> Dict[str, Any]:
 def api_moodle_panopto_feed(req: FeedRequest) -> Dict[str, Any]:
     """Parse a Panopto podcast RSS feed into lecture recordings.
 
-    Accepts either the audio (``type=mp3``) or video (``type=mp4``) podcast URL —
-    the kind shown in Moodle's Panopto block — and fetches both variants so each
+    Accepts either the audio (``type=mp3``) or video (``type=mp4``) podcast URL -
+    the kind shown in Moodle's Panopto block - and fetches both variants so each
     recording carries a small audio ``url`` for transcription plus a ``video_url``
     for the SRT/recording export. Falls back to whichever feed is reachable.
     """
@@ -1037,7 +1037,7 @@ def api_moodle_panopto_feed(req: FeedRequest) -> Dict[str, Any]:
         raise HTTPException(
             status_code=400,
             detail=("Could not read the Panopto feed. The RSS URL usually needs "
-                    "your Panopto/Moodle sign-in — open it in a browser first, or "
+                    "your Panopto/Moodle sign-in - open it in a browser first, or "
                     f"paste session cookies. ({'; '.join(errors)})"),
         )
     lectures = core.merge_panopto_variants(audio_items, video_items)
@@ -1237,7 +1237,7 @@ def api_export_srt(req: SrtExportRequest) -> Dict[str, Any]:
     if result["count"] == 0:
         raise HTTPException(
             status_code=404,
-            detail="No transcripts found. Transcribe some lectures first — SRT files "
+            detail="No transcripts found. Transcribe some lectures first - SRT files "
             "are generated from the timing data produced during transcription.",
         )
     if req.output_dir:
@@ -1253,7 +1253,7 @@ def api_export_srt(req: SrtExportRequest) -> Dict[str, Any]:
 _STUDY_SUMMARY_SYSTEM = (
     "You are a concise study assistant. Summarise this lecture into 2–3 sentences of "
     "clean, accurate study notes, grounded strictly in the provided text. No preamble, "
-    "no markdown, no bullet points — just the sentences."
+    "no markdown, no bullet points - just the sentences."
 )
 
 
@@ -1349,7 +1349,7 @@ def api_flashcards_generate(req: FlashcardGenRequest) -> Dict[str, Any]:
                                      max_cards=max_cards, config=captured_cfg)
         cards = out.get("cards", [])
         if not cards:
-            raise ValueError("No flashcards generated — try adding more transcript content.")
+            raise ValueError("No flashcards generated - try adding more transcript content.")
         if course:
             ctag = flashcards._tag(course)
             if ctag:
@@ -1527,7 +1527,7 @@ def api_job_cancel(job_id: str) -> Dict[str, Any]:
     if not manager.get(job_id):
         raise HTTPException(status_code=404, detail="Job not found")
     if not manager.cancel(job_id):
-        raise HTTPException(status_code=409, detail="Job already finished — nothing to cancel.")
+        raise HTTPException(status_code=409, detail="Job already finished - nothing to cancel.")
     return {"id": job_id, "canceled": True}
 
 
@@ -1691,7 +1691,7 @@ _MOODLE_PASSPORT = "courseassistant"
 def api_moodle_launch_url(url: str = "") -> Dict[str, Any]:
     """Return the Moodle mobile launch URL for browser-based SSO token acquisition.
     The user opens this URL, authenticates via their institution's SSO, and Moodle
-    redirects to ``moodlemobile://token=<base64>`` — they copy that URL and we
+    redirects to ``moodlemobile://token=<base64>`` - they copy that URL and we
     decode it via /api/moodle/decode-launch-token."""
     if not url.strip():
         raise HTTPException(status_code=400, detail="Enter a Moodle site URL first.")
@@ -1733,7 +1733,7 @@ def api_moodle_sso_callback(req: SsoCallbackReq) -> Response:
     return Response(status_code=204)
 
 
-from fastapi import Request as _Request  # noqa: E402 — local import to avoid name collision
+from fastapi import Request as _Request  # noqa: E402 - local import to avoid name collision
 
 
 @app.get("/api/moodle/sso-poll")
@@ -1777,7 +1777,7 @@ def api_moodle_connect(req: MoodleConnectReq) -> Dict[str, Any]:
                 if provider:
                     raise moodle_api.MoodleApiError(
                         "SSO_REJECTED: This site signs in through "
-                        f"{_sso_provider_label(provider)} — username/password can't be "
+                        f"{_sso_provider_label(provider)} - username/password can't be "
                         "used here. Use ‘Sign in via browser’ below to get your token."
                     ) from None
                 raise
@@ -1814,7 +1814,7 @@ def api_moodle_api_import(req: MoodleApiImportReq) -> Dict[str, Any]:
     if not token:
         raise HTTPException(
             status_code=400,
-            detail=f"Not connected to {host or 'this Moodle site'} yet — connect first.")
+            detail=f"Not connected to {host or 'this Moodle site'} yet - connect first.")
 
     client = moodle_api.MoodleClient(base, token)
     try:
@@ -1878,8 +1878,8 @@ async def api_moodle_quick_upload(
     keep_images: bool = Form(True),
 ) -> Dict[str, Any]:
     """Saved-page importer for the quick flow. The user saves the rendered course
-    page(s) — which the browser has fully populated, including the Panopto block's
-    podcast feeds — and uploads them here.
+    page(s) - which the browser has fully populated, including the Panopto block's
+    podcast feeds - and uploads them here.
 
     Multiple pages may be supplied and are merged: the main course page typically
     carries the Panopto lecture feeds, while section pages (e.g. a "Slides" folder)
@@ -1949,7 +1949,7 @@ async def api_moodle_quick_upload(
 @app.post("/api/import/preflight")
 def api_import_preflight(req: PreflightReq) -> Dict[str, Any]:
     """Validate a folder import before running it: counts, expected output, and
-    dependency/size warnings (§7). Pure inspection — writes nothing."""
+    dependency/size warnings (§7). Pure inspection - writes nothing."""
     try:
         return import_preflight.preflight_folder(Path(req.path).expanduser())
     except (NotADirectoryError, FileNotFoundError) as e:
@@ -2076,7 +2076,7 @@ _DOCS_HTML = """<!DOCTYPE html>
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>Course Assistant — API</title>
+<title>Course Assistant - API</title>
 <style>
   :root { color-scheme: light dark; --bg:#f4f7fc; --surface:#fff; --ink:#1b2230;
     --muted:#5b6577; --border:#e3e9f3; --brand:#3b6ef5; }
@@ -2126,7 +2126,7 @@ function refName(schema){
   try {
     const spec = await (await fetch('/openapi.json')).json();
     document.getElementById('title').textContent =
-      (spec.info && spec.info.title || 'API') + ' — v' + (spec.info && spec.info.version || '');
+      (spec.info && spec.info.title || 'API') + ' - v' + (spec.info && spec.info.version || '');
     const rows = [];
     for (const [path, methods] of Object.entries(spec.paths)) {
       for (const [method, op] of Object.entries(methods)) {
@@ -2135,7 +2135,7 @@ function refName(schema){
     }
     rows.sort((a,b) => a.path.localeCompare(b.path) || (ORDER[a.method]-ORDER[b.method]));
     document.getElementById('sub').textContent =
-      rows.length + ' endpoint' + (rows.length===1?'':'s') + ' — this page is generated locally, no internet required.';
+      rows.length + ' endpoint' + (rows.length===1?'':'s') + ' - this page is generated locally, no internet required.';
     const host = document.getElementById('eps');
     for (const { path, method, op } of rows) {
       const div = document.createElement('div');

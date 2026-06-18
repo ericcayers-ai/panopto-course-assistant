@@ -1,5 +1,5 @@
 """
-database.py — SQLite persistence layer (§1 of the roadmap).
+database.py - SQLite persistence layer (§1 of the roadmap).
 
 This is the single place that owns SQL. Feature modules (`courses.py`,
 `settings_store.py`, `jobs.py`) and routes call the DAO methods here; they never
@@ -11,7 +11,7 @@ Design notes
 * WAL journal mode + ``foreign_keys=ON`` (with ``ON DELETE CASCADE`` so deleting
   a course wipes its rows).
 * Migrations are ordered, idempotent steps keyed by an integer ``schema_version``
-  row in ``settings``. Never mutate a shipped migration — append a new one.
+  row in ``settings``. Never mutate a shipped migration - append a new one.
 * ``init(db_path)`` installs a module-level default used by routes via
   ``get_db()``. Re-calling ``init`` (the test suite reloads ``app.main`` against a
   fresh temp dir) closes the previous connection first, so file handles are
@@ -30,7 +30,7 @@ from .core import now_iso
 # Migrations
 # ---------------------------------------------------------------------------
 # Each entry: (version, [sql statements]). Applied in order for any version
-# greater than the DB's current schema_version. Append-only — editing a shipped
+# greater than the DB's current schema_version. Append-only - editing a shipped
 # step breaks existing databases; add a new (version, steps) instead.
 
 _MIGRATIONS: List[tuple[int, List[str]]] = [
@@ -116,11 +116,11 @@ _MIGRATIONS: List[tuple[int, List[str]]] = [
     (
         2,
         [
-            # §3 — job reliability: cooperative cancel, persisted logs, classified failures.
+            # §3 - job reliability: cooperative cancel, persisted logs, classified failures.
             "ALTER TABLE jobs ADD COLUMN logs TEXT DEFAULT ''",
             "ALTER TABLE jobs ADD COLUMN cancel_requested INTEGER NOT NULL DEFAULT 0",
             "ALTER TABLE jobs ADD COLUMN failure_category TEXT DEFAULT ''",
-            # §2 — persisted saved views.
+            # §2 - persisted saved views.
             """CREATE TABLE IF NOT EXISTS saved_views (
                 id         INTEGER PRIMARY KEY AUTOINCREMENT,
                 course_id  INTEGER REFERENCES courses(id) ON DELETE CASCADE,
@@ -128,7 +128,7 @@ _MIGRATIONS: List[tuple[int, List[str]]] = [
                 query_json TEXT NOT NULL DEFAULT '{}',
                 created_at TEXT NOT NULL
             )""",
-            # §6 — spaced-repetition review items + quiz attempt history.
+            # §6 - spaced-repetition review items + quiz attempt history.
             """CREATE TABLE IF NOT EXISTS review_items (
                 id         INTEGER PRIMARY KEY AUTOINCREMENT,
                 course_id  INTEGER REFERENCES courses(id) ON DELETE CASCADE,
@@ -156,7 +156,7 @@ _MIGRATIONS: List[tuple[int, List[str]]] = [
     (
         3,
         [
-            # §10 — audit trail for anything that leaves the machine (sync/cloud).
+            # §10 - audit trail for anything that leaves the machine (sync/cloud).
             """CREATE TABLE IF NOT EXISTS audit_log (
                 id         INTEGER PRIMARY KEY AUTOINCREMENT,
                 action     TEXT NOT NULL,

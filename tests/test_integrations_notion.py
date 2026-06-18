@@ -1,4 +1,4 @@
-"""§5 Notion sync: incremental create/update, dedup, dry-run — all offline.
+"""§5 Notion sync: incremental create/update, dedup, dry-run - all offline.
 
 The HTTP transport is injected, so these exercise the real planning/dedup logic
 without touching the network.

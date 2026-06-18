@@ -49,8 +49,8 @@
         <section id="home" class="panel active">
           <div class="hero">
             <h1>Everything for one course, in one place</h1>
-            <p class="lead">Name your course, <strong>keep importing</strong> whatever you have —
-              Panopto lectures, slides, documents, Moodle and Notion exports — then
+            <p class="lead">Name your course, <strong>keep importing</strong> whatever you have -
+              Panopto lectures, slides, documents, Moodle and Notion exports - then
               <strong>export</strong> it as clean study material for
               <strong>NotebookLM</strong>, <strong>Anki</strong> or <strong>Notion</strong>.</p>
           </div>
@@ -61,7 +61,7 @@
           <div class="tiles flow-tiles">
             <button class="tile" data-goto="import">
               <span class="tile-ico">📥</span><span class="tile-title">Import</span>
-              <span class="tile-desc">Lectures, documents, Notion — keep adding.</span>
+              <span class="tile-desc">Lectures, documents, Notion - keep adding.</span>
             </button>
             <button class="tile" data-goto="library">
               <span class="tile-ico">📚</span><span class="tile-title">Library</span>
@@ -95,7 +95,7 @@
             <button class="seg" data-import="browse">📂 Browse files</button>
           </div>
 
-          <p class="hint">📡 <strong>Lectures</strong> come bundled with a course — import them from
+          <p class="hint">📡 <strong>Lectures</strong> come bundled with a course - import them from
             <strong>Import a Moodle course</strong>, where they're detected and transcribed automatically
             alongside that course's documents.</p>
 
@@ -137,7 +137,7 @@
             <div class="card">
               <h3>🗒️ Import a Notion export</h3>
               <p class="hint">In Notion: <em>••• → Export → Markdown &amp; HTML</em>. Upload the
-                <code>.zip</code> you get (nested <code>ExportBlock</code> zips are handled automatically) —
+                <code>.zip</code> you get (nested <code>ExportBlock</code> zips are handled automatically) -
                 or point at a single <code>.html</code> file or an unzipped export folder. Produces clean
                 Markdown in your Library, great as NotebookLM / AI sources.</p>
               <div class="row">
@@ -172,13 +172,13 @@
         <!-- 3 · LIBRARY -->
         <section id="library" class="panel">
           <h2><span class="step-chip">3</span> Library <button id="transcripts-refresh" class="small ghost">↻ refresh</button></h2>
-          <p class="panel-intro">Everything you've imported for this course — transcripts and converted documents —
+          <p class="panel-intro">Everything you've imported for this course - transcripts and converted documents -
             in one searchable place.</p>
 
           <div class="card">
             <h3>🔎 Search everything</h3>
             <div class="row">
-              <input type="text" id="search-q" placeholder="Search across every transcript — e.g. three-way handshake" />
+              <input type="text" id="search-q" placeholder="Search across every transcript - e.g. three-way handshake" />
               <button id="search-go">Search</button>
             </div>
             <div id="search-results" class="results"></div>
@@ -239,8 +239,8 @@
 
           <div class="card feature-card">
             <h3>📦 Export everything for AI <span class="pill">all sources</span></h3>
-            <p class="hint">One click brings <strong>everything you've imported</strong> together —
-              lecture transcripts, converted documents and Notion pages — into clean Markdown under
+            <p class="hint">One click brings <strong>everything you've imported</strong> together -
+              lecture transcripts, converted documents and Notion pages - into clean Markdown under
               <code>_notebooklm/</code>, plus a single combined <code>everything_pack.md</code> you can
               drop into <strong>NotebookLM</strong> or hand to <strong>any other AI</strong>.</p>
             <div class="row">
@@ -259,7 +259,7 @@
             <div class="card">
               <h3>📓 NotebookLM sources</h3>
               <p class="hint">Clean, de-timestamped Markdown (one file per lecture) under
-                <code>_notebooklm/</code> — ready to upload to NotebookLM as sources.</p>
+                <code>_notebooklm/</code> - ready to upload to NotebookLM as sources.</p>
               <div class="row">
                 <input type="text" id="nlm-dest" placeholder="Output folder (leave blank for default)" style="flex:1" />
               </div>
@@ -272,7 +272,7 @@
 
             <div class="card">
               <h3>🗃️ Notion study database (CSV)</h3>
-              <p class="hint">One row per lecture — Name, Week, Date, Topic, Tags, Status, Summary.
+              <p class="hint">One row per lecture - Name, Week, Date, Topic, Tags, Status, Summary.
                 In Notion: <em>Import → CSV</em>, then set Tags to <em>Multi-select</em>. With an
                 <strong>AI provider configured</strong> the Summary column is LLM-written. Runs as a job.</p>
               <div class="row">
@@ -319,8 +319,8 @@
 
           <details class="card" id="fc-cat-section">
             <summary><strong>🏷️ Categorize an existing deck</strong> <span class="muted">(LLM-powered topic tagging)</span></summary>
-            <p class="hint">Paste a deck (CSV or tab-separated: <code>front, back[, tags]</code>) — or give a file
-              path — and the LLM adds intelligent course/topic tags. Requires Ollama.</p>
+            <p class="hint">Paste a deck (CSV or tab-separated: <code>front, back[, tags]</code>) - or give a file
+              path - and the LLM adds intelligent course/topic tags. Requires Ollama.</p>
             <div id="fc-cat-llm-missing" class="banner warn hidden">
               Categorization requires a local LLM. Install extra dependencies and start Ollama.
             </div>
@@ -347,10 +347,10 @@
         <section id="moodle-quick" class="panel">
           <h2>📘 Import a Moodle course</h2>
           <p class="panel-intro">Connect to your Moodle site and pick a course. The assistant reads it
-            through Moodle's official mobile <strong>web-service API</strong> — exact titles, file types
-            and lecture feeds, with no page-scraping or guesswork — then prepares everything for export.</p>
+            through Moodle's official mobile <strong>web-service API</strong> - exact titles, file types
+            and lecture feeds, with no page-scraping or guesswork - then prepares everything for export.</p>
 
-          <!-- STEP 1 — CONNECT -->
+          <!-- STEP 1 - CONNECT -->
           <div class="card mq-step">
             <div class="mq-step-head"><span class="mq-num">1</span><h3>Connect to Moodle</h3></div>
             <p class="hint">Enter your Moodle site (or any course link on it), for example
@@ -387,7 +387,7 @@
             <div id="mq-import-result" class="results"></div>
           </div>
 
-          <!-- STEP 2 — LECTURE RECORDINGS -->
+          <!-- STEP 2 - LECTURE RECORDINGS -->
           <div class="card mq-step hidden" id="mq-step-transcribe">
             <div class="mq-step-head"><span class="mq-num">2</span><h3>Lecture recordings</h3></div>
             <p class="hint" id="mq-recommend">Determining the best transcription settings for this computer…</p>
@@ -408,7 +408,7 @@
 
             <div class="mq-grab">
               <span class="toggles-label">When transcribing:</span>
-              <label class="toggle" title="Transcribe each recording (downloads audio only — small). Leave off to just list/download the recordings."><input type="checkbox" id="mq-make-transcript" checked /> Make a transcript (recording + transcript)</label>
+              <label class="toggle" title="Transcribe each recording (downloads audio only - small). Leave off to just list/download the recordings."><input type="checkbox" id="mq-make-transcript" checked /> Make a transcript (recording + transcript)</label>
             </div>
             <div class="row">
               <button id="mq-autotranscribe" class="primary">Transcribe all recordings</button>
@@ -416,12 +416,12 @@
             </div>
           </div>
 
-          <!-- STEP 3 — EXPORT -->
+          <!-- STEP 3 - EXPORT -->
           <div class="card mq-step hidden" id="mq-step-export">
             <div class="mq-step-head"><span class="mq-num">3</span><h3>Export</h3></div>
             <p class="hint">Choose a destination for this course. Want to fold in extra material first?
               Add <strong>documents</strong> or a <strong>Notion</strong> export from
-              <em>Import your stuff</em> — the “general AI” pack below bundles every source together.</p>
+              <em>Import your stuff</em> - the “general AI” pack below bundles every source together.</p>
             <div class="export-choice">
               <button id="mq-export-nblm" class="tile">
                 <span class="tile-ico">📓</span><span class="tile-title">For NotebookLM</span>

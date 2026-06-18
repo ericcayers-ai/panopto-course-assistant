@@ -1,15 +1,15 @@
 """
-exports.py — preset-driven, scoped export engine (§9).
+exports.py - preset-driven, scoped export engine (§9).
 
 A thin aggregator over the existing exporters in :mod:`app.core` (NotebookLM,
 all-sources AI pack, subtitle/format generation), :mod:`app.flashcards` (Anki)
 and :mod:`app.study` (Notion CSV). It adds three things the roadmap asks for:
 
-* **Presets** — ``revision | ai | exam | notion | anki | archive`` bundle a set of
+* **Presets** - ``revision | ai | exam | notion | anki | archive`` bundle a set of
   targets so a student picks an intent, not a format.
-* **Scope** — ``lecture | week | topic | course | all`` selects which lectures feed
+* **Scope** - ``lecture | week | topic | course | all`` selects which lectures feed
   the export (computed from the §2 index).
-* **Preview** — list exactly what *would* be written, writing nothing, so the user
+* **Preview** - list exactly what *would* be written, writing nothing, so the user
   confirms first.
 
 Plus a portable **course archive** (zip of metadata + library + settings) that
@@ -82,7 +82,7 @@ def resolve_targets(preset: str = "", target: str = "") -> List[str]:
 
 def preview(output_dir: Path, *, preset: str = "", target: str = "",
            scope: str = "course", scope_target: str = "", course: str = "") -> Dict[str, Any]:
-    """List what an export would produce — writes nothing."""
+    """List what an export would produce - writes nothing."""
     if scope not in SCOPES:
         raise ValueError(f"scope must be one of {SCOPES}")
     targets = resolve_targets(preset, target)

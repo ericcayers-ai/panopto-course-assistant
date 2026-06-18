@@ -1,5 +1,5 @@
 """
-courses.py — multi-course CRUD service (§1).
+courses.py - multi-course CRUD service (§1).
 
 Thin service layer over the database DAOs: validation, defaults, per-course
 folders on disk, and the "active course" concept. Routes call these; all SQL

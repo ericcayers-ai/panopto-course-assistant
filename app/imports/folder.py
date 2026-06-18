@@ -1,5 +1,5 @@
 """
-imports/folder.py — recursive, structure-preserving folder import (§7).
+imports/folder.py - recursive, structure-preserving folder import (§7).
 
 Point at a folder of mixed course material and get back a categorised manifest:
 documents, media (for transcription), subtitles (reused as-is, no transcription),
@@ -34,7 +34,7 @@ def _categorize(ext: str) -> str:
 
 
 def scan(folder: Path, *, include_subfolders: bool = True) -> Dict[str, Any]:
-    """Walk ``folder`` and classify every file. No writes — safe as a preflight."""
+    """Walk ``folder`` and classify every file. No writes - safe as a preflight."""
     folder = Path(folder)
     if not folder.is_dir():
         raise NotADirectoryError(f"Not a folder: {folder}")
@@ -68,7 +68,7 @@ def scan(folder: Path, *, include_subfolders: bool = True) -> Dict[str, Any]:
 def import_folder(db, output_dir: Path, folder: Path, *, course_id: Optional[int],
                  include_subfolders: bool = True) -> Dict[str, Any]:
     """Record documents/subtitles from a folder into the DB index. Media files are
-    *listed* (with a transcription hint) but not transcribed here — that stays an
+    *listed* (with a transcription hint) but not transcribed here - that stays an
     explicit, queued job. Returns the scan manifest plus how many were indexed."""
     manifest = scan(folder, include_subfolders=include_subfolders)
     indexed = 0

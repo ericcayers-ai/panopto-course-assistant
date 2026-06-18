@@ -1,5 +1,5 @@
 """
-core.py — engine-independent logic for the Panopto Course Assistant.
+core.py - engine-independent logic for the Panopto Course Assistant.
 
 Adapted from the original single-file CLI tool (panopto_course_assistant.py).
 Everything here works with only the standard library + `requests`; the heavy
@@ -493,7 +493,7 @@ def render_md(item: LectureItem, segments: List[Dict[str, Any]], meta: Dict[str,
 # NotebookLM works best with clean, readable prose: a clear title, a compact
 # metadata line for grounding/citations, and continuous paragraphs WITHOUT
 # per-segment timestamps (timestamps fragment sentences and add noise). These
-# helpers turn whisper segments — or an already-written .txt — into that shape.
+# helpers turn whisper segments - or an already-written .txt - into that shape.
 # ---------------------------------------------------------------------------
 
 # Matches a leading grouped timestamp like "[00:12:30]  " produced by render_txt.
@@ -528,7 +528,7 @@ def notebooklm_header(item: LectureItem, course: str = "") -> List[str]:
         bits.append(human_duration(item.duration))
     source_line = "Source: lecture transcript"
     if course:
-        source_line += f" — {course}"
+        source_line += f" - {course}"
     lines = [f"# {item.title}", ""]
     if bits:
         lines.append("> " + "  ·  ".join(bits))
@@ -550,7 +550,7 @@ def clean_txt_to_notebooklm(raw_txt: str, title: str = "", course: str = "") -> 
     blocks = [b.strip() for b in raw_txt.split("\n\n") if b.strip()]
     texts = [_TS_PREFIX.sub("", b).replace("\n", " ").strip() for b in blocks]
     paragraphs = paragraphs_from_texts(texts)
-    header = [f"# {title}", "", "> Source: lecture transcript" + (f" — {course}" if course else ""), ""] if title else []
+    header = [f"# {title}", "", "> Source: lecture transcript" + (f" - {course}" if course else ""), ""] if title else []
     return ("\n".join(header) + "\n" + "\n\n".join(paragraphs)).strip() + "\n"
 
 
@@ -621,7 +621,7 @@ def read_any_text(path: Path) -> str:
 
 def _is_internal(f: Path, output_dir: Path) -> bool:
     """True for hidden dotfiles (e.g. ``.secrets.json``), manifests/logs, and
-    anything under an export/working folder (``_*``) — none of which are user
+    anything under an export/working folder (``_*``) - none of which are user
     content and must never be listed or mislabelled as a lecture transcript."""
     rel = f.relative_to(output_dir)
     return any(part.startswith(("_", ".")) for part in rel.parts)
@@ -738,7 +738,7 @@ def search_transcripts(output_dir: Path, query: str, context: int = 60) -> List[
 
 
 # ---------------------------------------------------------------------------
-# Documents -> Markdown (via MarkItDown) — versatile, for NotebookLM / other AI
+# Documents -> Markdown (via MarkItDown) - versatile, for NotebookLM / other AI
 # ---------------------------------------------------------------------------
 
 # Extensions MarkItDown can convert. Slides/docs/sheets/pages all become text
@@ -912,7 +912,7 @@ NOTEBOOKLM_DIRNAME = "_notebooklm"
 
 # A lecture group counts as a real transcript only if it has one of these
 # outputs; a lone ``.md`` (a Moodle outline or stray source dropped in the
-# folder) is a *source*, not a lecture — it must never be exported, listed, or
+# folder) is a *source*, not a lecture - it must never be exported, listed, or
 # counted as a transcript. Used by both the library listing and the exporters
 # so the "lecture transcript" label means exactly the same thing everywhere.
 _TRANSCRIPT_FMTS = {"txt", "json", "srt", "vtt", "summary", "notebooklm"}
@@ -942,14 +942,14 @@ def _notebooklm_body_for_group(output_dir: Path, group: Dict[str, Any], course: 
 
     Prefers the .json output (has segments + metadata); falls back to the
     grouped-timestamp .txt; finally to stripping the .md. Returns ("", "") when no
-    usable *prose* is found — a header-only body (empty/interrupted transcription)
+    usable *prose* is found - a header-only body (empty/interrupted transcription)
     is treated as empty so it is excluded from both per-lecture files and the pack.
     """
     fmts = group["formats"]
 
     if "json" in fmts:
         # An empty/corrupt .json (e.g. an interrupted transcription) must not sink
-        # the whole export — fall through to the .txt/.md sources below instead.
+        # the whole export - fall through to the .txt/.md sources below instead.
         try:
             data = json.loads((output_dir / fmts["json"]).read_text(encoding="utf-8", errors="replace"))
         except (json.JSONDecodeError, OSError):
@@ -1000,7 +1000,7 @@ def export_notebooklm(
 
     Writes one clean ``.md`` per lecture under ``<output_dir>/_notebooklm/``
     (mirroring the week/topic folder structure). If ``combined`` is set, also
-    writes a single ``course_pack.md`` containing every lecture — handy as one
+    writes a single ``course_pack.md`` containing every lecture - handy as one
     NotebookLM upload. ``selection`` (a list of "<folder>/<stem>" or "<stem>"
     keys) limits which lectures are exported; ``None`` exports all.
     """
@@ -1028,7 +1028,7 @@ def export_notebooklm(
 
     combined_path = None
     if combined and docs:
-        header = [f"# {course or 'Course'} — Lecture Transcripts", ""]
+        header = [f"# {course or 'Course'} - Lecture Transcripts", ""]
         header.append("## Contents")
         header += [f"- {title}" for title, _ in docs]
         header.append("")
@@ -1079,8 +1079,8 @@ def export_all_sources(output_dir: Path, combined: bool = True, course: str = ""
 
     Gathers cleaned lecture transcripts *and* the converted documents (``_docs``)
     and Notion pages (``_notion``) already in the library, writes the per-lecture
-    transcript Markdown into ``_notebooklm/`` (as the normal export does), and —
-    when ``combined`` is set — concatenates all three into a single
+    transcript Markdown into ``_notebooklm/`` (as the normal export does), and -
+    when ``combined`` is set - concatenates all three into a single
     ``everything_pack.md`` with a grouped table of contents. The combined pack is
     plain Markdown, so it works as a NotebookLM source *or* for any other AI.
     """
@@ -1107,7 +1107,7 @@ def export_all_sources(output_dir: Path, combined: bool = True, course: str = ""
     dest = ensure_dir(output_dir / NOTEBOOKLM_DIRNAME)
     combined_path = None
     if combined and total:
-        toc = [f"# {course or 'Course'} — All sources", ""]
+        toc = [f"# {course or 'Course'} - All sources", ""]
         for name, items in sections:
             if not items:
                 continue
@@ -1137,7 +1137,7 @@ def export_formats(output_dir: Path, formats: List[str], interval: int = 30) -> 
     """(Re)generate output formats (srt/vtt/txt/md/notebooklm/summary) for every
     transcribed lecture from its stored ``.json``, written next to the lecture.
 
-    This is how subtitles and alternate formats are produced — transcription
+    This is how subtitles and alternate formats are produced - transcription
     itself just keeps a clean canonical set, and anything else is generated here
     on demand from the rich JSON.
     """
@@ -1204,9 +1204,9 @@ def _collect_dir_files(output_dir: Path, subdir: str) -> List[Dict[str, Any]]:
 
 
 def list_library(output_dir: Path) -> Dict[str, Any]:
-    """A comprehensive, categorised view of *everything* in the library — not just
+    """A comprehensive, categorised view of *everything* in the library - not just
     transcripts, but converted documents, Notion pages, generated exports and any
-    other source files — so nothing the user imported is hidden."""
+    other source files - so nothing the user imported is hidden."""
     all_groups = list_transcripts(output_dir)
     transcripts = [g for g in all_groups if _is_transcript_group(g)]
     in_groups = {p for g in all_groups for p in g["formats"].values()}
@@ -1301,7 +1301,7 @@ def split_sentences(text: str) -> List[str]:
 
 def _is_real_sentence(s: str) -> bool:
     """Reject degenerate fragments (stray abbreviations, one-word splits) from
-    becoming summary bullets — they must carry at least three real words."""
+    becoming summary bullets - they must carry at least three real words."""
     return len(re.findall(r"[A-Za-z]{2,}", s)) >= 3
 
 
@@ -1346,7 +1346,7 @@ def render_summary(item: LectureItem, segments: List[Dict[str, Any]], text: str 
     if not text:
         text = " ".join((s.get("text") or "").strip() for s in segments).strip()
     points = summarize_text(text, max_sentences=8)
-    lines = [f"# Summary — {item.title}", ""]
+    lines = [f"# Summary: {item.title}", ""]
     if item.week is not None:
         lines.append(f"*Week {item.week}*")
         lines.append("")
