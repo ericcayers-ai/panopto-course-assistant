@@ -1153,8 +1153,7 @@ document.querySelectorAll(".mq-auth-tab").forEach((tab) =>
     $("mq-auth-token").classList.toggle("hidden", which !== "token");
   }));
 
-// "Open security keys ↗" — builds the managetoken.php URL from whatever the user
-// typed in #mq-url and opens it in a new tab so they can copy their token.
+// "Open security keys ↗" — opens managetoken.php in a new tab (Option A).
 $("mq-open-token-page")?.addEventListener("click", () => {
   const raw = $("mq-url").value.trim();
   if (!raw) { toast("Enter your Moodle site URL first.", "warn"); return; }
@@ -1164,6 +1163,30 @@ $("mq-open-token-page")?.addEventListener("click", () => {
   } catch (_) {
     toast("Enter a valid Moodle URL first (e.g. https://elearn.waikato.ac.nz).", "warn");
   }
+});
+
+// "Open sign-in page ↗" — Option B: browser SSO launch flow.
+// Fetches the launch.php URL from the backend and opens it in a new tab.
+$("mq-launch-sso")?.addEventListener("click", async () => {
+  const url = $("mq-url").value.trim();
+  if (!url) { toast("Enter your Moodle site URL first.", "warn"); return; }
+  try {
+    const d = await api(`/api/moodle/launch-url?url=${encodeURIComponent(url)}`);
+    window.open(d.launch_url, "_blank", "noopener,noreferrer");
+  } catch (e) { toast(e.message, "err"); }
+});
+
+// "Extract & connect" — decodes the moodlemobile:// URL the user copied from
+// their address bar, puts the extracted token into #mq-token, and fires Connect.
+$("mq-launch-extract")?.addEventListener("click", async () => {
+  const raw = $("mq-launch-url").value.trim();
+  if (!raw) { toast("Paste the moodlemobile:// URL from your browser first.", "warn"); return; }
+  try {
+    const d = await postJSON("/api/moodle/decode-launch-token", { raw });
+    $("mq-token").value = d.token;
+    toast("Token extracted — connecting…", "ok");
+    $("mq-connect").click();
+  } catch (e) { toast(e.message, "err"); }
 });
 
 // Connect: obtain a web-service token (stored locally) and list the courses.

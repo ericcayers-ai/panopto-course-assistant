@@ -1369,6 +1369,65 @@ def _save_api_outline(model: Dict[str, Any]) -> str:
     return target.relative_to(OUTPUT_DIR).as_posix()
 
 
+@app.get("/api/moodle/launch-url")
+def api_moodle_launch_url(url: str = "") -> Dict[str, Any]:
+    """Return the Moodle mobile launch URL for browser-based SSO token acquisition.
+    The user opens this URL, authenticates via their institution's SSO, and Moodle
+    redirects to ``moodlemobile://token=<base64>`` — they copy that URL and we
+    decode it via /api/moodle/decode-launch-token."""
+    if not url.strip():
+        raise HTTPException(status_code=400, detail="Enter a Moodle site URL first.")
+    try:
+        base = moodle_api.normalize_base_url(url)
+    except moodle_api.MoodleApiError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    launch = (f"{base}admin/tool/mobile/launch.php"
+              f"?service=moodle_mobile_app&passport=courseasst&urlscheme=moodlemobile")
+    return {"launch_url": launch}
+
+
+class DecodeLaunchTokenReq(BaseModel):
+    raw: str   # full moodlemobile://token=... URL pasted from the browser address bar
+
+
+@app.post("/api/moodle/decode-launch-token")
+def api_moodle_decode_launch_token(req: DecodeLaunchTokenReq) -> Dict[str, Any]:
+    """Decode the moodlemobile:// redirect URL that Moodle issues after a successful
+    browser SSO login and extract the web-service token from it.
+
+    Moodle's format (all versions):
+      moodlemobile://token=<PASSPORT_OR_BASE64>
+
+    Older Moodle (< 3.9):  payload = base64(json({"token":"…","privatetoken":"…"}))
+    Moodle ≥ 3.9:          payload = <passport>:::base64(json({"token":"…",…}))
+    """
+    import base64 as _b64
+    import re as _re
+
+    raw = req.raw.strip()
+    # Strip leading scheme prefix
+    raw = _re.sub(r'^moodlemobile://token=', '', raw, flags=_re.IGNORECASE)
+    # Strip the PASSPORT::: prefix used in Moodle ≥ 3.9
+    raw = _re.sub(r'^[^:]+:::', '', raw)
+    # Add padding so base64 decode works even if the string was truncated by the browser
+    padded = raw + "==="
+    try:
+        payload = _json.loads(_b64.b64decode(padded).decode("utf-8"))
+    except Exception:
+        raise HTTPException(
+            status_code=400,
+            detail="Could not decode the URL. Copy the full address-bar URL "
+                   "(starting with moodlemobile://) and try again.")
+    token = payload.get("token") or payload.get("wstoken") or payload.get("moodletoken")
+    if not token:
+        keys = list(payload.keys())
+        raise HTTPException(
+            status_code=400,
+            detail=f"Token not found in decoded data (keys: {keys}). "
+                   "Try copying the URL again — make sure you have the full string.")
+    return {"token": str(token)}
+
+
 @app.post("/api/moodle/connect")
 def api_moodle_connect(req: MoodleConnectReq) -> Dict[str, Any]:
     """Connect to a Moodle site through its official mobile web-service API and
