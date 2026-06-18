@@ -283,6 +283,62 @@ def parse_feed(source: str, cookies: str = "") -> List[LectureItem]:
     return parse_feed_bytes(r.content)
 
 
+def panopto_feed_variants(url: str) -> Dict[str, str]:
+    """Given a Panopto podcast RSS URL, return ``{"audio": <mp3 feed>,
+    "video": <mp4 feed>}`` by flipping the ``type`` query parameter.
+
+    Panopto exposes the same course recordings as parallel audio (``type=mp3``)
+    and video (``type=mp4``) feeds at the same endpoint. We transcribe from the
+    smaller audio feed and keep the video feed for the SRT/recording export.
+    Returns the original URL for any variant that can't be derived.
+    """
+    from urllib.parse import urlparse, parse_qs, urlencode, urlunparse
+
+    try:
+        parts = urlparse(url)
+        q = parse_qs(parts.query, keep_blank_values=True)
+    except Exception:
+        return {"audio": url, "video": url}
+
+    def _with_type(kind: str) -> str:
+        q2 = {k: list(v) for k, v in q.items()}
+        q2["type"] = [kind]
+        return urlunparse(parts._replace(query=urlencode(q2, doseq=True)))
+
+    if "type" not in q:
+        return {"audio": url, "video": url}
+    return {"audio": _with_type("mp3"), "video": _with_type("mp4")}
+
+
+def merge_panopto_variants(
+    audio_items: List["LectureItem"], video_items: List["LectureItem"]
+) -> List[Dict[str, Any]]:
+    """Combine the audio and video Panopto feeds into one list of lecture dicts.
+
+    Each entry uses the **audio** enclosure as ``url`` (small, for transcription)
+    and carries the matching **video** enclosure as ``video_url`` (for the SRT
+    recording export), paired by title then guid. Falls back gracefully when only
+    one feed could be fetched.
+    """
+    vid_by_key: Dict[str, str] = {}
+    for v in video_items or []:
+        if v.safe_title:
+            vid_by_key.setdefault(v.safe_title, v.url)
+        if v.guid:
+            vid_by_key.setdefault(v.guid, v.url)
+
+    base = audio_items or video_items or []
+    out: List[Dict[str, Any]] = []
+    for a in base:
+        d = a.to_dict()
+        video_url = vid_by_key.get(a.safe_title) or vid_by_key.get(a.guid) or ""
+        if not video_url and not audio_items:
+            video_url = a.url       # only the video feed was available
+        d["video_url"] = video_url
+        out.append(d)
+    return out
+
+
 def channel_title(raw: bytes) -> str:
     try:
         root = ET.fromstring(raw)

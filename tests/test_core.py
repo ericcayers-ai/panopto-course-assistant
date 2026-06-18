@@ -574,3 +574,39 @@ def test_reorganize_idempotent(tmp_path):
 )
 def test_split_stem_format(name, stem, fmt):
     assert core._split_stem_format(name) == (stem, fmt)
+
+
+# ---------------------------------------------------------------------------
+# Panopto podcast feed variants + audio/video merge
+# ---------------------------------------------------------------------------
+
+def test_panopto_feed_variants_swaps_type():
+    base = ("https://waikato.au.panopto.com/Panopto/Podcast/Podcast.ashx?"
+            "courseid=cd705e4f-59d7-4966-9b28-b3fb01759331&type=mp4")
+    v = core.panopto_feed_variants(base)
+    assert "type=mp3" in v["audio"]
+    assert "type=mp4" in v["video"]
+    assert "courseid=cd705e4f-59d7-4966-9b28-b3fb01759331" in v["audio"]
+
+
+def test_panopto_feed_variants_without_type_is_passthrough():
+    url = "https://example.com/feed.xml"
+    v = core.panopto_feed_variants(url)
+    assert v == {"audio": url, "video": url}
+
+
+def test_merge_panopto_variants_pairs_audio_with_video():
+    audio = [core.LectureItem(title="Week11_Link Layer", url="https://x/a/w11.mp3"),
+             core.LectureItem(title="Week10 Net", url="https://x/a/w10.mp3")]
+    video = [core.LectureItem(title="Week11_Link Layer", url="https://x/v/w11.mp4"),
+             core.LectureItem(title="Week10 Net", url="https://x/v/w10.mp4")]
+    merged = core.merge_panopto_variants(audio, video)
+    assert merged[0]["url"] == "https://x/a/w11.mp3"           # transcribe from audio
+    assert merged[0]["video_url"] == "https://x/v/w11.mp4"     # SRT export uses video
+
+
+def test_merge_panopto_variants_video_only_fallback():
+    video = [core.LectureItem(title="Week11", url="https://x/v/w11.mp4")]
+    merged = core.merge_panopto_variants([], video)
+    assert merged[0]["url"] == "https://x/v/w11.mp4"
+    assert merged[0]["video_url"] == "https://x/v/w11.mp4"

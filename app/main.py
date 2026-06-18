@@ -60,7 +60,7 @@ from .jobs import manager
 BASE_DIR = Path(__file__).resolve().parent.parent
 # Static assets live next to the app; CA_STATIC_DIR can override the location.
 STATIC_DIR = Path(os.environ.get("CA_STATIC_DIR", BASE_DIR / "static"))
-APP_VERSION = "2.5.1"
+APP_VERSION = "2.5.0"
 # Where transcripts are written/read. Override with PANOPTO_OUTPUT.
 OUTPUT_DIR = Path(os.environ.get("PANOPTO_OUTPUT", BASE_DIR / "transcripts")).resolve()
 core.ensure_dir(OUTPUT_DIR)
@@ -515,9 +515,10 @@ def _export_recordings(dest_dir: Path, cookies: str = "") -> Dict[str, Any]:
             except OSError:
                 pass
         # Not kept in the library — re-download from the stored source URL.
+        # Prefer the mp4 video URL (we transcribe from audio, so `url` may be mp3).
         try:
             data = json.loads(json_path.read_text(encoding="utf-8", errors="replace"))
-            url = (data.get("url") or "").strip()
+            url = (data.get("video_url") or data.get("url") or "").strip()
         except (json.JSONDecodeError, OSError):
             url = ""
         if url:
@@ -1011,6 +1012,70 @@ def api_feed(req: FeedRequest) -> Dict[str, Any]:
     return {"count": len(items), "lectures": [it.to_dict() for it in items]}
 
 
+@app.post("/api/moodle/panopto-feed")
+def api_moodle_panopto_feed(req: FeedRequest) -> Dict[str, Any]:
+    """Parse a Panopto podcast RSS feed into lecture recordings.
+
+    Accepts either the audio (``type=mp3``) or video (``type=mp4``) podcast URL —
+    the kind shown in Moodle's Panopto block — and fetches both variants so each
+    recording carries a small audio ``url`` for transcription plus a ``video_url``
+    for the SRT/recording export. Falls back to whichever feed is reachable.
+    """
+    variants = core.panopto_feed_variants(req.source)
+    audio_items: List[core.LectureItem] = []
+    video_items: List[core.LectureItem] = []
+    errors: List[str] = []
+    try:
+        audio_items = core.parse_feed(variants["audio"], cookies=req.cookies)
+    except Exception as e:
+        errors.append(f"audio: {e}")
+    try:
+        video_items = core.parse_feed(variants["video"], cookies=req.cookies)
+    except Exception as e:
+        errors.append(f"video: {e}")
+    if not audio_items and not video_items:
+        raise HTTPException(
+            status_code=400,
+            detail=("Could not read the Panopto feed. The RSS URL usually needs "
+                    "your Panopto/Moodle sign-in — open it in a browser first, or "
+                    f"paste session cookies. ({'; '.join(errors)})"),
+        )
+    lectures = core.merge_panopto_variants(audio_items, video_items)
+    return {"count": len(lectures), "lectures": lectures,
+            "audio_feed": variants["audio"], "video_feed": variants["video"]}
+
+
+class PanoptoDownloadRequest(BaseModel):
+    lectures: List[Dict[str, Any]]    # recording dicts from /api/moodle/panopto-feed
+    output_dir: str                   # folder to save the videos in
+    cookies: str = ""
+
+
+@app.post("/api/panopto/download")
+def api_panopto_download(req: PanoptoDownloadRequest) -> Dict[str, Any]:
+    """Download Panopto recordings (video) into a folder, no transcription.
+
+    Used for the "lecture recording without transcript" path. Prefers each
+    lecture's ``video_url`` (mp4), falling back to ``url``.
+    """
+    dest = Path(req.output_dir).expanduser()
+    dest.mkdir(parents=True, exist_ok=True)
+    downloaded: List[str] = []
+    failed: List[str] = []
+    for lec in req.lectures:
+        stem = core.safe_name(lec.get("title") or lec.get("safe_title") or "recording")
+        url = (lec.get("video_url") or lec.get("url") or "").strip()
+        if not url:
+            failed.append(stem)
+            continue
+        try:
+            transcribe.download_media(url, dest / f"{stem}.mp4", cookies=req.cookies)
+            downloaded.append(stem)
+        except Exception:
+            failed.append(stem)
+    return {"downloaded": len(downloaded), "failed": failed, "output_dir": str(dest)}
+
+
 @app.post("/api/feed/upload")
 async def api_feed_upload(file: UploadFile = File(...)) -> Dict[str, Any]:
     raw = await file.read()
@@ -1415,6 +1480,7 @@ def _make_transcribe_work(payload: Dict[str, Any]):
             force=payload.get("force", False),
             cookies=payload.get("cookies", ""),
             course=payload.get("course", ""),
+            video_url=lecture.get("video_url", ""),
             progress=progress,
         )
 

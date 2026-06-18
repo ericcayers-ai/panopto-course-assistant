@@ -7,6 +7,7 @@ const State = {
   status: null,          // /api/status payload
   jobsTimer: null,
   mqFeeds: [],           // Panopto feeds discovered in the Moodle quick import
+  mqRecordings: [],      // recordings loaded from a pasted Panopto podcast RSS feed
 };
 
 // ---- tiny DOM + fetch helpers ---------------------------------------------
@@ -66,6 +67,41 @@ function promptModal(label, placeholder = "") {
     overlay.appendChild(box);
     document.body.appendChild(overlay);
     inp.focus();
+    inp.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") commit();
+      else if (e.key === "Escape") cancel();
+    });
+  });
+}
+
+// Export-destination chooser. Always shown before any export so the user
+// confirms where files land. Resolves to the chosen path (""=default folder),
+// or null if cancelled.
+function askExportDest(opts = {}) {
+  const { title = "Where should this be saved?",
+          hint = "Leave blank to use the default folder inside your library.",
+          placeholder = "C:\\Users\\…\\Course exports",
+          defaultValue = "",
+          confirmText = "Export here" } = opts;
+  return new Promise((resolve) => {
+    const overlay = el("div", { class: "modal-overlay",
+      onclick: (e) => { if (e.target === overlay) { overlay.remove(); resolve(null); } } });
+    const inp = el("input", { type: "text", placeholder, class: "modal-input",
+      autocomplete: "off", value: defaultValue });
+    const commit = () => { overlay.remove(); resolve(inp.value.trim()); };
+    const cancel = () => { overlay.remove(); resolve(null); };
+    const box = el("div", { class: "modal-box" }, [
+      el("p", { class: "modal-label", text: title }),
+      el("p", { class: "hint", text: hint }),
+      inp,
+      el("div", { class: "modal-actions" }, [
+        el("button", { text: confirmText, onclick: commit }),
+        el("button", { class: "ghost", text: "Cancel", onclick: cancel }),
+      ]),
+    ]);
+    overlay.appendChild(box);
+    document.body.appendChild(overlay);
+    inp.focus(); inp.select();
     inp.addEventListener("keydown", (e) => {
       if (e.key === "Enter") commit();
       else if (e.key === "Escape") cancel();
@@ -608,9 +644,12 @@ $("lib-clear").addEventListener("click", () => {
 $("export-all").addEventListener("click", async () => {
   const out = $("export-all-results");
   const btn = $("export-all");
+  const dest = await askExportDest({ title: "Export everything for AI — where to?",
+    defaultValue: $("export-all-dest")?.value.trim() || "" });
+  if (dest === null) return;                      // cancelled
+  if ($("export-all-dest")) $("export-all-dest").value = dest;
   btn.disabled = true; out.textContent = "Gathering every source…";
   try {
-    const dest = $("export-all-dest")?.value.trim() || "";
     const data = await api("/api/export/all", {
       method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ course: currentCourse(), combined: $("all-combined").checked, output_dir: dest || undefined }),
@@ -631,9 +670,12 @@ $("export-all").addEventListener("click", async () => {
 $("nlm-export").addEventListener("click", async () => {
   const out = $("nlm-results");
   const btn = $("nlm-export");
+  const dest = await askExportDest({ title: "Export NotebookLM sources — where to?",
+    defaultValue: $("nlm-dest")?.value.trim() || "" });
+  if (dest === null) return;
+  if ($("nlm-dest")) $("nlm-dest").value = dest;
   btn.disabled = true; out.textContent = "Exporting…";
   try {
-    const dest = $("nlm-dest")?.value.trim() || "";
     const data = await api("/api/export/notebooklm", {
       method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ course: currentCourse(), combined: $("nlm-combined").checked, output_dir: dest || undefined }),
@@ -656,9 +698,12 @@ $("nlm-export").addEventListener("click", async () => {
 $("studycsv-go").addEventListener("click", async () => {
   const out = $("studycsv-results");
   const btn = $("studycsv-go");
+  const dest = await askExportDest({ title: "Export Notion study CSV — where to?",
+    defaultValue: $("studycsv-dest")?.value.trim() || "" });
+  if (dest === null) return;
+  if ($("studycsv-dest")) $("studycsv-dest").value = dest;
   btn.disabled = true; out.textContent = "Queuing export…";
   try {
-    const dest = $("studycsv-dest")?.value.trim() || "";
     const data = await api("/api/export/notion-csv", {
       method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ course: currentCourse(), output_dir: dest || undefined }),
@@ -684,8 +729,15 @@ $("studycsv-go").addEventListener("click", async () => {
 // Lecture SRT export — writes SRT files to a user-chosen folder alongside videos
 $("srt-export").addEventListener("click", async () => {
   const out = $("srt-results");
-  const dest = $("srt-dest").value.trim();
-  if (!dest) { toast("Enter a folder path to save SRT files.", "warn"); return; }
+  const dest = await askExportDest({
+    title: "Export SRT + recordings — choose a folder",
+    hint: "Subtitles and each lecture's video are saved here together so players auto-load them.",
+    placeholder: "C:\\Videos\\Lectures",
+    defaultValue: $("srt-dest").value.trim(),
+    confirmText: "Export here" });
+  if (dest === null) return;
+  if (!dest) { toast("Choose a folder to save the SRT files and recordings.", "warn"); return; }
+  $("srt-dest").value = dest;
   const btn = $("srt-export");
   btn.disabled = true; out.textContent = "Exporting SRT files…";
   try {
@@ -781,9 +833,12 @@ function renderDeckResult(out, data, label) {
 $("fc-generate").addEventListener("click", async () => {
   const out = $("fc-gen-results");
   const btn = $("fc-generate");
+  const dest = await askExportDest({ title: "Generate flashcards — where to save the deck?",
+    defaultValue: $("fc-output-dir")?.value.trim() || "" });
+  if (dest === null) return;
+  if ($("fc-output-dir")) $("fc-output-dir").value = dest;
   btn.disabled = true; out.textContent = "Queuing flashcard job…";
   try {
-    const dest = $("fc-output-dir")?.value.trim() || "";
     const data = await api("/api/flashcards/generate", {
       method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -1285,11 +1340,16 @@ function renderMqImport(data, { grabLectures = true, grabTranscripts = true, gra
         + "transcribe them." }));
 
   State.mqFeeds = feeds;
+  State.mqRecordings = [];
   renderMqFeeds();
-  $("mq-step-transcribe").classList.toggle("hidden", !((grabLectures || grabTranscripts) && feeds.length));
+  // Show the recordings step whenever recordings are wanted, so the user can
+  // paste the Panopto RSS link even when the API auto-detected no feeds.
+  $("mq-step-transcribe").classList.toggle("hidden", !(grabLectures || grabTranscripts));
+  // Prefill the paste field with the best detected feed, if any.
+  if (feeds.length && $("mq-panopto-url") && !$("mq-panopto-url").value.trim())
+    $("mq-panopto-url").value = feeds[0];
   $("mq-step-export").classList.remove("hidden");
   toast("Course imported.", "ok");
-  if (grabTranscripts && feeds.length) autoTranscribeMq();
 }
 
 $("mq-import")?.addEventListener("click", async () => {
@@ -1324,49 +1384,95 @@ $("mq-import")?.addEventListener("click", async () => {
 
 function renderMqFeeds() {
   const box = $("mq-feeds"); if (!box) return; clear(box);
-  const feeds = State.mqFeeds;
-  if (!feeds.length) {
-    box.appendChild(el("p", { class: "muted small", text:
-      "No Panopto lecture feed was detected for this course." }));
+  const recs = State.mqRecordings || [];
+  const feeds = State.mqFeeds || [];
+  if (recs.length) {
+    box.appendChild(el("p", { class: "ok-text",
+      text: `🎬 ${recs.length} recording(s) loaded from the Panopto feed:` }));
+    recs.forEach((r) => box.appendChild(el("div", { class: "list-item" }, [
+      el("span", { class: "li-label", text: r.title || r.safe_title || "recording" }),
+      el("span", { class: "muted small", text: r.video_url ? "video + audio" : "audio" }),
+    ])));
     return;
   }
-  box.appendChild(el("p", { class: "muted small",
-    text: `${feeds.length} lecture feed(s) ready to transcribe:` }));
-  feeds.forEach((f, i) => box.appendChild(
-    el("div", { class: "list-item" }, [
-      el("span", { class: "li-label", text: `Feed ${i + 1}` }),
-      el("span", { class: "muted small", text: f.replace(/^https?:\/\//, "").slice(0, 60) + "…" }),
-    ])));
+  if (feeds.length) {
+    box.appendChild(el("p", { class: "muted small",
+      text: `${feeds.length} lecture feed(s) detected — paste the Panopto RSS link above to load them.` }));
+    return;
+  }
+  box.appendChild(el("p", { class: "muted small", text:
+    "No recordings loaded yet — paste the Panopto “Video podcast (RSS)” link above." }));
 }
 
+// Load recordings from a pasted Panopto podcast RSS URL.
+async function loadPanoptoRecordings() {
+  const url = $("mq-panopto-url")?.value.trim();
+  if (!url) { toast("Paste the Panopto Video podcast (RSS) link first.", "warn"); return; }
+  const btn = $("mq-panopto-load");
+  if (btn) { btn.disabled = true; btn.textContent = "Loading…"; }
+  try {
+    const d = await postJSON("/api/moodle/panopto-feed", { source: url });
+    State.mqRecordings = d.lectures || [];
+    renderMqFeeds();
+    toast(`Loaded ${State.mqRecordings.length} recording(s).`, "ok");
+  } catch (e) {
+    toast(e.message, "warn");
+    renderMqFeeds();
+  } finally { if (btn) { btn.disabled = false; btn.textContent = "Load recordings"; } }
+}
+$("mq-panopto-load")?.addEventListener("click", loadPanoptoRecordings);
+
 async function autoTranscribeMq() {
-  const feeds = State.mqFeeds;
-  if (!feeds.length) { toast("No lecture feed to transcribe.", "warn"); return; }
+  let recs = State.mqRecordings || [];
+  // If nothing loaded yet but a URL is pasted, load it first.
+  if (!recs.length && $("mq-panopto-url")?.value.trim()) {
+    await loadPanoptoRecordings();
+    recs = State.mqRecordings || [];
+  }
+  if (!recs.length) { toast("Paste the Panopto RSS link and load the recordings first.", "warn"); return; }
+
+  const makeTranscript = $("mq-make-transcript")?.checked !== false;
+
+  // "Recording without transcript" → just download the videos to a chosen folder.
+  if (!makeTranscript) {
+    const dest = await askExportDest({ title: "Download recordings — choose a folder",
+      hint: "Each lecture's video is saved here.", placeholder: "C:\\Videos\\Lectures" });
+    if (dest === null) return;
+    if (!dest) { toast("Choose a folder for the recordings.", "warn"); return; }
+    try {
+      const d = await postJSON("/api/panopto/download", { lectures: recs, output_dir: dest });
+      toast(`Downloaded ${d.downloaded} recording(s) to ${dest}.`, "ok");
+    } catch (e) { toast(e.message, "warn"); }
+    return;
+  }
+
+  // "Recording with transcript" → transcribe from audio (small download).
   if (!mqRecommend || !mqRecommend.ready) { toast(mqRecommend?.reason || "No transcription engine.", "warn"); return; }
   const settings = { engine: mqRecommend.engine, model: mqRecommend.model,
     device: mqRecommend.device, language: mqRecommend.language, interval: mqRecommend.interval,
-    keep_media: true };   // retain the recording so SRT export can sit it next to the video
+    audio_only: true };   // transcribe from audio; the video is fetched on SRT export
   let queued = 0;
-  for (const feed of feeds) {
+  for (const lec of recs) {
     try {
-      const fd = await postJSON("/api/feed", { source: feed });
-      for (const lec of (fd.lectures || [])) {
-        await postJSON("/api/transcribe", { ...settings, lecture: lec });
-        queued++;
-      }
-    } catch (e) { toast("Feed error: " + e.message, "warn"); }
+      await postJSON("/api/transcribe", { ...settings, lecture: lec });
+      queued++;
+    } catch (e) { toast("Transcribe error: " + e.message, "warn"); }
   }
-  if (queued) { toast(`Queued ${queued} lecture(s) — progress updates every 30s.`, "ok"); showTab("jobs"); startJobsPolling(); }
+  if (queued) { toast(`Queued ${queued} recording(s) — progress updates every 30s.`, "ok"); showTab("jobs"); startJobsPolling(); }
 }
 $("mq-autotranscribe")?.addEventListener("click", autoTranscribeMq);
 
 $("mq-export-nblm")?.addEventListener("click", () => mqExport("notebooklm"));
 $("mq-export-ai")?.addEventListener("click", () => mqExport("all"));
 async function mqExport(kind) {
-  const out = $("mq-export-result"); clear(out);
+  const out = $("mq-export-result");
+  const dest = await askExportDest({
+    title: `Export for ${kind === "notebooklm" ? "NotebookLM" : "a general AI"} — where to?` });
+  if (dest === null) return;
+  clear(out);
   try {
     const path = kind === "notebooklm" ? "/api/export/notebooklm" : "/api/export/all";
-    const body = kind === "notebooklm" ? { combined: true } : { combined: true };
+    const body = { combined: true, course: currentCourse(), output_dir: dest || undefined };
     const data = await postJSON(path, body);
     const dest = data.combined || data.dest || data.path || "the library";
     out.appendChild(el("div", { class: "ok-box", html:

@@ -325,6 +325,7 @@ def transcribe_lecture(
     force: bool = False,
     cookies: str = "",
     course: str = "",
+    video_url: str = "",
     progress: Optional[Callable[[str, float], None]] = None,
 ) -> Dict[str, Any]:
     outputs = [o for o in (outputs or ["txt", "srt", "md", "json"]) if o in core.OUTPUT_CHOICES] or ["txt"]
@@ -380,6 +381,9 @@ def transcribe_lecture(
         "runtime_s": round(runtime, 1),
         "source_video": str(media),
         "course": course,
+        # The mp4 recording URL, kept so the SRT export can fetch the video on
+        # demand even though we transcribed from the smaller audio download.
+        "video_url": video_url,
     }
     written = core.write_outputs(
         item, res["segments"], res["text"], out_dir, outputs, interval, meta

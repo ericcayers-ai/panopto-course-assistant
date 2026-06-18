@@ -377,8 +377,8 @@
 
               <div class="mq-grab">
                 <span class="toggles-label">Include:</span>
-                <label class="toggle" title="Download and convert slides, PDFs, Word and other documents"><input type="checkbox" id="mq-grab-docs" checked /> Documents</label>
-                <label class="toggle" title="Detect this course's lecture/recording feeds and transcribe them — lectures are always pulled as part of the course, never on their own"><input type="checkbox" id="mq-grab-transcripts" checked /> Lectures &amp; transcripts</label>
+                <label class="toggle" title="Download and convert lecture slides, PDFs, Word and other documents to Markdown"><input type="checkbox" id="mq-grab-docs" checked /> Lecture slides &amp; documents</label>
+                <label class="toggle" title="Detect this course's Panopto recording feeds so you can transcribe them in the next step"><input type="checkbox" id="mq-grab-transcripts" checked /> Lecture recordings</label>
                 <label class="toggle" title="Attach figures and diagrams extracted from documents"><input type="checkbox" id="mq-images" checked /> Images</label>
               </div>
 
@@ -387,14 +387,31 @@
             <div id="mq-import-result" class="results"></div>
           </div>
 
-          <!-- STEP 2 — LECTURES -->
+          <!-- STEP 2 — LECTURE RECORDINGS -->
           <div class="card mq-step hidden" id="mq-step-transcribe">
-            <div class="mq-step-head"><span class="mq-num">2</span><h3>Lectures</h3></div>
+            <div class="mq-step-head"><span class="mq-num">2</span><h3>Lecture recordings</h3></div>
             <p class="hint" id="mq-recommend">Determining the best transcription settings for this computer…</p>
+
+            <div class="mq-panopto">
+              <p class="hint">📡 Recordings live in your course's <strong>Panopto block</strong>, which the
+                Moodle API can't read directly. Open that block, copy the
+                <strong>“Video podcast (RSS)”</strong> link, and paste it here to load every recording.</p>
+              <div class="row">
+                <input type="text" id="mq-panopto-url" autocomplete="off"
+                  placeholder="https://…panopto.com/Panopto/Podcast/Podcast.ashx?courseid=…&amp;type=mp4" />
+                <button id="mq-panopto-load" class="ghost">Load recordings</button>
+              </div>
+            </div>
+
             <div id="mq-feeds" class="results"></div>
+
+            <div class="mq-grab">
+              <span class="toggles-label">When transcribing:</span>
+              <label class="toggle" title="Transcribe each recording (downloads audio only — small). Leave off to just list/download the recordings."><input type="checkbox" id="mq-make-transcript" checked /> Make a transcript (recording + transcript)</label>
+            </div>
             <div class="row">
-              <button id="mq-autotranscribe" class="primary">Transcribe all lectures</button>
-              <span class="muted small">Uses the best settings detected for this computer.</span>
+              <button id="mq-autotranscribe" class="primary">Transcribe all recordings</button>
+              <span class="muted small">Downloads audio only; the video is fetched later if you export SRT.</span>
             </div>
           </div>
 
