@@ -58,8 +58,10 @@ from . import sso_protocol
 from .jobs import manager
 
 BASE_DIR = Path(__file__).resolve().parent.parent
-STATIC_DIR = BASE_DIR / "static"
-APP_VERSION = "2.4.0"
+# CA_STATIC_DIR is set by run.py when running as a PyInstaller frozen exe so
+# the static folder is found in sys._MEIPASS rather than relative to __file__.
+STATIC_DIR = Path(os.environ.get("CA_STATIC_DIR", BASE_DIR / "static"))
+APP_VERSION = "2.5.0"
 # Where transcripts are written/read. Override with PANOPTO_OUTPUT.
 OUTPUT_DIR = Path(os.environ.get("PANOPTO_OUTPUT", BASE_DIR / "transcripts")).resolve()
 core.ensure_dir(OUTPUT_DIR)
