@@ -295,6 +295,9 @@ button.tag:hover { background: var(--brand); color: #fff; }
 .mq-auth-pane { display: flex; flex-direction: column; gap: 8px; }
 .mq-auth-pane input { width: 100%; }
 .mq-open-btn { align-self: flex-start; font-size: .82rem; }
+.mq-token-steps { margin: 0; padding-left: 1.4em; font-size: .85rem; color: var(--muted); line-height: 1.6; }
+.mq-token-steps li { margin-bottom: 2px; }
+.mq-sso-hint { font-size: .85rem; color: var(--brand); }
 
 /* Course picker (revealed after connect). */
 .mq-course-field { display: flex; align-items: center; gap: 10px; margin: 14px 0 4px; }

@@ -1203,13 +1203,26 @@ $("mq-connect")?.addEventListener("click", async () => {
   } catch (e) {
     const msg = e.message || "";
     if (msg.startsWith("SSO_REJECTED:")) {
-      // Auto-switch to the token tab and guide the user.
+      // Definitive SSO code — auto-switch to the token tab.
       document.querySelector('.mq-auth-tab[data-auth="token"]')?.click();
-      const hint = msg.slice("SSO_REJECTED:".length).trim();
-      setConnectStatus("warn", hint);
+      setConnectStatus("warn", msg.slice("SSO_REJECTED:".length).trim());
       toast("SSO site detected — paste a token to connect.", "warn");
     } else {
       setConnectStatus("off", msg);
+      // Ambiguous login failure: add a soft "try the token tab" hint so SSO
+      // users (whose site returns a generic 'Invalid login') know what to do.
+      if (/invalid login|invalid password/i.test(msg)) {
+        const statusText = $("mq-connect-text");
+        if (statusText) {
+          const a = el("a", { href: "#", class: "mq-sso-hint",
+            text: " → Try the token tab if your site uses Microsoft/Google SSO" });
+          a.addEventListener("click", (ev) => {
+            ev.preventDefault();
+            document.querySelector('.mq-auth-tab[data-auth="token"]')?.click();
+          });
+          statusText.appendChild(a);
+        }
+      }
       toast(msg, "err");
     }
   } finally { btn.disabled = false; btn.textContent = "Connect"; }

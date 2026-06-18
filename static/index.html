@@ -448,10 +448,15 @@
                   Moodle site. Your password is never stored.</p>
               </div>
               <div id="mq-auth-token" class="mq-auth-pane hidden">
-                <input type="text" id="mq-token" placeholder="Moodle web-service token" autocomplete="off" />
-                <p class="hint">Required for SSO / institutional sign-in (e.g. university accounts).
-                  Find your token at <strong>Profile → Security keys</strong> on your Moodle site,
-                  or in the Moodle mobile app → <em>Settings → Security keys</em>.</p>
+                <input type="text" id="mq-token" placeholder="Moodle Mobile Web Service token" autocomplete="off" />
+                <ol class="hint mq-token-steps">
+                  <li>Click <strong>Open Moodle security keys ↗</strong> below — it opens your
+                    Moodle security keys page in a new tab.</li>
+                  <li>Find the <strong>Moodle Mobile Web Service</strong> section and copy that token.
+                    <em>(Not the RSS token — it won't work.)</em></li>
+                  <li>If that section is missing, open the <strong>Moodle mobile app</strong>, sign in
+                    via your institution, then return to step 2.</li>
+                </ol>
                 <button id="mq-open-token-page" class="ghost small mq-open-btn" type="button">
                   Open Moodle security keys ↗
                 </button>
