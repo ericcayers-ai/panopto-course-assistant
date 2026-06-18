@@ -448,37 +448,34 @@
                   Moodle site. Your password is never stored.</p>
               </div>
               <div id="mq-auth-token" class="mq-auth-pane hidden">
-                <input type="text" id="mq-token" placeholder="Moodle Mobile Web Service token" autocomplete="off" />
 
-                <!-- Path A: security keys page (works if the token is visible there) -->
-                <details class="mq-sso-details">
-                  <summary>Option A — copy from Moodle security keys</summary>
+                <!-- Path B first — SSO is the common case for institutional Moodle -->
+                <div class="mq-token-section">
+                  <p class="hint mq-token-label"><strong>Sign in via browser</strong>
+                    <span class="muted"> — for Microsoft / Google SSO accounts</span></p>
                   <ol class="hint mq-token-steps">
-                    <li>Click <strong>Open Moodle security keys ↗</strong> below.</li>
-                    <li>Find the <strong>Moodle Mobile Web Service</strong> section and copy that token.<br/>
-                      <em>Not the RSS token — it won't work.</em></li>
-                    <li>Paste the token into the field above and click <strong>Connect</strong>.</li>
-                  </ol>
-                  <button id="mq-open-token-page" class="ghost small mq-open-btn" type="button">Open Moodle security keys ↗</button>
-                </details>
-
-                <!-- Path B: browser SSO launch flow (for SSO sites like Microsoft/Google) -->
-                <details class="mq-sso-details" id="mq-sso-launch-details">
-                  <summary>Option B — sign in via browser (Microsoft / Google SSO)</summary>
-                  <ol class="hint mq-token-steps">
-                    <li>Click <strong>Open sign-in page ↗</strong> — your Moodle sign-in opens in a new tab.</li>
-                    <li>Sign in with your institutional account (e.g. Microsoft). You may be
-                      redirected to a page that says <em>"this site can't be reached"</em> — that's expected.</li>
-                    <li>Copy the <strong>full URL</strong> from the browser address bar
-                      (it starts with <code>moodlemobile://token=</code>).</li>
-                    <li>Paste it into the field below and click <strong>Extract &amp; connect</strong>.</li>
+                    <li>Click <strong>Open sign-in page ↗</strong> below.</li>
+                    <li>Sign in with your institutional account. Your browser will then show a
+                      page saying <em>"this site can't be reached"</em> — that's expected.</li>
+                    <li>Copy the <strong>full URL</strong> from the address bar
+                      (starts with <code>moodlemobile://token=</code>) and paste it below.</li>
                   </ol>
                   <button id="mq-launch-sso" class="ghost small mq-open-btn" type="button">Open sign-in page ↗</button>
                   <div class="row mq-launch-row">
                     <input type="text" id="mq-launch-url" placeholder="moodlemobile://token=…" autocomplete="off" />
-                    <button id="mq-launch-extract" class="ghost small" type="button">Extract &amp; connect</button>
+                    <button id="mq-launch-extract" type="button">Extract &amp; connect</button>
                   </div>
-                </details>
+                </div>
+
+                <div class="mq-token-divider"><span>or paste a token directly</span></div>
+
+                <!-- Path A — manual token (visible on security keys page) -->
+                <input type="text" id="mq-token" placeholder="Moodle Mobile Web Service token" autocomplete="off" />
+                <div class="row mq-token-row-hint">
+                  <span class="hint muted">Find it at <strong>Profile → Security keys</strong>
+                    (look for <em>Moodle Mobile Web Service</em>, not RSS).</span>
+                  <button id="mq-open-token-page" class="ghost small mq-open-btn" type="button">Open security keys ↗</button>
+                </div>
               </div>
               <div class="row"><button id="mq-connect" class="primary" type="button">Connect</button></div>
               <div id="mq-connect-status" class="cookie-status hidden">

@@ -298,11 +298,14 @@ button.tag:hover { background: var(--brand); color: #fff; }
 .mq-token-steps { margin: 6px 0 8px; padding-left: 1.4em; font-size: .85rem; color: var(--muted); line-height: 1.6; }
 .mq-token-steps li { margin-bottom: 2px; }
 .mq-sso-hint { font-size: .85rem; color: var(--brand); }
-.mq-sso-details { border: 1px solid var(--border); border-radius: 6px; padding: 6px 10px; font-size: .85rem; }
-.mq-sso-details summary { cursor: pointer; color: var(--muted); padding: 2px 0; user-select: none; }
-.mq-sso-details[open] summary { color: var(--text); margin-bottom: 4px; }
-.mq-launch-row { margin-top: 6px; gap: 6px; }
+.mq-token-section { display: flex; flex-direction: column; gap: 6px; }
+.mq-token-label { margin: 0; }
+.mq-token-divider { display: flex; align-items: center; gap: 8px; margin: 8px 0; color: var(--muted); font-size: .8rem; }
+.mq-token-divider::before, .mq-token-divider::after { content: ""; flex: 1; height: 1px; background: var(--border); }
+.mq-launch-row { margin-top: 4px; gap: 6px; }
 .mq-launch-row input { flex: 1; min-width: 0; font-size: .82rem; }
+.mq-token-row-hint { align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 4px; }
+.mq-token-row-hint .hint { flex: 1; min-width: 0; font-size: .82rem; margin: 0; }
 
 /* Course picker (revealed after connect). */
 .mq-course-field { display: flex; align-items: center; gap: 10px; margin: 14px 0 4px; }
