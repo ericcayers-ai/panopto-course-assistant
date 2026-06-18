@@ -53,6 +53,7 @@ from .integrations import notion as notion_sync, anki as anki_sync, state as syn
 from .imports import moodle_web, folder as folder_import, preflight as import_preflight
 from .imports import moodle_resources
 from .imports import moodle_api
+from .imports import moodle_sso
 from .jobs import manager
 
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -1359,6 +1360,18 @@ def _moodle_token_name(host: str) -> str:
     return f"moodle_token:{host}"
 
 
+def _sso_provider_label(host: str) -> str:
+    """Friendly name for a detected SSO identity-provider host."""
+    h = (host or "").lower()
+    if "microsoft" in h or "live.com" in h:
+        return "Microsoft"
+    if "google" in h:
+        return "Google"
+    if "okta" in h:
+        return "Okta"
+    return "single sign-on (SSO)"
+
+
 def _save_api_outline(model: Dict[str, Any]) -> str:
     """Write the labelled course outline as an AI/NotebookLM source. Returns rel path."""
     core.ensure_dir(OUTPUT_DIR)
@@ -1367,6 +1380,9 @@ def _save_api_outline(model: Dict[str, Any]) -> str:
     target = OUTPUT_DIR / f"{stem}.md"
     target.write_text(model["outline_markdown"], encoding="utf-8")
     return target.relative_to(OUTPUT_DIR).as_posix()
+
+
+_MOODLE_PASSPORT = "courseassistant"
 
 
 @app.get("/api/moodle/launch-url")
@@ -1378,11 +1394,9 @@ def api_moodle_launch_url(url: str = "") -> Dict[str, Any]:
     if not url.strip():
         raise HTTPException(status_code=400, detail="Enter a Moodle site URL first.")
     try:
-        base = moodle_api.normalize_base_url(url)
+        launch = moodle_api.build_launch_url(url, passport=_MOODLE_PASSPORT)
     except moodle_api.MoodleApiError as e:
         raise HTTPException(status_code=400, detail=str(e))
-    launch = (f"{base}admin/tool/mobile/launch.php"
-              f"?service=moodle_mobile_app&passport=courseasst&urlscheme=moodlemobile")
     return {"launch_url": launch}
 
 
@@ -1393,39 +1407,12 @@ class DecodeLaunchTokenReq(BaseModel):
 @app.post("/api/moodle/decode-launch-token")
 def api_moodle_decode_launch_token(req: DecodeLaunchTokenReq) -> Dict[str, Any]:
     """Decode the moodlemobile:// redirect URL that Moodle issues after a successful
-    browser SSO login and extract the web-service token from it.
-
-    Moodle's format (all versions):
-      moodlemobile://token=<PASSPORT_OR_BASE64>
-
-    Older Moodle (< 3.9):  payload = base64(json({"token":"…","privatetoken":"…"}))
-    Moodle ≥ 3.9:          payload = <passport>:::base64(json({"token":"…",…}))
-    """
-    import base64 as _b64
-    import re as _re
-
-    raw = req.raw.strip()
-    # Strip leading scheme prefix
-    raw = _re.sub(r'^moodlemobile://token=', '', raw, flags=_re.IGNORECASE)
-    # Strip the PASSPORT::: prefix used in Moodle ≥ 3.9
-    raw = _re.sub(r'^[^:]+:::', '', raw)
-    # Add padding so base64 decode works even if the string was truncated by the browser
-    padded = raw + "==="
+    browser SSO login and return the web-service token (see moodle_api for format)."""
     try:
-        payload = _json.loads(_b64.b64decode(padded).decode("utf-8"))
-    except Exception:
-        raise HTTPException(
-            status_code=400,
-            detail="Could not decode the URL. Copy the full address-bar URL "
-                   "(starting with moodlemobile://) and try again.")
-    token = payload.get("token") or payload.get("wstoken") or payload.get("moodletoken")
-    if not token:
-        keys = list(payload.keys())
-        raise HTTPException(
-            status_code=400,
-            detail=f"Token not found in decoded data (keys: {keys}). "
-                   "Try copying the URL again — make sure you have the full string.")
-    return {"token": str(token)}
+        token = moodle_api.decode_launch_token(req.raw, expected_passport=_MOODLE_PASSPORT)
+    except moodle_api.MoodleApiError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    return {"token": token}
 
 
 @app.post("/api/moodle/connect")
@@ -1450,7 +1437,20 @@ def api_moodle_connect(req: MoodleConnectReq) -> Dict[str, Any]:
                     status_code=400,
                     detail="Enter your Moodle username and password, or paste a "
                            "web-service token from the Moodle mobile app.")
-            token = moodle_api.fetch_token(base, req.username, req.password)
+            try:
+                token = moodle_api.fetch_token(base, req.username, req.password)
+            except moodle_api.MoodleApiError as e:
+                # A generic "invalid login" on an SSO-fronted site usually means
+                # the password grant is disabled, not a wrong password. Detect the
+                # external IdP and steer the user to the browser token flow.
+                provider = moodle_sso.detect_sso(base)
+                if provider:
+                    raise moodle_api.MoodleApiError(
+                        "SSO_REJECTED: This site signs in through "
+                        f"{_sso_provider_label(provider)} — username/password can't be "
+                        "used here. Use ‘Sign in via browser’ below to get your token."
+                    ) from None
+                raise
         client = moodle_api.MoodleClient(base, token)
         info = client.site_info()
         courses_list = client.list_courses(info.get("userid"))

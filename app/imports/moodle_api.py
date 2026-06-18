@@ -215,6 +215,101 @@ def fetch_token(base_url: str, username: str, password: str, *,
     raise MoodleApiError(f"Could not obtain a token: {err_msg}")
 
 
+# --- Browser SSO launch flow (for Microsoft / Google SSO Moodle sites) --------
+#
+# Sites that use SSO disable login/token.php, and many hide the mobile token from
+# the security-keys page. Moodle's mobile app instead uses a *browser* launch:
+#   1. open  {base}admin/tool/mobile/launch.php?service=…&passport=<rand>&urlscheme=…
+#   2. the browser authenticates through the institution's SSO
+#   3. Moodle redirects to  <urlscheme>://token=<BASE64>
+#      where BASE64 = base64( "<passport>:::<token>:::<privatetoken>" )
+# We open step 1 in a new tab and have the user paste the final URL back; this
+# helper decodes it. (Protocol per Moodle admin/tool/mobile/launch.php.)
+
+URL_SCHEME = "moodlemobile"
+
+
+def build_launch_url(base_url: str, *, passport: str = "courseassistant",
+                     service: str = MOBILE_SERVICE, url_scheme: str = URL_SCHEME) -> str:
+    """Return the ``admin/tool/mobile/launch.php`` URL that starts the browser SSO
+    token flow. ``passport`` is echoed back inside the redirect so we can verify
+    the response matches our request."""
+    base = normalize_base_url(base_url)
+    return (f"{base}admin/tool/mobile/launch.php"
+            f"?service={service}&passport={passport}&urlscheme={url_scheme}")
+
+
+# A Moodle web-service token is a 32-character lowercase hex string.
+_WS_TOKEN_RE = re.compile(r"\b[a-f0-9]{32}\b")
+
+
+def decode_launch_token(raw: str, *, expected_passport: str = "") -> str:
+    """Extract the web-service token from the ``moodlemobile://token=…`` URL that
+    Moodle issues after a successful browser SSO login.
+
+    Handles the standard ``base64(passport:::token:::privatetoken)`` payload, the
+    older ``base64(json)`` payload, and a bare 32-hex token as a last resort.
+    Raises :class:`MoodleApiError` with a readable reason on failure."""
+    import base64 as _b64
+
+    s = (raw or "").strip()
+    # Strip any "<scheme>://token=" prefix (any scheme, in case the user changed it).
+    s = re.sub(r"^[a-z][a-z0-9+.\-]*://token=", "", s, flags=re.IGNORECASE)
+    s = s.strip().strip('"').strip("'")
+    if not s:
+        raise MoodleApiError("Paste the full moodlemobile:// URL from your browser's address bar.")
+
+    # URL-decode in case the browser percent-encoded the payload.
+    from urllib.parse import unquote
+    s = unquote(s)
+
+    # base64 may be standard or URL-safe; pad to a multiple of 4.
+    candidate = s.replace("-", "+").replace("_", "/")
+    candidate += "=" * (-len(candidate) % 4)
+    decoded = b""
+    try:
+        decoded = _b64.b64decode(candidate)
+    except Exception:
+        decoded = b""
+
+    if decoded:
+        try:
+            text = decoded.decode("utf-8", "replace")
+        except Exception:
+            text = ""
+        # Standard format: passport:::token:::privatetoken
+        # The token is ALWAYS the second field. Note the passport is itself a
+        # 32-hex string (Moodle re-issues it), so a "looks like a token" heuristic
+        # would wrongly pick the passport — we must index positionally.
+        if ":::" in text:
+            parts = text.split(":::")
+            if len(parts) >= 2 and parts[1].strip():
+                return parts[1].strip()
+            if parts and parts[0].strip():        # 1-field variant: token only
+                return parts[0].strip()
+        # Older format: base64(json)
+        try:
+            payload = _json.loads(text)
+            tok = payload.get("token") or payload.get("wstoken") or payload.get("moodletoken")
+            if tok:
+                return str(tok)
+        except Exception:
+            pass
+        # Any 32-hex token embedded in the decoded text.
+        m = _WS_TOKEN_RE.search(text)
+        if m:
+            return m.group(0)
+
+    # Last resort: a bare 32-hex token in the raw string itself.
+    m = _WS_TOKEN_RE.search(s)
+    if m:
+        return m.group(0)
+
+    raise MoodleApiError(
+        "Could not find a token in that URL. Copy the whole address-bar value "
+        "(it starts with moodlemobile://token=) and paste it again.")
+
+
 class MoodleClient:
     """Thin authenticated REST client for one Moodle site. All requests carry the
     web-service token; all responses are checked for Moodle error envelopes."""

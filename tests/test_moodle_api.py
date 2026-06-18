@@ -270,6 +270,53 @@ def test_fetch_token_sso_rejection():
 
 
 # ---------------------------------------------------------------------------
+# build_launch_url / decode_launch_token — browser SSO token flow
+# ---------------------------------------------------------------------------
+
+def _b64(s: str) -> str:
+    import base64
+    return base64.b64encode(s.encode()).decode()
+
+
+def test_build_launch_url():
+    url = ma.build_launch_url("https://m.edu/course/view.php?id=9", passport="px")
+    assert url == ("https://m.edu/admin/tool/mobile/launch.php"
+                   "?service=moodle_mobile_app&passport=px&urlscheme=moodlemobile")
+
+
+def test_decode_launch_token_standard():
+    # Real Moodle format: base64(passport:::token:::privatetoken). The passport is
+    # ALSO 32-hex, so a "looks like a token" heuristic would wrongly pick it — the
+    # decoder must take the second field positionally.
+    passport = "5fa1d9bdd6ccb22c871d58b275ed593d"
+    token = "058dc43834290df552f52c70885af368"
+    priv = "OVxE8MYC0VZZougHlemauEiLyjVwsm4S"
+    raw = f"moodlemobile://token={_b64(f'{passport}:::{token}:::{priv}')}"
+    assert ma.decode_launch_token(raw, expected_passport=passport) == token
+
+
+def test_decode_launch_token_urlsafe_and_unpadded():
+    import base64
+    token = "058dc43834290df552f52c70885af368"
+    payload = base64.urlsafe_b64encode(f"px:::{token}:::p".encode()).decode().rstrip("=")
+    raw = "moodlemobile://token=" + payload
+    assert ma.decode_launch_token(raw) == token
+
+
+def test_decode_launch_token_legacy_json():
+    token = "058dc43834290df552f52c70885af368"
+    raw = "moodlemobile://token=" + _b64(json.dumps({"token": token, "privatetoken": "x"}))
+    assert ma.decode_launch_token(raw) == token
+
+
+def test_decode_launch_token_rejects_garbage():
+    with pytest.raises(ma.MoodleApiError):
+        ma.decode_launch_token("not a real url at all")
+    with pytest.raises(ma.MoodleApiError):
+        ma.decode_launch_token("")
+
+
+# ---------------------------------------------------------------------------
 # download_documents — exact names, dedup, error capture
 # ---------------------------------------------------------------------------
 

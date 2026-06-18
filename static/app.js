@@ -1166,14 +1166,26 @@ $("mq-open-token-page")?.addEventListener("click", () => {
 });
 
 // "Open sign-in page ↗" — Option B: browser SSO launch flow.
-// Fetches the launch.php URL from the backend and opens it in a new tab.
-$("mq-launch-sso")?.addEventListener("click", async () => {
-  const url = $("mq-url").value.trim();
-  if (!url) { toast("Enter your Moodle site URL first.", "warn"); return; }
+// IMPORTANT: window.open must run synchronously inside the click handler or the
+// browser treats it as a programmatic popup and blanks/blocks it. So we build the
+// launch.php URL on the client (no await before opening the tab).
+$("mq-launch-sso")?.addEventListener("click", () => {
+  const raw = $("mq-url").value.trim();
+  if (!raw) { toast("Enter your Moodle site URL first.", "warn"); return; }
+  let base;
   try {
-    const d = await api(`/api/moodle/launch-url?url=${encodeURIComponent(url)}`);
-    window.open(d.launch_url, "_blank", "noopener,noreferrer");
-  } catch (e) { toast(e.message, "err"); }
+    base = new URL(/^https?:\/\//i.test(raw) ? raw : "https://" + raw);
+  } catch (_) {
+    toast("Enter a valid Moodle URL first (e.g. https://elearn.waikato.ac.nz).", "warn");
+    return;
+  }
+  // Strip any course/login path back to the site root, then append launch.php.
+  const launch = base.origin +
+    "/admin/tool/mobile/launch.php?service=moodle_mobile_app" +
+    "&passport=courseassistant&urlscheme=moodlemobile";
+  // No noopener: a brand-new about:blank tab that we immediately navigate is fine,
+  // and some browsers blank a noopener tab opened to a cross-origin redirect chain.
+  window.open(launch, "_blank");
 });
 
 // "Extract & connect" — decodes the moodlemobile:// URL the user copied from
