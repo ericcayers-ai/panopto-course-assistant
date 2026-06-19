@@ -1,7 +1,10 @@
-# Core web app — works without a GPU / transcription stack.
+# Core web app - works without a GPU / transcription stack.
 fastapi>=0.110
 uvicorn[standard]>=0.27
 requests>=2.31
 python-multipart>=0.0.9
+# Exam cheat sheet PDF output (small, pure-Python; the feature degrades to
+# Markdown if this is absent).
+fpdf2>=2.7
 # Moodle import uses the official mobile web-service API (token-based), so no
 # browser-cookie reading or HTML scraping is required.

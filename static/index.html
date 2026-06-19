@@ -22,8 +22,8 @@
         <button class="tab" data-tab="jobs"><span class="ico">⚙️</span> Jobs <span id="jobs-badge" class="count-badge hidden">0</span></button>
       </nav>
       <div class="sidebar-foot">
-        <button id="theme-toggle" class="ghost small" title="Toggle light/dark">🌙 Theme</button>
-        <a href="/docs" target="_blank" rel="noopener" class="muted small">API docs ↗</a>
+        <button id="theme-toggle" class="ghost small" title="Switch between light and dark">🌙 Theme</button>
+        <a href="/docs" target="_blank" rel="noopener" class="muted small">API documentation ↗</a>
       </div>
     </aside>
 
@@ -34,13 +34,13 @@
           <button id="menu-toggle" class="ghost small" title="Menu">☰</button>
           <select id="course-switcher" class="course-switcher hidden" title="Switch the active course"></select>
           <button id="course-new" class="ghost small" title="Create a new course">＋</button>
-          <label class="course-field" title="Everything you import and export is tagged with this course">
+          <label class="course-field" title="All imported and exported material is associated with this course">
             <span class="course-label">🎓 Course</span>
-            <input type="text" id="course-input" placeholder="Name your course…" autocomplete="off" />
+            <input type="text" id="course-input" placeholder="Course name" autocomplete="off" />
           </label>
         </div>
         <div class="topbar-right">
-          <div id="status-bar" class="status-bar">checking environment…</div>
+          <div id="status-bar" class="status-bar">Checking environment…</div>
         </div>
       </header>
 
@@ -48,32 +48,32 @@
         <!-- HOME / DASHBOARD -->
         <section id="home" class="panel active">
           <div class="hero">
-            <h1>Everything for one course, in one place</h1>
-            <p class="lead">Name your course, <strong>keep importing</strong> whatever you have -
-              Panopto lectures, slides, documents, Moodle and Notion exports - then
-              <strong>export</strong> it as clean study material for
-              <strong>NotebookLM</strong>, <strong>Anki</strong> or <strong>Notion</strong>.</p>
+            <h1>A complete workspace for each course</h1>
+            <p class="lead">Name your course and import the material you have available -
+              Panopto lectures, slides, documents, and Moodle or Notion exports. The application
+              consolidates everything into a searchable library and exports it as study material for
+              <strong>NotebookLM</strong>, <strong>Anki</strong>, or <strong>Notion</strong>.</p>
           </div>
 
           <div id="dash-env" class="env-strip"></div>
 
-          <h3 class="section-title">Jump back in</h3>
+          <h3 class="section-title">Sections</h3>
           <div class="tiles flow-tiles">
             <button class="tile" data-goto="import">
               <span class="tile-ico">📥</span><span class="tile-title">Import</span>
-              <span class="tile-desc">Lectures, documents, Notion - keep adding.</span>
+              <span class="tile-desc">Add lectures, documents, and Notion exports.</span>
             </button>
             <button class="tile" data-goto="library">
               <span class="tile-ico">📚</span><span class="tile-title">Library</span>
-              <span class="tile-desc">Everything you've collected, searchable.</span>
+              <span class="tile-desc">Browse and search all imported material.</span>
             </button>
             <button class="tile" data-goto="export">
               <span class="tile-ico">📤</span><span class="tile-title">Export</span>
-              <span class="tile-desc">NotebookLM, Anki or Notion.</span>
+              <span class="tile-desc">Produce NotebookLM, Anki, and Notion material.</span>
             </button>
           </div>
 
-          <h3 class="section-title">This course at a glance</h3>
+          <h3 class="section-title">Course overview</h3>
           <div id="dash-stats" class="stats"></div>
         </section>
 
@@ -85,29 +85,29 @@
 
         <!-- 2 · IMPORT -->
         <section id="import" class="panel">
-          <h2><span class="step-chip">2</span> Import your stuff</h2>
-          <p class="panel-intro">Keep adding whatever you have for this course. Everything lands in your
-            <strong>Library</strong>, ready to export. Pick a source below.</p>
+          <h2><span class="step-chip">2</span> Import materials</h2>
+          <p class="panel-intro">Add the material you have for this course. All imports are stored in the
+            <strong>Library</strong> and become available for export. Select a source below.</p>
 
           <div class="import-switch">
-            <button class="seg active" data-import="documents">📑 Documents</button>
-            <button class="seg" data-import="notion">🗒️ Notion</button>
-            <button class="seg" data-import="browse">📂 Browse files</button>
+            <button class="seg active" data-import="documents">Documents</button>
+            <button class="seg" data-import="notion">Notion</button>
+            <button class="seg" data-import="browse">Browse files</button>
           </div>
 
-          <p class="hint">📡 <strong>Lectures</strong> come bundled with a course - import them from
-            <strong>Import a Moodle course</strong>, where they're detected and transcribed automatically
-            alongside that course's documents.</p>
+          <p class="hint">Lecture recordings are imported with the course. Use
+            <strong>Import a Moodle course</strong> to detect and transcribe them automatically
+            alongside the course documents.</p>
 
           <!-- DOCUMENTS -->
           <div id="import-documents" class="import-pane active">
             <div class="card">
-              <h3>📑 Documents → Markdown</h3>
-              <p class="hint">Convert <strong>PDF, PowerPoint, Word, Excel, HTML, EPUB, CSV…</strong> into
-                Markdown sources for NotebookLM or any other AI. Powered by
+              <h3>Convert documents to Markdown</h3>
+              <p class="hint">Convert <strong>PDF, PowerPoint, Word, Excel, HTML, EPUB, and CSV</strong> files into
+                Markdown sources for NotebookLM or another AI tool. Powered by
                 <a href="https://github.com/microsoft/markitdown" target="_blank" rel="noopener">MarkItDown</a>.</p>
               <div class="row">
-                <input type="text" id="pdf-path" placeholder="Folder path or a single document (e.g. C:\Users\…\Slides-20260615)" />
+                <input type="text" id="pdf-path" placeholder="Folder path or a single document (for example C:\Users\…\Slides-20260615)" />
                 <button id="pdf-go">Convert</button>
               </div>
               <div class="outputs-row">
@@ -117,16 +117,16 @@
               <div class="grid">
                 <label>Output
                   <select id="doc-target">
-                    <option value="ai" selected>Library (importable, exportable to NotebookLM)</option>
-                    <option value="copy">sibling *_copy folder (mirror in place)</option>
+                    <option value="ai" selected>Library (importable and exportable to NotebookLM)</option>
+                    <option value="copy">Sibling *_copy folder (mirror in place)</option>
                   </select>
                 </label>
               </div>
               <div class="toggles">
-                <label class="toggle"><input type="checkbox" id="pdf-recursive" checked /> include subfolders</label>
-                <label class="toggle"><input type="checkbox" id="pdf-overwrite" /> overwrite existing</label>
-                <label class="toggle"><input type="checkbox" id="doc-combined" /> combined <code>documents_pack.md</code> (Library)</label>
-                <label class="toggle" title="Extract figures/diagrams from the documents and attach them to the Markdown"><input type="checkbox" id="doc-images" checked /> include images &amp; diagrams</label>
+                <label class="toggle"><input type="checkbox" id="pdf-recursive" checked /> Include subfolders</label>
+                <label class="toggle"><input type="checkbox" id="pdf-overwrite" /> Overwrite existing</label>
+                <label class="toggle"><input type="checkbox" id="doc-combined" /> Combined <code>documents_pack.md</code> (Library)</label>
+                <label class="toggle" title="Extract figures and diagrams from the documents and attach them to the Markdown"><input type="checkbox" id="doc-images" checked /> Include images and diagrams</label>
               </div>
             </div>
             <div id="pdf-results" class="results"></div>
@@ -135,18 +135,18 @@
           <!-- NOTION -->
           <div id="import-notion" class="import-pane">
             <div class="card">
-              <h3>🗒️ Import a Notion export</h3>
-              <p class="hint">In Notion: <em>••• → Export → Markdown &amp; HTML</em>. Upload the
-                <code>.zip</code> you get (nested <code>ExportBlock</code> zips are handled automatically) -
-                or point at a single <code>.html</code> file or an unzipped export folder. Produces clean
-                Markdown in your Library, great as NotebookLM / AI sources.</p>
+              <h3>Import a Notion export</h3>
+              <p class="hint">In Notion, choose <em>••• → Export → Markdown &amp; HTML</em>. Upload the resulting
+                <code>.zip</code> (nested <code>ExportBlock</code> archives are handled automatically),
+                or provide a single <code>.html</code> file or an unzipped export folder. The result is clean
+                Markdown in the Library, suitable as NotebookLM or AI sources.</p>
               <div class="row">
                 <span class="muted">Upload export:</span>
                 <input type="file" id="notion-file" accept=".zip,.html,.htm" />
-                <label class="toggle"><input type="checkbox" id="notion-combined" /> combined <code>notion_pack.md</code></label>
+                <label class="toggle"><input type="checkbox" id="notion-combined" /> Combined <code>notion_pack.md</code></label>
               </div>
               <div class="row">
-                <input type="text" id="notion-path" placeholder="…or paste a path to a .zip / .html / export folder" />
+                <input type="text" id="notion-path" placeholder="Or provide a path to a .zip, .html, or export folder" />
                 <button id="notion-go">Convert</button>
               </div>
               <div id="notion-results" class="results"></div>
@@ -156,13 +156,13 @@
           <!-- BROWSE -->
           <div id="import-browse" class="import-pane">
             <div class="card">
-              <h3>📂 Browse a local folder</h3>
-              <p class="hint">Find the exact path to a slides or documents folder, then paste it into
+              <h3>Browse a local folder</h3>
+              <p class="hint">Locate the exact path to a slides or documents folder, then provide it under
                 <em>Documents</em> or <em>Notion</em> above.</p>
               <div class="row">
-                <input type="text" id="materials-path" placeholder="Folder path to browse (e.g. ..\Slides-20260615)" />
+                <input type="text" id="materials-path" placeholder="Folder path to browse (for example ..\Slides-20260615)" />
                 <button id="materials-go">List</button>
-                <button id="materials-up" class="ghost" title="Parent folder">↑ up</button>
+                <button id="materials-up" class="ghost" title="Parent folder">↑ Up</button>
               </div>
               <div id="materials-results" class="results"></div>
             </div>
@@ -171,31 +171,31 @@
 
         <!-- 3 · LIBRARY -->
         <section id="library" class="panel">
-          <h2><span class="step-chip">3</span> Library <button id="transcripts-refresh" class="small ghost">↻ refresh</button></h2>
-          <p class="panel-intro">Everything you've imported for this course - transcripts and converted documents -
-            in one searchable place.</p>
+          <h2><span class="step-chip">3</span> Library <button id="transcripts-refresh" class="small ghost">↻ Refresh</button></h2>
+          <p class="panel-intro">All material imported for this course - transcripts and converted documents -
+            in a single searchable location.</p>
 
           <div class="card">
-            <h3>🔎 Search everything</h3>
+            <h3>Search</h3>
             <div class="row">
-              <input type="text" id="search-q" placeholder="Search across every transcript - e.g. three-way handshake" />
+              <input type="text" id="search-q" placeholder="Search across all transcripts (for example: three-way handshake)" />
               <button id="search-go">Search</button>
             </div>
             <div id="search-results" class="results"></div>
           </div>
 
           <div class="card">
-            <h3>🗂️ Reorganize files</h3>
-            <p class="hint">Move existing transcripts into folders by week / date / topic.</p>
+            <h3>Reorganize files</h3>
+            <p class="hint">Move existing transcripts into folders by week, date, or topic.</p>
             <div class="row">
               <select id="org-by">
-                <option value="auto" selected>auto</option>
-                <option value="week">week</option>
-                <option value="lecture">lecture</option>
-                <option value="module">module</option>
-                <option value="date">date</option>
-                <option value="topic">topic</option>
-                <option value="none">none (flat)</option>
+                <option value="auto" selected>Automatic</option>
+                <option value="week">Week</option>
+                <option value="lecture">Lecture</option>
+                <option value="module">Module</option>
+                <option value="date">Date</option>
+                <option value="topic">Topic</option>
+                <option value="none">None (flat)</option>
               </select>
               <button id="org-go" class="ghost">Reorganize</button>
               <span id="org-results" class="muted"></span>
@@ -203,7 +203,7 @@
           </div>
 
           <div class="card">
-            <h3>🧭 Filter &amp; sort</h3>
+            <h3>Filter and sort</h3>
             <div class="row">
               <select id="lib-type" title="Filter by type">
                 <option value="">All types</option>
@@ -219,7 +219,7 @@
                 <option value="name">Name (A–Z)</option>
                 <option value="week">Week</option>
               </select>
-              <input type="text" id="lib-tag" placeholder="Tag or keyword…" autocomplete="off" />
+              <input type="text" id="lib-tag" placeholder="Tag or keyword" autocomplete="off" />
               <button id="lib-apply">Apply</button>
               <button id="lib-clear" class="ghost">Clear</button>
             </div>
@@ -229,131 +229,167 @@
             <div id="transcripts-list" class="list"></div>
             <pre id="transcript-view" class="viewer">Select an item on the left to view it here.</pre>
           </div>
+
+          <div class="card danger-card">
+            <h3>Remove course files</h3>
+            <p class="hint">Permanently delete this course's transcripts, documents, Notion pages, and
+              generated exports from the library. The database, saved settings, and backups are retained.</p>
+            <div class="row"><button id="course-clear" class="danger">Remove all files for this course</button></div>
+            <div id="course-clear-results" class="results"></div>
+          </div>
         </section>
 
         <!-- 4 · EXPORT -->
         <section id="export" class="panel">
-          <h2><span class="step-chip">4</span> Export as…</h2>
-          <p class="panel-intro">Turn your library into study material. Everything is tagged with your
-            course name automatically.</p>
+          <h2><span class="step-chip">4</span> Export</h2>
+          <p class="panel-intro">Convert the library into study material. All exports are associated with the
+            current course. Each export opens a folder or file selection dialog so you choose where files are saved.</p>
 
           <div class="card feature-card">
-            <h3>📦 Export everything for AI <span class="pill">all sources</span></h3>
-            <p class="hint">One click brings <strong>everything you've imported</strong> together -
-              lecture transcripts, converted documents and Notion pages - into clean Markdown under
-              <code>_notebooklm/</code>, plus a single combined <code>everything_pack.md</code> you can
-              drop into <strong>NotebookLM</strong> or hand to <strong>any other AI</strong>.</p>
+            <h3>Export everything for AI <span class="pill">all sources</span></h3>
+            <p class="hint">Consolidates <strong>all imported material</strong> - lecture transcripts, converted
+              documents, and Notion pages - into clean Markdown, plus a single combined
+              <code>everything_pack.md</code> suitable for <strong>NotebookLM</strong> or
+              <strong>any other AI tool</strong>.</p>
             <div class="row">
-              <input type="text" id="export-all-dest" placeholder="Output folder (leave blank for default)" style="flex:1" />
-            </div>
-            <div class="row">
-              <label class="toggle"><input type="checkbox" id="all-combined" checked /> combined <code>everything_pack.md</code></label>
-              <button id="export-all">Export everything</button>
+              <label class="toggle"><input type="checkbox" id="all-combined" checked /> Combined <code>everything_pack.md</code></label>
+              <button id="export-all">Export everything…</button>
             </div>
             <div id="export-all-results" class="results"></div>
           </div>
 
-          <h3 class="section-title">Or export one kind at a time</h3>
+          <h3 class="section-title">Export individual formats</h3>
 
           <div class="export-grid">
             <div class="card">
-              <h3>📓 NotebookLM sources</h3>
-              <p class="hint">Clean, de-timestamped Markdown (one file per lecture) under
-                <code>_notebooklm/</code> - ready to upload to NotebookLM as sources.</p>
+              <h3>NotebookLM sources</h3>
+              <p class="hint">Clean, de-timestamped Markdown, one file per lecture, ready to upload to
+                NotebookLM as sources.</p>
               <div class="row">
-                <input type="text" id="nlm-dest" placeholder="Output folder (leave blank for default)" style="flex:1" />
-              </div>
-              <div class="row">
-                <label class="toggle"><input type="checkbox" id="nlm-combined" /> combined <code>course_pack.md</code></label>
-                <button id="nlm-export">Export all</button>
+                <label class="toggle"><input type="checkbox" id="nlm-combined" /> Combined <code>course_pack.md</code></label>
+                <button id="nlm-export">Export…</button>
               </div>
               <div id="nlm-results" class="results"></div>
             </div>
 
             <div class="card">
-              <h3>🗃️ Notion study database (CSV)</h3>
-              <p class="hint">One row per lecture - Name, Week, Date, Topic, Tags, Status, Summary.
-                In Notion: <em>Import → CSV</em>, then set Tags to <em>Multi-select</em>. With an
-                <strong>AI provider configured</strong> the Summary column is LLM-written. Runs as a job.</p>
+              <h3>Notion study database (CSV)</h3>
+              <p class="hint">One row per lecture: Name, Week, Date, Topic, Tags, Status, and Summary.
+                In Notion, choose <em>Import → CSV</em>, then set Tags to <em>Multi-select</em>. When an
+                <strong>AI model is configured</strong>, the Summary column is generated by the model.
+                Runs as a background job.</p>
               <div class="row">
-                <input type="text" id="studycsv-dest" placeholder="Output folder (leave blank for default _exports/)" style="flex:1" />
-              </div>
-              <div class="row">
-                <button id="studycsv-go">Export CSV</button>
+                <button id="studycsv-go">Export CSV…</button>
               </div>
               <div id="studycsv-results" class="results"></div>
             </div>
 
             <div class="card">
-              <h3>🎬 Lecture transcripts + SRT</h3>
-              <p class="hint">Export transcript text and <code>.srt</code> subtitle files for all
-                recorded lectures. Place SRT files in the same folder as your video recordings so
-                media players load them automatically.</p>
+              <h3>Lecture transcripts and subtitles (SRT)</h3>
+              <p class="hint">Export transcript text and <code>.srt</code> subtitle files for all recorded
+                lectures. Place the SRT files in the same folder as the video recordings so media players
+                load them automatically.</p>
               <div class="row">
-                <input type="text" id="srt-dest" placeholder="Folder to save SRT files (e.g. C:\Videos\Lectures)" style="flex:1" />
-                <button id="srt-export">Export SRT</button>
+                <button id="srt-export">Export subtitles…</button>
               </div>
               <div id="srt-results" class="results"></div>
             </div>
           </div>
 
+          <details class="card" id="ollama-section">
+            <summary><strong>Local AI model (Ollama)</strong> <span class="muted">— run a model on this computer</span></summary>
+            <p class="hint">The flashcard, cheat sheet, and summary features require an AI model. Ollama runs a
+              model locally, so no data leaves this computer and no API key is required. Install Ollama from
+              <a href="https://ollama.com/download" target="_blank" rel="noopener">ollama.com</a> if it is not
+              already present.</p>
+            <div id="ollama-status" class="results"></div>
+            <div class="grid">
+              <label>Model
+                <select id="ollama-model" title="Installed models"></select>
+              </label>
+              <label>Or download a model
+                <input type="text" id="ollama-model-custom" placeholder="for example: llama3" />
+              </label>
+            </div>
+            <div class="row">
+              <button id="ollama-start" class="ghost">Start local server</button>
+              <button id="ollama-pull" class="ghost">Download model</button>
+              <button id="ollama-use" class="primary">Use this model</button>
+              <button id="ollama-refresh" class="ghost small">↻ Refresh</button>
+            </div>
+            <div id="ollama-results" class="results"></div>
+          </details>
+
           <div class="card" id="fc-section">
-            <h3>🃏 Anki flashcards <span class="pill">Anki-ready</span></h3>
-            <p class="hint">Uses your local LLM to generate Q&amp;A, cloze and definition cards from
-              your transcripts, auto-tagged by course · week · topic. Exports an Anki-importable
-              <code>.txt</code> and a <code>.csv</code> to the folder you choose.
-              Requires <strong>Ollama</strong> (installed with extra dependencies).</p>
+            <h3>Anki flashcards <span class="pill">Anki-ready</span></h3>
+            <p class="hint">Generates question-and-answer, cloze, and definition cards from the transcripts
+              using an AI model, tagged by course, week, and topic. Produces an Anki-importable
+              <code>.txt</code> file and a <code>.csv</code> file. Requires a configured AI model
+              (see <strong>Local AI model</strong> above).</p>
             <div id="fc-llm-missing" class="banner warn hidden">
-              Flashcard generation requires a local LLM. Install extra dependencies and start Ollama.
+              Flashcard generation requires an AI model. Start Ollama above, or configure a provider.
             </div>
             <div class="grid">
               <label>Deck name <input type="text" id="fc-deck" value="flashcards" /></label>
-              <label>Max cards (total) <input type="number" id="fc-max" value="50" min="1" max="200" /></label>
+              <label>Maximum cards (total) <input type="number" id="fc-max" value="50" min="1" max="200" /></label>
             </div>
-            <div class="row">
-              <input type="text" id="fc-output-dir" placeholder="Output folder (leave blank for default _flashcards/)" style="flex:1" />
-            </div>
-            <div class="row"><button id="fc-generate">Generate flashcards</button></div>
+            <div class="row"><button id="fc-generate">Generate flashcards…</button></div>
             <div id="fc-gen-results" class="results"></div>
           </div>
 
           <details class="card" id="fc-cat-section">
-            <summary><strong>🏷️ Categorize an existing deck</strong> <span class="muted">(LLM-powered topic tagging)</span></summary>
-            <p class="hint">Paste a deck (CSV or tab-separated: <code>front, back[, tags]</code>) - or give a file
-              path - and the LLM adds intelligent course/topic tags. Requires Ollama.</p>
+            <summary><strong>Categorize an existing deck</strong> <span class="muted">— AI-assisted topic tagging</span></summary>
+            <p class="hint">Provide a deck (CSV or tab-separated: <code>front, back[, tags]</code>), or a file
+              path, and the AI model adds course and topic tags. Requires a configured AI model.</p>
             <div id="fc-cat-llm-missing" class="banner warn hidden">
-              Categorization requires a local LLM. Install extra dependencies and start Ollama.
+              Categorization requires an AI model. Start Ollama above, or configure a provider.
             </div>
             <textarea id="fc-cat-text" rows="5" placeholder="What is TCP?,A reliable transport protocol&#10;What is a router?,Forwards packets between networks"></textarea>
             <div class="row">
-              <input type="text" id="fc-cat-path" placeholder="…or a path to a .csv/.tsv/.txt deck" />
+              <input type="text" id="fc-cat-path" placeholder="Or a path to a .csv, .tsv, or .txt deck" />
             </div>
             <div class="grid">
               <label>Deck name <input type="text" id="fc-cat-deck" value="categorized" /></label>
             </div>
-            <div class="row"><button id="fc-categorize">Categorize &amp; tag</button></div>
+            <div class="row"><button id="fc-categorize">Categorize and tag…</button></div>
             <div id="fc-cat-results" class="results"></div>
           </details>
+
+          <div class="card" id="cheatsheet-section">
+            <h3>Exam cheat sheet (PDF)</h3>
+            <p class="hint">Condense the entire course into a dense, exam-ready cheat sheet, generated by the
+              AI model and laid out across a fixed number of A4 pages. The page limit is always respected;
+              lower-value material is omitted to fit. Requires a configured AI model.</p>
+            <div id="cheatsheet-llm-missing" class="banner warn hidden">
+              An AI model is required. Start Ollama above, or configure a provider.
+            </div>
+            <div class="grid">
+              <label>Maximum A4 pages <input type="number" id="cheatsheet-pages" value="2" min="1" max="10" /></label>
+            </div>
+            <div class="row"><button id="cheatsheet-go">Create cheat sheet PDF…</button></div>
+            <div id="cheatsheet-results" class="results"></div>
+          </div>
         </section>
 
         <!-- JOBS -->
         <section id="jobs" class="panel">
-          <h2>Jobs <button id="jobs-refresh" class="small ghost">↻ refresh</button></h2>
-          <p class="panel-intro">Live progress of transcription and AI jobs (flashcards, study CSV, categorization).</p>
+          <h2>Jobs <button id="jobs-refresh" class="small ghost">↻ Refresh</button></h2>
+          <p class="panel-intro">Live progress of transcription and AI jobs, including flashcards, study
+            database, categorization, cheat sheets, and model downloads.</p>
           <div id="jobs-list" class="results"></div>
         </section>
 
         <!-- MOODLE QUICK (guided course-window flow) -->
         <section id="moodle-quick" class="panel">
-          <h2>📘 Import a Moodle course</h2>
-          <p class="panel-intro">Connect to your Moodle site and pick a course. The assistant reads it
-            through Moodle's official mobile <strong>web-service API</strong> - exact titles, file types
-            and lecture feeds, with no page-scraping or guesswork - then prepares everything for export.</p>
+          <h2>Import a Moodle course</h2>
+          <p class="panel-intro">Connect to your Moodle site and select a course. The application reads it
+            through the official Moodle mobile <strong>web-service API</strong> - exact titles, file types,
+            and lecture feeds, with no page scraping - and prepares the material for export.</p>
 
           <!-- STEP 1 - CONNECT -->
           <div class="card mq-step">
             <div class="mq-step-head"><span class="mq-num">1</span><h3>Connect to Moodle</h3></div>
-            <p class="hint">Enter your Moodle site (or any course link on it), for example
+            <p class="hint">Enter your Moodle site, or any course link on it, for example
               <code>https://elearn.waikato.ac.nz</code>.</p>
             <input type="text" id="mq-url" placeholder="https://elearn.waikato.ac.nz" autocomplete="off" />
 
@@ -372,12 +408,12 @@
             <div id="mq-course-pick" class="hidden">
               <label class="mq-course-field">
                 <span class="course-label">🎓 Course</span>
-                <select id="mq-course-select" title="Pick the course to import"></select>
+                <select id="mq-course-select" title="Select the course to import"></select>
               </label>
 
               <div class="mq-grab">
                 <span class="toggles-label">Include:</span>
-                <label class="toggle" title="Download and convert lecture slides, PDFs, Word and other documents to Markdown"><input type="checkbox" id="mq-grab-docs" checked /> Lecture slides &amp; documents</label>
+                <label class="toggle" title="Download and convert lecture slides, PDFs, Word, and other documents to Markdown"><input type="checkbox" id="mq-grab-docs" checked /> Lecture slides and documents</label>
                 <label class="toggle" title="Detect this course's Panopto recording feeds so you can transcribe them in the next step"><input type="checkbox" id="mq-grab-transcripts" checked /> Lecture recordings</label>
                 <label class="toggle" title="Attach figures and diagrams extracted from documents"><input type="checkbox" id="mq-images" checked /> Images</label>
               </div>
@@ -390,13 +426,13 @@
           <!-- STEP 2 - LECTURE RECORDINGS -->
           <div class="card mq-step hidden" id="mq-step-transcribe">
             <div class="mq-step-head"><span class="mq-num">2</span><h3>Lecture recordings</h3></div>
-            <p class="hint" id="mq-recommend">Determining the best transcription settings for this computer…</p>
+            <p class="hint" id="mq-recommend">Determining the recommended transcription settings for this computer…</p>
 
             <div class="mq-panopto">
-              <p class="hint">📡 Recordings live in your course's <strong>Panopto block</strong>, which the
-                Moodle API can't read directly. In that block, under <strong>Podcast feeds</strong>,
-                right-click <strong>“Video podcast”</strong> and choose <em>Copy link address</em>, then
-                paste it below to load every recording.</p>
+              <p class="hint">Recordings are held in the course's <strong>Panopto block</strong>, which the
+                Moodle API cannot read directly. In that block, under <strong>Podcast feeds</strong>,
+                right-click <strong>"Video podcast"</strong> and choose <em>Copy link address</em>, then
+                provide it below to load every recording.</p>
               <div class="row">
                 <input type="text" id="mq-panopto-url" autocomplete="off"
                   placeholder="Paste the Video podcast link here" />
@@ -408,20 +444,49 @@
 
             <div class="mq-grab">
               <span class="toggles-label">When transcribing:</span>
-              <label class="toggle" title="Transcribe each recording (downloads audio only - small). Leave off to just list/download the recordings."><input type="checkbox" id="mq-make-transcript" checked /> Make a transcript (recording + transcript)</label>
+              <label class="toggle" title="Transcribe each recording (downloads audio only, which is small). Leave unchecked to only list or download the recordings."><input type="checkbox" id="mq-make-transcript" checked /> Produce a transcript for each recording</label>
+              <label class="toggle" title="Re-download and re-transcribe recordings even when a transcript already exists"><input type="checkbox" id="mq-overwrite" /> Overwrite existing transcripts</label>
             </div>
+
+            <details class="adv-settings">
+              <summary>Advanced transcription settings</summary>
+              <p class="hint">Optional. Leave any field on "Recommended" to use the settings detected for this computer.</p>
+              <div class="grid">
+                <label>Engine <select id="mq-adv-engine"></select></label>
+                <label>Model
+                  <select id="mq-adv-model">
+                    <option value="">Recommended</option>
+                    <option value="tiny">tiny (fastest)</option>
+                    <option value="base">base</option>
+                    <option value="small">small</option>
+                    <option value="medium">medium</option>
+                    <option value="large">large (most accurate)</option>
+                  </select>
+                </label>
+                <label>Language <input type="text" id="mq-adv-language" placeholder="Recommended (en)" /></label>
+                <label>Device
+                  <select id="mq-adv-device">
+                    <option value="">Recommended</option>
+                    <option value="auto">Automatic</option>
+                    <option value="cpu">CPU</option>
+                    <option value="cuda">GPU (CUDA)</option>
+                  </select>
+                </label>
+              </div>
+            </details>
+
             <div class="row">
               <button id="mq-autotranscribe" class="primary">Transcribe all recordings</button>
-              <span class="muted small">Downloads audio only; the video is fetched later if you export SRT.</span>
+              <span class="muted small">Downloads audio only; the video is fetched later if you export subtitles.</span>
             </div>
           </div>
 
           <!-- STEP 3 - EXPORT -->
           <div class="card mq-step hidden" id="mq-step-export">
             <div class="mq-step-head"><span class="mq-num">3</span><h3>Export</h3></div>
-            <p class="hint">Choose a destination for this course. Want to fold in extra material first?
-              Add <strong>documents</strong> or a <strong>Notion</strong> export from
-              <em>Import your stuff</em> - the “general AI” pack below bundles every source together.</p>
+            <p class="hint">Select a destination for this course. To include additional material first, add
+              <strong>documents</strong> or a <strong>Notion</strong> export from
+              <em>Import materials</em>; the general-AI pack below bundles every source together.</p>
             <div class="export-choice">
               <button id="mq-export-nblm" class="tile">
                 <span class="tile-ico">📓</span><span class="tile-title">For NotebookLM</span>
@@ -429,7 +494,7 @@
               </button>
               <button id="mq-export-ai" class="tile">
                 <span class="tile-ico">🤖</span><span class="tile-title">For a general AI assistant</span>
-                <span class="tile-desc">A single combined pack for ChatGPT, Claude and others.</span>
+                <span class="tile-desc">A single combined pack for ChatGPT, Claude, and others.</span>
               </button>
             </div>
             <div id="mq-export-result" class="results"></div>

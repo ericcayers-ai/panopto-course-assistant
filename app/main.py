@@ -45,6 +45,9 @@ from pydantic import BaseModel
 
 from . import core, transcribe, sources, notion, flashcards, study, database, courses, settings_store, search, llm, ai, study_planner
 from . import imageextract
+from . import nativeui
+from . import ollama_mgr
+from . import cheatsheet as cheatsheet_mod
 from . import secrets as secret_store
 from . import exports as export_engine
 from . import analytics
@@ -60,7 +63,7 @@ from .jobs import manager
 BASE_DIR = Path(__file__).resolve().parent.parent
 # Static assets live next to the app; CA_STATIC_DIR can override the location.
 STATIC_DIR = Path(os.environ.get("CA_STATIC_DIR", BASE_DIR / "static"))
-APP_VERSION = "2.6.0"
+APP_VERSION = "2.7.0"
 # Where transcripts are written/read. Override with PANOPTO_OUTPUT.
 OUTPUT_DIR = Path(os.environ.get("PANOPTO_OUTPUT", BASE_DIR / "transcripts")).resolve()
 core.ensure_dir(OUTPUT_DIR)
@@ -231,6 +234,30 @@ class StudyCsvRequest(BaseModel):
 class SrtExportRequest(BaseModel):
     output_dir: Optional[str] = None       # folder to copy SRT files alongside videos
     include_recordings: bool = True        # also place the lecture videos in that folder
+
+
+class PickFolderRequest(BaseModel):
+    title: str = "Choose a folder"
+
+
+class PickSaveRequest(BaseModel):
+    title: str = "Save as"
+    default_name: str = ""
+    ext: str = ""                          # e.g. ".pdf" / ".csv" for the save dialog
+
+
+class OllamaPullRequest(BaseModel):
+    model: str = ""
+
+
+class OllamaUseRequest(BaseModel):
+    model: str = ""
+
+
+class CheatsheetRequest(BaseModel):
+    course: str = ""
+    max_pages: int = 1                     # A4 page budget for the cheat sheet
+    save_path: Optional[str] = None        # exact PDF path chosen via Save As
 
 
 # --- Multi-course / persistence (§1) ---------------------------------------
@@ -455,6 +482,80 @@ def api_transcribe_recommend() -> Dict[str, Any]:
     return transcribe.recommend_settings()
 
 
+# ---------------------------------------------------------------------------
+# Native OS dialogs (this app runs locally, so exports use a real file picker)
+# ---------------------------------------------------------------------------
+
+
+@app.post("/api/pick-folder")
+def api_pick_folder(req: PickFolderRequest) -> Dict[str, Any]:
+    """Open a native folder picker and return the chosen path (null if cancelled).
+
+    ``available`` is false when no desktop dialog can be shown (e.g. a headless
+    host), so the frontend can fall back to a typed path."""
+    if not nativeui.available():
+        return {"path": None, "available": False}
+    path = nativeui.pick_directory(req.title or "Choose a folder", str(OUTPUT_DIR))
+    return {"path": path, "available": True}
+
+
+@app.post("/api/pick-save")
+def api_pick_save(req: PickSaveRequest) -> Dict[str, Any]:
+    """Open a native 'Save As' dialog and return the chosen file path (null if
+    cancelled)."""
+    if not nativeui.available():
+        return {"path": None, "available": False}
+    path = nativeui.pick_save_file(req.title or "Save as", req.default_name,
+                                   str(OUTPUT_DIR), req.ext or "")
+    return {"path": path, "available": True}
+
+
+# ---------------------------------------------------------------------------
+# Local Ollama: detect / start / pull models so AI features run inside the app
+# ---------------------------------------------------------------------------
+
+
+@app.get("/api/ollama/status")
+def api_ollama_status() -> Dict[str, Any]:
+    return ollama_mgr.status()
+
+
+@app.post("/api/ollama/start")
+def api_ollama_start() -> Dict[str, Any]:
+    try:
+        return ollama_mgr.start_server()
+    except RuntimeError as e:
+        raise HTTPException(status_code=503, detail=str(e))
+
+
+@app.post("/api/ollama/pull")
+def api_ollama_pull(req: OllamaPullRequest) -> Dict[str, Any]:
+    """Download a model into the local server. Runs as a background job so the UI
+    can show progress."""
+    model = (req.model or ollama_mgr.DEFAULT_MODEL).strip()
+    if not ollama_mgr.binary() and not ollama_mgr.is_running():
+        raise HTTPException(
+            status_code=503,
+            detail="Ollama is not installed. Install it from https://ollama.com/download.")
+
+    def work(_progress):
+        return ollama_mgr.pull_model(model, progress=lambda s, f: _progress(s, f))
+
+    job = manager.submit(f"Ollama: pull {model}", work, type="ollama_pull",
+                         payload={"model": model})
+    return job.to_dict()
+
+
+@app.post("/api/ollama/use")
+def api_ollama_use(req: OllamaUseRequest) -> Dict[str, Any]:
+    """Point the app's AI features at the local Ollama with the chosen model."""
+    model = (req.model or ollama_mgr.DEFAULT_MODEL).strip()
+    cid = settings_store.get_active_course(db)
+    cfg = llm.set_config(db, cid, {"provider": "ollama", "model": model,
+                                   "host": ollama_mgr.DEFAULT_HOST})
+    return {"ok": True, "config": _safe_ai_config(cfg)}
+
+
 def _safe_ai_config(cfg: Dict[str, Any]) -> Dict[str, Any]:
     """Never echo a stored API key back to the client - report only its presence."""
     out = {k: v for k, v in cfg.items() if k != "api_key"}
@@ -604,6 +705,26 @@ def api_courses_export(course_id: int) -> Dict[str, Any]:
         raise HTTPException(status_code=404, detail="Course not found")
     return export_engine.course_archive(OUTPUT_DIR, db=db, course_id=course_id,
                                        course=row["code"] or row["name"])
+
+
+@app.post("/api/library/clear")
+def api_library_clear() -> Dict[str, Any]:
+    """Remove all course files (transcripts, documents, Notion pages and generated
+    exports) from the library, keeping the database, secrets and backups intact.
+
+    Destructive: the frontend confirms with the user before calling this."""
+    removed = core.clear_library(OUTPUT_DIR)
+    # Drop the matching index rows for the active course so counts stay consistent.
+    cid = settings_store.get_active_course(db)
+    if cid is not None:
+        try:
+            db.execute("DELETE FROM transcripts WHERE course_id=?", (cid,))
+            db.execute("DELETE FROM documents WHERE course_id=?", (cid,))
+        except Exception:
+            pass
+    _audit("library.clear", detail=f"{removed['files']} file(s) removed",
+           feature="export")
+    return {"ok": True, **removed}
 
 
 # ---------------------------------------------------------------------------
@@ -1417,6 +1538,37 @@ def api_flashcards_categorize(req: FlashcardCatRequest) -> Dict[str, Any]:
 
     job = manager.submit(f"Categorize deck: {deck}", work,
                         type="flashcards_categorize", payload=req.model_dump(), course_id=cid)
+    return job.to_dict()
+
+
+@app.post("/api/export/cheatsheet")
+def api_export_cheatsheet(req: CheatsheetRequest) -> Dict[str, Any]:
+    """Build a dense exam cheat sheet PDF from the course material, condensed by the
+    LLM and bounded to a maximum number of A4 pages. Runs as a background job."""
+    cid = settings_store.get_active_course(db)
+    cfg = llm.get_config(db, cid)
+    if not llm.is_enabled(cfg):
+        raise HTTPException(
+            status_code=503,
+            detail="An AI model is required to build a cheat sheet. Start Ollama (Export "
+            "tab) or configure a provider, then try again.")
+    course = req.course
+    max_pages = max(1, min(req.max_pages, 10))
+    save_path = req.save_path
+    captured_cfg = dict(cfg)
+
+    def work(_progress):
+        _progress("Condensing course material...", 0.2)
+        result = cheatsheet_mod.build(OUTPUT_DIR, course=course, max_pages=max_pages,
+                                      config=captured_cfg, save_path=save_path)
+        _progress("done", 1.0)
+        if captured_cfg.get("provider") in llm.CLOUD_PROVIDERS:
+            _audit("ai.cheatsheet", target=captured_cfg.get("provider", ""),
+                   detail="exam cheat sheet", feature="ai_cloud")
+        return result
+
+    job = manager.submit(f"Exam cheat sheet ({max_pages} page{'s' if max_pages != 1 else ''})",
+                         work, type="cheatsheet", payload=req.model_dump(), course_id=cid)
     return job.to_dict()
 
 

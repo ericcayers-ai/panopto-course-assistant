@@ -1,0 +1,128 @@
+"""Tests for the renewal features: native-dialog routes, local-AI (Ollama)
+status, exam cheat sheet, and the destructive 'remove course files' clear.
+
+OUTPUT is pinned to a temp dir (via PANOPTO_OUTPUT) before importing app.main,
+so these never touch the real ./transcripts.
+"""
+from __future__ import annotations
+
+import importlib
+from pathlib import Path
+
+import pytest
+from fastapi.testclient import TestClient
+
+
+@pytest.fixture()
+def client(tmp_path, monkeypatch):
+    monkeypatch.setenv("PANOPTO_OUTPUT", str(tmp_path))
+    import app.main as main
+    main = importlib.reload(main)
+    return TestClient(main.app), tmp_path
+
+
+# ---------------------------------------------------------------------------
+# core.clear_library - must remove content but preserve DB / secrets / backups
+# ---------------------------------------------------------------------------
+
+def test_clear_library_preserves_infrastructure(tmp_path: Path):
+    from app import core
+    # Content that must be removed.
+    (tmp_path / "Week_01").mkdir()
+    (tmp_path / "Week_01" / "lec.txt").write_text("transcript", encoding="utf-8")
+    (tmp_path / "_docs").mkdir()
+    (tmp_path / "_docs" / "slides.md").write_text("doc", encoding="utf-8")
+    (tmp_path / "_notebooklm").mkdir()
+    (tmp_path / "_notebooklm" / "course_pack.md").write_text("pack", encoding="utf-8")
+    # Infrastructure that must survive.
+    (tmp_path / "course_assistant.db").write_text("db", encoding="utf-8")
+    (tmp_path / ".secrets.json").write_text("secret", encoding="utf-8")
+    (tmp_path / ".secrets.key").write_text("key", encoding="utf-8")
+    (tmp_path / "_backups").mkdir()
+    (tmp_path / "_backups" / "b.zip").write_text("backup", encoding="utf-8")
+
+    res = core.clear_library(tmp_path)
+
+    assert res["files"] == 3                      # the three content files
+    assert not (tmp_path / "Week_01").exists()
+    assert not (tmp_path / "_docs").exists()
+    assert not (tmp_path / "_notebooklm").exists()
+    # Preserved:
+    assert (tmp_path / "course_assistant.db").exists()
+    assert (tmp_path / ".secrets.json").exists()
+    assert (tmp_path / ".secrets.key").exists()
+    assert (tmp_path / "_backups" / "b.zip").exists()
+
+
+def test_clear_library_empty_is_safe(tmp_path: Path):
+    from app import core
+    res = core.clear_library(tmp_path / "does-not-exist")
+    assert res == {"files": 0, "folders": 0}
+
+
+def test_library_clear_endpoint(client):
+    c, tmp_path = client
+    (tmp_path / "Week_01").mkdir()
+    (tmp_path / "Week_01" / "lec.txt").write_text("x", encoding="utf-8")
+    r = c.post("/api/library/clear")
+    assert r.status_code == 200
+    body = r.json()
+    assert body["ok"] is True and body["files"] >= 1
+    assert not (tmp_path / "Week_01").exists()
+
+
+# ---------------------------------------------------------------------------
+# Native dialog routes - report availability without opening a real dialog
+# ---------------------------------------------------------------------------
+
+def test_pick_folder_reports_availability(client, monkeypatch):
+    c, _ = client
+    # Force the "no desktop dialog" path so the test never blocks on a real window.
+    monkeypatch.setattr("app.nativeui.available", lambda: False)
+    r = c.post("/api/pick-folder", json={"title": "x"})
+    assert r.status_code == 200
+    assert r.json() == {"path": None, "available": False}
+
+
+def test_pick_save_reports_availability(client, monkeypatch):
+    c, _ = client
+    monkeypatch.setattr("app.nativeui.available", lambda: False)
+    r = c.post("/api/pick-save", json={"title": "x", "default_name": "a.pdf", "ext": ".pdf"})
+    assert r.status_code == 200
+    assert r.json()["available"] is False
+
+
+# ---------------------------------------------------------------------------
+# Ollama status - never raises, reports a clean shape even when not installed
+# ---------------------------------------------------------------------------
+
+def test_ollama_status_shape(client):
+    c, _ = client
+    r = c.get("/api/ollama/status")
+    assert r.status_code == 200
+    body = r.json()
+    for key in ("installed", "running", "host", "models", "install_url"):
+        assert key in body
+    assert isinstance(body["models"], list)
+
+
+# ---------------------------------------------------------------------------
+# Cheat sheet - requires an AI model; without one it returns a clear 503
+# ---------------------------------------------------------------------------
+
+def test_cheatsheet_requires_llm(client):
+    c, _ = client
+    r = c.post("/api/export/cheatsheet", json={"course": "X", "max_pages": 2})
+    assert r.status_code == 503
+    assert "AI model" in r.json()["detail"]
+
+
+def test_cheatsheet_render_respects_page_cap(tmp_path: Path):
+    from app import cheatsheet
+    md = "\n".join(f"## Topic {i}\n- point {i} with some text\n- another point {i}"
+                   for i in range(150))
+    out = tmp_path / "sheet.pdf"
+    info = cheatsheet.render_pdf(md, out, title="Test", max_pages=2)
+    assert out.exists()
+    assert info["pages"] <= 2
+    assert info["truncated"] is True

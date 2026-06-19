@@ -11,6 +11,7 @@ from __future__ import annotations
 import datetime as dt
 import json
 import re
+import shutil
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass
 from pathlib import Path
@@ -1247,6 +1248,47 @@ def list_library(output_dir: Path) -> Dict[str, Any]:
     }
     counts["total"] = sum(counts.values())
     return {"output_dir": str(output_dir), "categories": categories, "counts": counts}
+
+
+# Top-level entries that are infrastructure, not course content, and must survive
+# a "clear this course" operation: the database, the encrypted secret store, and
+# any backups the user has taken.
+_PRESERVE_ON_CLEAR_NAMES = {
+    "course_assistant.db", "course_assistant.db-wal", "course_assistant.db-shm",
+    ".secrets.json", ".secrets.key", ".secret_names.json", "_backups",
+}
+
+
+def clear_library(output_dir: Path) -> Dict[str, Any]:
+    """Delete the on-disk course library (transcripts, documents, Notion pages and
+    generated exports) under ``output_dir``, leaving the database, secret store and
+    backups intact. Returns counts of what was removed.
+
+    This only touches the output directory's own contents - never paths outside it.
+    """
+    output_dir = Path(output_dir)
+    removed_files = 0
+    removed_dirs = 0
+    if not output_dir.is_dir():
+        return {"files": 0, "folders": 0}
+    for entry in sorted(output_dir.iterdir()):
+        if entry.name in _PRESERVE_ON_CLEAR_NAMES:
+            continue
+        # Keep any other hidden config the app relies on; only clear real content.
+        if entry.name.startswith(".") and entry.is_file():
+            continue
+        try:
+            if entry.is_dir():
+                count = sum(1 for f in entry.rglob("*") if f.is_file())
+                shutil.rmtree(entry, ignore_errors=True)
+                removed_files += count
+                removed_dirs += 1
+            else:
+                entry.unlink()
+                removed_files += 1
+        except OSError:
+            continue
+    return {"files": removed_files, "folders": removed_dirs}
 
 
 # ---------------------------------------------------------------------------

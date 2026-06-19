@@ -74,28 +74,41 @@ function promptModal(label, placeholder = "") {
   });
 }
 
-// Export-destination chooser. Always shown before any export so the user
-// confirms where files land. Resolves to the chosen path (""=default folder),
-// or null if cancelled.
-function askExportDest(opts = {}) {
-  const { title = "Where should this be saved?",
-          hint = "Leave blank to use the default folder inside your library.",
-          placeholder = "C:\\Users\\…\\Course exports",
-          defaultValue = "",
-          confirmText = "Export here" } = opts;
+// Native OS dialogs. The backend opens a real file-explorer window (this app
+// runs locally), so the user picks a destination instead of typing a path.
+// Both resolve to the chosen path, or null when the user cancels.
+
+async function pickFolder(title = "Choose a folder") {
+  try {
+    const d = await postJSON("/api/pick-folder", { title });
+    if (d.available === false) return askPathFallback(title);
+    return d.path || null;            // null = cancelled
+  } catch (_) { return askPathFallback(title); }
+}
+
+async function pickSaveFile(title = "Save as", defaultName = "", ext = "") {
+  try {
+    const d = await postJSON("/api/pick-save", { title, default_name: defaultName, ext });
+    if (d.available === false) return askPathFallback(title, defaultName);
+    return d.path || null;
+  } catch (_) { return askPathFallback(title, defaultName); }
+}
+
+// Fallback for hosts with no desktop dialog (e.g. headless): a typed-path modal.
+function askPathFallback(title = "Where should this be saved?", defaultValue = "") {
   return new Promise((resolve) => {
     const overlay = el("div", { class: "modal-overlay",
       onclick: (e) => { if (e.target === overlay) { overlay.remove(); resolve(null); } } });
-    const inp = el("input", { type: "text", placeholder, class: "modal-input",
-      autocomplete: "off", value: defaultValue });
-    const commit = () => { overlay.remove(); resolve(inp.value.trim()); };
+    const inp = el("input", { type: "text", placeholder: "C:\\Users\\…\\Course exports",
+      class: "modal-input", autocomplete: "off", value: defaultValue });
+    const commit = () => { overlay.remove(); resolve(inp.value.trim() || null); };
     const cancel = () => { overlay.remove(); resolve(null); };
     const box = el("div", { class: "modal-box" }, [
       el("p", { class: "modal-label", text: title }),
-      el("p", { class: "hint", text: hint }),
+      el("p", { class: "hint", text: "No file dialog is available on this host. Enter a path." }),
       inp,
       el("div", { class: "modal-actions" }, [
-        el("button", { text: confirmText, onclick: commit }),
+        el("button", { text: "Save here", onclick: commit }),
         el("button", { class: "ghost", text: "Cancel", onclick: cancel }),
       ]),
     ]);
@@ -106,6 +119,26 @@ function askExportDest(opts = {}) {
       if (e.key === "Enter") commit();
       else if (e.key === "Escape") cancel();
     });
+  });
+}
+
+// A simple confirmation dialog. Resolves true (confirmed) or false (cancelled).
+function confirmModal(title, message, { confirmText = "Confirm", danger = false } = {}) {
+  return new Promise((resolve) => {
+    const overlay = el("div", { class: "modal-overlay",
+      onclick: (e) => { if (e.target === overlay) { overlay.remove(); resolve(false); } } });
+    const box = el("div", { class: "modal-box" }, [
+      el("p", { class: "modal-label", text: title }),
+      el("p", { class: "hint", text: message }),
+      el("div", { class: "modal-actions" }, [
+        el("button", { class: danger ? "danger" : "", text: confirmText,
+          onclick: () => { overlay.remove(); resolve(true); } }),
+        el("button", { class: "ghost", text: "Cancel",
+          onclick: () => { overlay.remove(); resolve(false); } }),
+      ]),
+    ]);
+    overlay.appendChild(box);
+    document.body.appendChild(overlay);
   });
 }
 
@@ -244,12 +277,16 @@ async function loadStatus() {
     const llmReady = s.llm_ready === true;
     const fcMissing = $("fc-llm-missing");
     const fcCatMissing = $("fc-cat-llm-missing");
+    const csMissing = $("cheatsheet-llm-missing");
     const fcBtn = $("fc-generate");
     const fcCatBtn = $("fc-categorize");
+    const csBtn = $("cheatsheet-go");
     if (fcMissing) fcMissing.classList.toggle("hidden", llmReady);
     if (fcCatMissing) fcCatMissing.classList.toggle("hidden", llmReady);
+    if (csMissing) csMissing.classList.toggle("hidden", llmReady);
     if (fcBtn) fcBtn.disabled = !llmReady;
     if (fcCatBtn) fcCatBtn.disabled = !llmReady;
+    if (csBtn) csBtn.disabled = !llmReady;
   } catch (e) {
     bar.textContent = "could not reach backend: " + e.message;
     bar.className = "status-bar warn";
@@ -433,7 +470,7 @@ function renderLectures() {
       el("div", { class: "lecture-main" }, [
         el("div", {}, [
           el("strong", { text: lec.title }),
-          done ? el("span", { class: "badge done", text: "✓ transcribed" })
+          done ? el("span", { class: "badge done", text: "Transcribed" })
                : el("span", { class: "badge pending", text: "pending" }),
         ]),
         el("div", { class: "hint", text: meta || "-" }),
@@ -562,7 +599,7 @@ async function loadTranscripts() {  // loads the whole Library
     }
 
     // Transcripts (grouped per lecture, with format chips)
-    librarySection(list, "🎙️ Transcripts", cats.transcripts.length);
+    librarySection(list, "Transcripts", cats.transcripts.length);
     cats.transcripts.forEach((it) => {
       const label = (it.folder ? it.folder + "/" : "") + it.stem;
       const fmts = Object.keys(it.formats).sort(
@@ -580,19 +617,19 @@ async function loadTranscripts() {  // loads the whole Library
     const isImg = (f) => _IMG_EXTS.has((f.name || f.path || "").toLowerCase().replace(/.*\./, "."));
     const docFiles = cats.documents.filter((f) => !isImg(f));
     const imgFiles = cats.documents.filter(isImg);
-    librarySection(list, "📑 Documents", docFiles.length);
+    librarySection(list, "Documents", docFiles.length);
     docFiles.forEach((f) => list.appendChild(fileRow(f)));
     if (imgFiles.length) {
       const imgRow = el("div", { class: "list-item muted small" }, [
-        el("span", { class: "li-label", text: `📷 ${imgFiles.length} embedded image(s) (from document conversion)` }),
+        el("span", { class: "li-label", text: `${imgFiles.length} embedded image(s) (from document conversion)` }),
       ]);
       list.appendChild(imgRow);
     }
-    librarySection(list, "🗒️ Notion pages", cats.notion.length);
+    librarySection(list, "Notion pages", cats.notion.length);
     cats.notion.forEach((f) => list.appendChild(fileRow(f)));
-    librarySection(list, "📂 Other sources", cats.others.length);
+    librarySection(list, "Other sources", cats.others.length);
     cats.others.forEach((f) => list.appendChild(fileRow(f)));
-    librarySection(list, "📤 Generated exports", cats.exports.length);
+    librarySection(list, "Generated exports", cats.exports.length);
     cats.exports.forEach((f) => list.appendChild(fileRow(f)));
   } catch (e) { list.textContent = "Error: " + e.message; }
 }
@@ -625,7 +662,7 @@ async function applyLibraryFilters() {
   try {
     const data = await api("/api/index?" + params.toString());
     clear(list);
-    librarySection(list, "🔎 Filtered (" + data.count + ")", data.count);
+    librarySection(list, "Filtered (" + data.count + ")", data.count);
     if (!data.count) { list.appendChild(el("p", { class: "empty", text: "No items match these filters." })); return; }
     data.items.forEach((it) => {
       list.appendChild(el("div", { class: "list-item clickable", onclick: () => viewTranscript(it.path) }, [
@@ -649,24 +686,22 @@ $("lib-clear").addEventListener("click", () => {
 $("export-all").addEventListener("click", async () => {
   const out = $("export-all-results");
   const btn = $("export-all");
-  const dest = await askExportDest({ title: "Export everything for AI - where to?",
-    defaultValue: $("export-all-dest")?.value.trim() || "" });
+  const dest = await pickFolder("Choose a folder to export all sources into");
   if (dest === null) return;                      // cancelled
-  if ($("export-all-dest")) $("export-all-dest").value = dest;
   btn.disabled = true; out.textContent = "Gathering every source…";
   try {
     const data = await api("/api/export/all", {
       method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ course: currentCourse(), combined: $("all-combined").checked, output_dir: dest || undefined }),
+      body: JSON.stringify({ course: currentCourse(), combined: $("all-combined").checked, output_dir: dest }),
     });
     clear(out);
     out.appendChild(el("p", { class: "ok-text",
-      text: `✓ ${data.count} source(s) - ${data.transcripts} transcript(s), ${data.documents} document(s), ${data.notion} Notion page(s)` }));
+      text: `Exported ${data.count} source(s): ${data.transcripts} transcript(s), ${data.documents} document(s), ${data.notion} Notion page(s).` }));
     if (data.combined) out.appendChild(el("div", {}, [
-      el("button", { class: "tag", text: "view everything_pack.md", onclick: () => { viewTranscript(data.combined); showTab("library"); } }),
+      el("button", { class: "tag", text: "View everything_pack.md", onclick: () => { viewTranscript(data.combined); showTab("library"); } }),
     ]));
-    out.appendChild(el("p", { class: "hint", text: `Per-lecture files written under ${data.dest}` }));
-    toast(`Exported ${data.count} source(s) for AI.`, "ok");
+    out.appendChild(el("p", { class: "hint", text: `Files saved to ${data.output_dir || data.dest}` }));
+    toast(`Exported ${data.count} source(s).`, "ok");
   } catch (e) { out.textContent = "Error: " + e.message; toast(e.message, "warn"); }
   finally { btn.disabled = false; }
 });
@@ -675,24 +710,22 @@ $("export-all").addEventListener("click", async () => {
 $("nlm-export").addEventListener("click", async () => {
   const out = $("nlm-results");
   const btn = $("nlm-export");
-  const dest = await askExportDest({ title: "Export NotebookLM sources - where to?",
-    defaultValue: $("nlm-dest")?.value.trim() || "" });
+  const dest = await pickFolder("Choose a folder for the NotebookLM sources");
   if (dest === null) return;
-  if ($("nlm-dest")) $("nlm-dest").value = dest;
   btn.disabled = true; out.textContent = "Exporting…";
   try {
     const data = await api("/api/export/notebooklm", {
       method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ course: currentCourse(), combined: $("nlm-combined").checked, output_dir: dest || undefined }),
+      body: JSON.stringify({ course: currentCourse(), combined: $("nlm-combined").checked, output_dir: dest }),
     });
     clear(out);
-    out.appendChild(el("p", { class: "ok-text", text: `✓ Exported ${data.count} file(s) → ${data.dest}` }));
+    out.appendChild(el("p", { class: "ok-text", text: `Exported ${data.count} file(s) to ${data.output_dir || data.dest}.` }));
     if (data.combined) out.appendChild(el("div", {}, [
-      el("button", { class: "tag", text: "view course_pack.md", onclick: () => viewTranscript(data.combined) }),
+      el("button", { class: "tag", text: "View course_pack.md", onclick: () => viewTranscript(data.combined) }),
     ]));
     data.files.forEach((f) => out.appendChild(el("div", { class: "list-item" }, [
       el("span", { class: "li-label", text: f }),
-      el("button", { class: "tag", text: "view", onclick: () => viewTranscript(f) }),
+      el("button", { class: "tag", text: "View", onclick: () => viewTranscript(f) }),
     ])));
     toast(`Exported ${data.count} NotebookLM file(s).`, "ok");
   } catch (e) { out.textContent = "Error: " + e.message; toast(e.message, "warn"); }
@@ -703,29 +736,27 @@ $("nlm-export").addEventListener("click", async () => {
 $("studycsv-go").addEventListener("click", async () => {
   const out = $("studycsv-results");
   const btn = $("studycsv-go");
-  const dest = await askExportDest({ title: "Export Notion study CSV - where to?",
-    defaultValue: $("studycsv-dest")?.value.trim() || "" });
+  const dest = await pickFolder("Choose a folder for the study database CSV");
   if (dest === null) return;
-  if ($("studycsv-dest")) $("studycsv-dest").value = dest;
   btn.disabled = true; out.textContent = "Queuing export…";
   try {
     const data = await api("/api/export/notion-csv", {
       method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ course: currentCourse(), output_dir: dest || undefined }),
+      body: JSON.stringify({ course: currentCourse(), output_dir: dest }),
     });
     clear(out);
     if (data.id) {
-      out.appendChild(el("p", { class: "ok-text", text: `✓ Job queued - check Jobs panel for progress.` }));
+      out.appendChild(el("p", { class: "ok-text", text: "Job queued. See the Jobs panel for progress." }));
       out.appendChild(el("button", { class: "tag", text: "Go to Jobs", onclick: () => showTab("jobs") }));
-      toast("Study CSV job started.", "ok");
+      toast("Study database export started.", "ok");
       startJobsPolling();
     } else {
-      out.appendChild(el("p", { class: "ok-text", text: `✓ ${data.count} lecture(s) → ${data.csv}` }));
+      out.appendChild(el("p", { class: "ok-text", text: `Exported ${data.count} lecture(s) to ${data.output_dir || data.csv}.` }));
       out.appendChild(el("div", {}, [
-        el("button", { class: "tag", text: "view CSV", onclick: () => viewTranscript(data.csv) }),
+        el("button", { class: "tag", text: "View CSV", onclick: () => viewTranscript(data.csv) }),
       ]));
       out.appendChild(el("p", { class: "hint", text: "Columns: " + (data.columns || []).join(", ") }));
-      toast(`Exported ${data.count} rows to a Notion CSV.`, "ok");
+      toast(`Exported ${data.count} rows to a CSV.`, "ok");
     }
   } catch (e) { out.textContent = "Error: " + e.message; toast(e.message, "warn"); }
   finally { btn.disabled = false; }
@@ -734,17 +765,10 @@ $("studycsv-go").addEventListener("click", async () => {
 // Lecture SRT export - writes SRT files to a user-chosen folder alongside videos
 $("srt-export").addEventListener("click", async () => {
   const out = $("srt-results");
-  const dest = await askExportDest({
-    title: "Export SRT + recordings - choose a folder",
-    hint: "Subtitles and each lecture's video are saved here together so players auto-load them.",
-    placeholder: "C:\\Videos\\Lectures",
-    defaultValue: $("srt-dest").value.trim(),
-    confirmText: "Export here" });
+  const dest = await pickFolder("Choose a folder for the subtitles and recordings");
   if (dest === null) return;
-  if (!dest) { toast("Choose a folder to save the SRT files and recordings.", "warn"); return; }
-  $("srt-dest").value = dest;
   const btn = $("srt-export");
-  btn.disabled = true; out.textContent = "Exporting SRT files…";
+  btn.disabled = true; out.textContent = "Exporting subtitle files…";
   try {
     const data = await api("/api/export/srt", {
       method: "POST", headers: { "Content-Type": "application/json" },
@@ -752,17 +776,17 @@ $("srt-export").addEventListener("click", async () => {
     });
     clear(out);
     out.appendChild(el("p", { class: "ok-text",
-      text: `✓ ${data.count} SRT file(s) written to ${data.dest || data.output_dir}` }));
+      text: `Exported ${data.count} subtitle file(s) to ${data.dest || data.output_dir}.` }));
     const rec = data.recordings;
     if (rec) {
       const have = (rec.copied?.length || 0) + (rec.downloaded?.length || 0);
       out.appendChild(el("p", { class: have ? "ok-text" : "hint",
-        text: `🎬 ${have} lecture recording(s) placed alongside the SRT files`
+        text: `${have} lecture recording(s) placed alongside the subtitle files`
           + (rec.downloaded?.length ? ` (${rec.downloaded.length} downloaded)` : "") + "." }));
       if (rec.missing?.length) {
         out.appendChild(el("p", { class: "hint",
-          text: `${rec.missing.length} recording(s) couldn't be retrieved (not kept locally and `
-            + `the source needs sign-in). Re-transcribe those lectures to keep their video.` }));
+          text: `${rec.missing.length} recording(s) could not be retrieved (not kept locally, and `
+            + `the source requires sign-in). Re-transcribe those lectures to retain their video.` }));
       }
     }
     out.appendChild(el("p", { class: "hint",
@@ -820,12 +844,12 @@ $("search-q").addEventListener("keydown", (e) => { if (e.key === "Enter") doSear
 
 function renderDeckResult(out, data, label) {
   clear(out);
-  out.appendChild(el("p", { class: "ok-text", text: `✓ ${data.count} card(s) - ${label}` }));
+  out.appendChild(el("p", { class: "ok-text", text: `${data.count} card(s) ${label}.` }));
   out.appendChild(el("div", { class: "row" }, [
-    el("button", { class: "tag", text: "view Anki .txt", onclick: () => { viewTranscript(data.anki_tsv); showTab("library"); } }),
-    el("button", { class: "tag", text: "view .csv", onclick: () => { viewTranscript(data.csv); showTab("library"); } }),
+    el("button", { class: "tag", text: "View Anki .txt", onclick: () => { viewTranscript(data.anki_tsv); showTab("library"); } }),
+    el("button", { class: "tag", text: "View .csv", onclick: () => { viewTranscript(data.csv); showTab("library"); } }),
   ]));
-  out.appendChild(el("p", { class: "hint", text: "In Anki: File → Import → pick the .txt (tags map to column 3)." }));
+  out.appendChild(el("p", { class: "hint", text: "In Anki: File → Import, then select the .txt file (tags map to column 3)." }));
   (data.preview || []).forEach((c) => {
     out.appendChild(el("div", { class: "card flashcard" }, [
       el("div", {}, [el("strong", { text: "Q: " }), c.front]),
@@ -838,10 +862,8 @@ function renderDeckResult(out, data, label) {
 $("fc-generate").addEventListener("click", async () => {
   const out = $("fc-gen-results");
   const btn = $("fc-generate");
-  const dest = await askExportDest({ title: "Generate flashcards - where to save the deck?",
-    defaultValue: $("fc-output-dir")?.value.trim() || "" });
+  const dest = await pickFolder("Choose a folder to save the flashcard deck");
   if (dest === null) return;
-  if ($("fc-output-dir")) $("fc-output-dir").value = dest;
   btn.disabled = true; out.textContent = "Queuing flashcard job…";
   try {
     const data = await api("/api/flashcards/generate", {
@@ -850,17 +872,17 @@ $("fc-generate").addEventListener("click", async () => {
         deck: $("fc-deck").value.trim() || "flashcards",
         course: currentCourse(),
         max_cards: parseInt($("fc-max").value, 10) || 50,
-        output_dir: dest || undefined,
+        output_dir: dest,
       }),
     });
     clear(out);
     if (data.id) {
-      out.appendChild(el("p", { class: "ok-text", text: "✓ Flashcard job queued - check Jobs panel for progress." }));
+      out.appendChild(el("p", { class: "ok-text", text: "Flashcard job queued. See the Jobs panel for progress." }));
       out.appendChild(el("button", { class: "tag", text: "Go to Jobs", onclick: () => showTab("jobs") }));
       toast("Flashcard generation started.", "ok");
       startJobsPolling();
     } else {
-      renderDeckResult(out, data, "generated with LLM");
+      renderDeckResult(out, data, "generated");
       toast(`Generated ${data.count} flashcard(s).`, "ok");
     }
   } catch (e) { out.textContent = "Error: " + e.message; toast(e.message, "warn"); }
@@ -872,7 +894,7 @@ $("fc-categorize").addEventListener("click", async () => {
   const btn = $("fc-categorize");
   const text = $("fc-cat-text").value.trim();
   const path = $("fc-cat-path").value.trim();
-  if (!text && !path) { toast("Paste a deck or give a file path.", "warn"); return; }
+  if (!text && !path) { toast("Provide a deck, either pasted or as a file path.", "warn"); return; }
   btn.disabled = true; out.textContent = "Queuing categorization job…";
   try {
     const data = await api("/api/flashcards/categorize", {
@@ -885,9 +907,9 @@ $("fc-categorize").addEventListener("click", async () => {
     });
     clear(out);
     if (data.id) {
-      out.appendChild(el("p", { class: "ok-text", text: "✓ Categorization job queued - check Jobs panel for progress." }));
+      out.appendChild(el("p", { class: "ok-text", text: "Categorization job queued. See the Jobs panel for progress." }));
       out.appendChild(el("button", { class: "tag", text: "Go to Jobs", onclick: () => showTab("jobs") }));
-      toast("Categorization job started.", "ok");
+      toast("Categorization started.", "ok");
       startJobsPolling();
     } else {
       renderDeckResult(out, data, "tagged");
@@ -896,6 +918,106 @@ $("fc-categorize").addEventListener("click", async () => {
   } catch (e) { out.textContent = "Error: " + e.message; toast(e.message, "warn"); }
   finally { btn.disabled = false; }
 });
+
+// ---- exam cheat sheet (PDF, LLM, A4 page limit) ---------------------------
+
+$("cheatsheet-go")?.addEventListener("click", async () => {
+  const out = $("cheatsheet-results");
+  const btn = $("cheatsheet-go");
+  const pages = Math.max(1, Math.min(parseInt($("cheatsheet-pages").value, 10) || 1, 10));
+  const save = await pickSaveFile("Save the exam cheat sheet",
+    (currentCourse() || "course").replace(/[^\w.-]+/g, "_") + "_cheatsheet.pdf", ".pdf");
+  if (save === null) return;
+  btn.disabled = true; out.textContent = "Queuing cheat sheet job…";
+  try {
+    const data = await api("/api/export/cheatsheet", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ course: currentCourse(), max_pages: pages, save_path: save }),
+    });
+    clear(out);
+    if (data.id) {
+      out.appendChild(el("p", { class: "ok-text", text: "Cheat sheet job queued. See the Jobs panel for progress." }));
+      out.appendChild(el("button", { class: "tag", text: "Go to Jobs", onclick: () => showTab("jobs") }));
+      toast("Cheat sheet generation started.", "ok");
+      startJobsPolling();
+    }
+  } catch (e) { out.textContent = "Error: " + e.message; toast(e.message, "warn"); }
+  finally { btn.disabled = false; }
+});
+
+// ---- local Ollama management ----------------------------------------------
+
+function renderOllamaStatus(s) {
+  const box = $("ollama-status"); if (!box) return;
+  clear(box);
+  const dot = (state, label) => el("span", { class: "env-pill" }, [el("span", { class: "dot " + state }), label]);
+  box.appendChild(dot(s.installed ? "on" : "off", s.installed ? "Ollama installed" : "Ollama not installed"));
+  box.appendChild(dot(s.running ? "on" : "warn", s.running ? "Server running" : "Server stopped"));
+  if (!s.installed) {
+    box.appendChild(el("p", { class: "hint" }, [
+      "Install Ollama from ",
+      el("a", { href: s.install_url || "https://ollama.com/download", target: "_blank", rel: "noopener", text: "ollama.com" }),
+      ", then return here to start it.",
+    ]));
+  }
+  // Populate the installed-model dropdown.
+  const sel = $("ollama-model");
+  if (sel) {
+    const prev = sel.value;
+    clear(sel);
+    const models = s.models || [];
+    if (!models.length) sel.appendChild(el("option", { value: "", text: "(no models installed)" }));
+    models.forEach((m) => sel.appendChild(el("option", { value: m, text: m })));
+    if (prev && models.includes(prev)) sel.value = prev;
+  }
+}
+
+async function refreshOllama() {
+  try { renderOllamaStatus(await api("/api/ollama/status")); }
+  catch (_) { /* leave as-is */ }
+}
+
+$("ollama-refresh")?.addEventListener("click", refreshOllama);
+
+$("ollama-start")?.addEventListener("click", async () => {
+  const out = $("ollama-results");
+  out.textContent = "Starting the local Ollama server…";
+  try {
+    const s = await postJSON("/api/ollama/start", {});
+    renderOllamaStatus(s);
+    out.textContent = s.running ? "Local server is running." : "Could not confirm the server started.";
+    toast(s.running ? "Ollama server running." : "Ollama did not start.", s.running ? "ok" : "warn");
+  } catch (e) { out.textContent = "Error: " + e.message; toast(e.message, "warn"); }
+});
+
+$("ollama-pull")?.addEventListener("click", async () => {
+  const out = $("ollama-results");
+  const model = ($("ollama-model-custom").value.trim() || $("ollama-model").value || "llama3");
+  out.textContent = `Queuing download of ${model}…`;
+  try {
+    const data = await postJSON("/api/ollama/pull", { model });
+    if (data.id) {
+      out.textContent = `Downloading ${model}. See the Jobs panel for progress.`;
+      toast("Model download started.", "ok");
+      showTab("jobs"); startJobsPolling();
+    }
+  } catch (e) { out.textContent = "Error: " + e.message; toast(e.message, "warn"); }
+});
+
+$("ollama-use")?.addEventListener("click", async () => {
+  const out = $("ollama-results");
+  const model = ($("ollama-model-custom").value.trim() || $("ollama-model").value);
+  if (!model) { toast("Select or enter a model first.", "warn"); return; }
+  try {
+    await postJSON("/api/ollama/use", { model });
+    out.textContent = `AI features will now use the local model "${model}".`;
+    toast("AI model set.", "ok");
+    loadStatus();   // refresh LLM-ready state so AI buttons enable
+  } catch (e) { out.textContent = "Error: " + e.message; toast(e.message, "warn"); }
+});
+
+// Refresh Ollama status whenever its panel is opened.
+$("ollama-section")?.addEventListener("toggle", (e) => { if (e.target.open) refreshOllama(); });
 
 // ---- pdf ------------------------------------------------------------------
 
@@ -923,7 +1045,7 @@ $("pdf-go").addEventListener("click", async () => {
     clear(out);
     const withImgs = data.files ? data.files.reduce((n, f) => n + (f.images || 0), 0) : 0;
     const imgNote = withImgs ? ` · ${withImgs} image(s) attached` : "";
-    out.appendChild(el("p", { class: "ok-text", text: `✓ Converted ${data.count} document(s)${imgNote} → ${data.output_root}` }));
+    out.appendChild(el("p", { class: "ok-text", text: `Converted ${data.count} document(s)${imgNote} to ${data.output_root}.` }));
     if (data.combined) out.appendChild(el("div", {}, [
       el("button", { class: "tag", text: "view documents_pack.md", onclick: () => { viewTranscript(data.combined); showTab("library"); } }),
     ]));
@@ -1082,7 +1204,7 @@ $("moodle-go").addEventListener("click", async () => {
       body: JSON.stringify({ path }),
     });
     clear(out);
-    out.appendChild(el("p", { class: "ok-text", text: `✓ ${d.title || d.code || "Course"}` }));
+    out.appendChild(el("p", { class: "ok-text", text: `${d.title || d.code || "Course"}` }));
     if (d.code) out.appendChild(el("p", { class: "muted", text: "Code: " + d.code }));
     const actions = el("div", { class: "row" }, [
       el("button", { class: "tag", text: "use as course name",
@@ -1127,7 +1249,7 @@ async function saveMoodleOutline(path) {
 function renderNotionResult(d) {
   const out = $("notion-results");
   clear(out);
-  out.appendChild(el("p", { class: "ok-text", text: `✓ Converted ${d.count} page(s) → ${d.dest}` }));
+  out.appendChild(el("p", { class: "ok-text", text: `Converted ${d.count} page(s) to ${d.dest}.` }));
   if (d.combined) out.appendChild(el("div", {}, [
     el("button", { class: "tag", text: "view notion_pack.md", onclick: () => { viewTranscript(d.combined); showTab("library"); } }),
   ]));
@@ -1209,6 +1331,7 @@ loadStatus().then(() => {
   restore();                   // now the engine/model selects are populated
   loadDashboard();
   initMoodleQuick();
+  refreshOllama();             // pre-populate the local-AI panel
 });
 loadCourses();
 
@@ -1225,6 +1348,15 @@ async function initMoodleQuick() {
     if (r) r.textContent = mqRecommend.ready
       ? `Recommended settings: ${mqRecommend.rationale}`
       : `Transcription is unavailable: ${mqRecommend.reason} Documents can still be imported.`;
+    // Populate the advanced-settings engine dropdown from what is installed.
+    const sel = $("mq-adv-engine");
+    if (sel) {
+      clear(sel);
+      sel.appendChild(el("option", { value: "", text: "Recommended" }));
+      const engines = (State.status && State.status.engines)
+        ? Object.entries(State.status.engines).filter(([, v]) => v).map(([k]) => k) : [];
+      engines.forEach((eng) => sel.appendChild(el("option", { value: eng, text: eng })));
+    }
   } catch (_) {}
 }
 
@@ -1413,7 +1545,7 @@ function renderMqFeeds() {
   const feeds = State.mqFeeds || [];
   if (recs.length) {
     box.appendChild(el("p", { class: "ok-text",
-      text: `🎬 ${recs.length} recording(s) loaded from the Panopto feed:` }));
+      text: `${recs.length} recording(s) loaded from the Panopto feed:` }));
     recs.forEach((r) => box.appendChild(el("div", { class: "list-item" }, [
       el("span", { class: "li-label", text: r.title || r.safe_title || "recording" }),
       el("span", { class: "muted small", text: r.video_url ? "video + audio" : "audio" }),
@@ -1457,13 +1589,12 @@ async function autoTranscribeMq() {
   if (!recs.length) { toast("Paste the Panopto RSS link and load the recordings first.", "warn"); return; }
 
   const makeTranscript = $("mq-make-transcript")?.checked !== false;
+  const overwrite = $("mq-overwrite")?.checked === true;
 
   // "Recording without transcript" → just download the videos to a chosen folder.
   if (!makeTranscript) {
-    const dest = await askExportDest({ title: "Download recordings - choose a folder",
-      hint: "Each lecture's video is saved here.", placeholder: "C:\\Videos\\Lectures" });
+    const dest = await pickFolder("Choose a folder to save the recordings");
     if (dest === null) return;
-    if (!dest) { toast("Choose a folder for the recordings.", "warn"); return; }
     try {
       const d = await postJSON("/api/panopto/download", { lectures: recs, output_dir: dest });
       toast(`Downloaded ${d.downloaded} recording(s) to ${dest}.`, "ok");
@@ -1472,19 +1603,31 @@ async function autoTranscribeMq() {
   }
 
   // "Recording with transcript" → transcribe from audio (small download).
-  if (!mqRecommend || !mqRecommend.ready) { toast(mqRecommend?.reason || "No transcription engine.", "warn"); return; }
-  const settings = { engine: mqRecommend.engine, model: mqRecommend.model,
-    device: mqRecommend.device, language: mqRecommend.language, interval: mqRecommend.interval,
-    audio_only: true };   // transcribe from audio; the video is fetched on SRT export
+  if (!mqRecommend || !mqRecommend.ready) { toast(mqRecommend?.reason || "No transcription engine is installed.", "warn"); return; }
+  // Start from the recommended settings, then apply any Advanced overrides.
+  const advEngine = $("mq-adv-engine")?.value.trim() || "";
+  const advModel = $("mq-adv-model")?.value.trim() || "";
+  const advLang = $("mq-adv-language")?.value.trim() || "";
+  const advDevice = $("mq-adv-device")?.value.trim() || "";
+  const settings = {
+    engine: advEngine || mqRecommend.engine,
+    model: advModel || mqRecommend.model,
+    device: advDevice || mqRecommend.device,
+    language: advLang || mqRecommend.language,
+    interval: mqRecommend.interval,
+    audio_only: true,                 // transcribe from audio; the video is fetched on SRT export
+    force: overwrite,                 // re-transcribe even if outputs exist
+    skip_existing: !overwrite,
+  };
   let queued = 0;
   for (const lec of recs) {
     try {
       await postJSON("/api/transcribe", { ...settings, lecture: lec });
       queued++;
-    } catch (e) { toast("Transcribe error: " + e.message, "warn"); }
+    } catch (e) { toast("Transcription error: " + e.message, "warn"); }
   }
   if (queued) {
-    toast(`Queued ${queued} recording(s). Transcription takes a few minutes each and runs in the background; track it in Jobs.`, "ok");
+    toast(`Queued ${queued} recording(s). Each transcription takes a few minutes and runs in the background; track it in Jobs.`, "ok");
     showTab("jobs"); startJobsPolling();
   }
 }
@@ -1494,17 +1637,37 @@ $("mq-export-nblm")?.addEventListener("click", () => mqExport("notebooklm"));
 $("mq-export-ai")?.addEventListener("click", () => mqExport("all"));
 async function mqExport(kind) {
   const out = $("mq-export-result");
-  const dest = await askExportDest({
-    title: `Export for ${kind === "notebooklm" ? "NotebookLM" : "a general AI"} - where to?` });
+  const dest = await pickFolder(`Choose a folder for the ${kind === "notebooklm" ? "NotebookLM" : "general-AI"} export`);
   if (dest === null) return;
   clear(out);
   try {
     const path = kind === "notebooklm" ? "/api/export/notebooklm" : "/api/export/all";
-    const body = { combined: true, course: currentCourse(), output_dir: dest || undefined };
+    const body = { combined: true, course: currentCourse(), output_dir: dest };
     const data = await postJSON(path, body);
-    const exportDest = data.combined || data.dest || data.path || "the library";
+    const exportDest = data.output_dir || data.combined || data.dest || data.path || "the library";
     out.appendChild(el("div", { class: "ok-box", html:
-      `Exported for <strong>${kind === "notebooklm" ? "NotebookLM" : "general AI"}</strong> → <code>${exportDest}</code>` }));
-    toast("Export ready.", "ok");
+      `Exported for <strong>${kind === "notebooklm" ? "NotebookLM" : "a general AI assistant"}</strong> to <code>${exportDest}</code>.` }));
+    toast("Export complete.", "ok");
   } catch (e) { out.appendChild(el("div", { class: "warn-box", text: "Export failed: " + e.message })); }
 }
+
+// ---- remove course files (with confirmation) ------------------------------
+
+$("course-clear")?.addEventListener("click", async () => {
+  const name = currentCourse() || "this course";
+  const ok = await confirmModal(
+    "Remove all files for this course?",
+    `This permanently deletes every transcript, document, Notion page, and generated export for `
+    + `${name}. The database, saved settings, and backups are kept. This cannot be undone.`,
+    { confirmText: "Remove files", danger: true });
+  if (!ok) return;
+  const out = $("course-clear-results");
+  out.textContent = "Removing course files…";
+  try {
+    const d = await postJSON("/api/library/clear", {});
+    out.textContent = `Removed ${d.files} file(s) across ${d.folders} folder(s).`;
+    toast("Course files removed.", "ok");
+    loadTranscripts();
+    loadDashboard();
+  } catch (e) { out.textContent = "Error: " + e.message; toast(e.message, "warn"); }
+});

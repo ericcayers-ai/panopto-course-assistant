@@ -169,6 +169,15 @@ button.ghost { background: transparent; color: var(--brand); border-color: var(-
 button.ghost:hover { background: var(--brand-soft); }
 button.tag { padding: 3px 10px; font-size: 12px; font-weight: 400; background: var(--brand-soft); color: var(--brand); border-color: transparent; }
 button.tag:hover { background: var(--brand); color: #fff; }
+button.danger { background: var(--err); border-color: var(--err); color: #fff; }
+button.danger:hover { background: var(--err); filter: brightness(.9); }
+
+/* Destructive action card + advanced-settings disclosure */
+.danger-card { border-color: var(--err); }
+.danger-card h3 { color: var(--err); }
+details.adv-settings { margin: 10px 0; border: 1px solid var(--border); border-radius: 8px; padding: 8px 12px; background: var(--surface-2); }
+details.adv-settings > summary { cursor: pointer; font-weight: 600; font-size: 13.5px; color: var(--muted); }
+details.adv-settings[open] > summary { margin-bottom: 8px; }
 
 .banner { padding: 10px 13px; border-radius: 8px; font-size: 13px; margin: 8px 0; }
 .banner.warn { background: var(--warn-soft); border: 1px solid var(--warn); color: var(--warn); }
