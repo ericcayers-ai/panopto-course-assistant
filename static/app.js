@@ -163,6 +163,7 @@ function showTab(name) {
   if (name === "home") loadDashboard();
   if (name === "library") loadTranscripts();
   if (name === "jobs") loadJobs();
+  if (name === "study") loadStudy();
 }
 document.querySelectorAll(".tab").forEach((btn) =>
   btn.addEventListener("click", () => showTab(btn.dataset.tab))
@@ -641,8 +642,346 @@ async function viewTranscript(relPath) {
     const data = await api("/api/transcript?path=" + encodeURIComponent(relPath));
     view.textContent = data.content;
     view.scrollTop = 0;
+    openItemMeta(relPath);
   } catch (e) { view.textContent = "Error: " + e.message; }
 }
+
+// ---- notes, tags & citations for the selected library item ----------------
+
+function openItemMeta(relPath) {
+  State.currentPath = relPath;
+  const box = $("item-meta");
+  box.classList.remove("hidden");
+  $("item-meta-name").textContent = relPath.split("/").pop();
+  $("item-citations").textContent = "";
+  $("note-body").value = "";
+  $("note-bookmark").checked = false;
+  loadItemTags(relPath);
+  loadItemNotes(relPath);
+}
+
+async function loadItemTags(relPath) {
+  const wrap = $("item-tags");
+  clear(wrap);
+  try {
+    const data = await api("/api/tags?path=" + encodeURIComponent(relPath));
+    (data.tags || []).forEach((name) => {
+      wrap.appendChild(el("span", { class: "tag removable" }, [
+        name,
+        el("button", { class: "tag-x", title: "remove tag", text: "×",
+          onclick: () => removeItemTag(relPath, name) }),
+      ]));
+    });
+    if (!(data.tags || []).length) wrap.appendChild(el("span", { class: "muted small", text: "none yet" }));
+  } catch (_) { /* leave empty */ }
+}
+
+async function addItemTag(relPath, name) {
+  name = (name || "").trim();
+  if (!name) return;
+  try {
+    await postJSON("/api/tags", { path: relPath, name, course_id: null });
+    loadItemTags(relPath);
+  } catch (e) { toast(e.message, "error"); }
+}
+
+async function removeItemTag(relPath, name) {
+  try {
+    await api("/api/tags?path=" + encodeURIComponent(relPath) + "&name=" + encodeURIComponent(name),
+      { method: "DELETE" });
+    loadItemTags(relPath);
+  } catch (e) { toast(e.message, "error"); }
+}
+
+async function loadItemNotes(relPath) {
+  const wrap = $("item-notes");
+  clear(wrap);
+  try {
+    const data = await api("/api/notes?path=" + encodeURIComponent(relPath));
+    if (!data.notes.length) { wrap.appendChild(el("p", { class: "muted small", text: "No notes yet." })); return; }
+    data.notes.forEach((n) => {
+      wrap.appendChild(el("div", { class: "note-item" }, [
+        n.bookmark ? el("span", { class: "note-flag", text: "🔖" }) : null,
+        n.timestamp_s != null ? el("span", { class: "note-ts", text: fmtTs(n.timestamp_s) }) : null,
+        el("span", { class: "note-text", text: n.body }),
+        el("button", { class: "tag-x", title: "delete note", text: "×",
+          onclick: () => deleteNote(n.id, relPath) }),
+      ]));
+    });
+  } catch (e) { wrap.textContent = "Error: " + e.message; }
+}
+
+function fmtTs(s) {
+  s = Math.max(0, Math.round(s));
+  const m = Math.floor(s / 60), sec = s % 60;
+  return `${m}:${String(sec).padStart(2, "0")}`;
+}
+
+async function addNote(relPath) {
+  const body = $("note-body").value.trim();
+  if (!body) return;
+  try {
+    await postJSON("/api/notes", { path: relPath, body, bookmark: $("note-bookmark").checked, course_id: null });
+    $("note-body").value = ""; $("note-bookmark").checked = false;
+    loadItemNotes(relPath);
+  } catch (e) { toast(e.message, "error"); }
+}
+
+async function deleteNote(id, relPath) {
+  try { await api("/api/notes/" + id, { method: "DELETE" }); loadItemNotes(relPath); }
+  catch (e) { toast(e.message, "error"); }
+}
+
+async function showCitations(relPath) {
+  const box = $("item-citations");
+  box.textContent = "Loading…";
+  try {
+    const data = await api("/api/citations?path=" + encodeURIComponent(relPath));
+    clear(box);
+    Object.entries(data.citations).forEach(([style, text]) => {
+      box.appendChild(el("div", { class: "cite-row" }, [
+        el("span", { class: "cite-style", text: style.toUpperCase() }),
+        el("code", { class: "cite-text", text }),
+        el("button", { class: "ghost small", text: "Copy", onclick: () => copyText(text) }),
+      ]));
+    });
+  } catch (e) { box.textContent = e.message; }
+}
+
+function copyText(text) {
+  try { navigator.clipboard.writeText(text); toast("Copied", "ok"); }
+  catch (_) { toast("Copy failed", "error"); }
+}
+
+$("item-tag-input").addEventListener("keydown", (e) => {
+  if (e.key === "Enter" && State.currentPath) { addItemTag(State.currentPath, e.target.value); e.target.value = ""; }
+});
+$("note-add-go").addEventListener("click", () => { if (State.currentPath) addNote(State.currentPath); });
+$("note-body").addEventListener("keydown", (e) => { if (e.key === "Enter" && State.currentPath) addNote(State.currentPath); });
+$("item-cite-go").addEventListener("click", () => { if (State.currentPath) showCitations(State.currentPath); });
+
+// ---- Study tab ------------------------------------------------------------
+
+async function loadStudy() {
+  loadStreak();
+  loadNextUp();
+  loadWorkload();
+}
+
+async function loadStreak() {
+  const box = $("streak-body");
+  try {
+    const s = await api("/api/streak");
+    clear(box);
+    box.appendChild(el("div", { class: "streak-num" }, [
+      el("span", { class: "streak-flame", text: s.current_streak > 0 ? "🔥" : "·" }),
+      el("strong", { text: String(s.current_streak) }),
+      el("span", { class: "muted", text: ` day${s.current_streak === 1 ? "" : "s"}` }),
+    ]));
+    box.appendChild(el("div", { class: "hint", text:
+      `Longest: ${s.longest_streak} · Active days: ${s.active_days}` }));
+    const pct = Math.min(100, s.goal_pct);
+    box.appendChild(el("div", { class: "progress" }, [el("div", { class: "bar", style: `width:${pct}%` })]));
+    box.appendChild(el("div", { class: "hint", text:
+      `Today: ${s.today_minutes} / ${s.goal_minutes} min` + (s.goal_met ? " ✓ goal met" : "") }));
+  } catch (e) { box.textContent = "Error: " + e.message; }
+}
+
+async function loadNextUp() {
+  const box = $("nextup-body");
+  try {
+    const data = await api("/api/next-up");
+    clear(box);
+    if (!data.actions.length) { box.appendChild(el("p", { class: "muted small", text: "All caught up. Nothing pressing." })); return; }
+    data.actions.forEach((a) => {
+      const row = el("div", { class: "nextup-item clickable", onclick: () => a.goto && showTab(a.goto) }, [
+        el("span", { class: "nextup-kind " + a.kind, text: a.kind }),
+        el("div", {}, [
+          el("div", { class: "nextup-title", text: a.title }),
+          el("div", { class: "muted small", text: a.detail || "" }),
+        ]),
+      ]);
+      box.appendChild(row);
+    });
+  } catch (e) { box.textContent = "Error: " + e.message; }
+}
+
+async function loadWorkload() {
+  const box = $("workload-body");
+  try {
+    const w = await api("/api/workload");
+    clear(box);
+    if (!w.lectures) { box.appendChild(el("p", { class: "muted small", text: "No transcripts yet." })); return; }
+    box.appendChild(el("div", { class: "hint", text:
+      `${w.lectures} lectures · ${w.total_words.toLocaleString()} words · ` +
+      `read ~${hm(w.total_read_min)}, review ~${hm(w.total_review_min)}` }));
+    const table = el("table", { class: "wl-table" }, [
+      el("tr", {}, [el("th", { text: "Week" }), el("th", { text: "Lectures" }),
+        el("th", { text: "Read" }), el("th", { text: "Review" })]),
+      ...w.by_week.map((b) => el("tr", {}, [
+        el("td", { text: String(b.week) }), el("td", { text: String(b.lectures) }),
+        el("td", { text: hm(b.read_min) }), el("td", { text: hm(b.review_min) }),
+      ])),
+    ]);
+    box.appendChild(table);
+  } catch (e) { box.textContent = "Error: " + e.message; }
+}
+
+function hm(min) {
+  min = Math.round(min);
+  if (min < 60) return min + "m";
+  const h = Math.floor(min / 60), m = min % 60;
+  return m ? `${h}h ${m}m` : `${h}h`;
+}
+
+// -- practice quiz ----------------------------------------------------------
+
+async function startPractice() {
+  const box = $("practice-body");
+  const count = parseInt($("practice-count").value, 10) || 10;
+  box.textContent = "Building quiz…";
+  try {
+    const quiz = await api(`/api/practice-quiz?count=${count}`);
+    if (!quiz.count) { box.textContent = quiz.reason || "Not enough review cards yet. Grade some reviews first."; return; }
+    State.practiceQuiz = quiz;
+    State.practiceAnswers = new Array(quiz.questions.length).fill(null);
+    renderPractice();
+  } catch (e) { box.textContent = "Error: " + e.message; }
+}
+
+function renderPractice() {
+  const box = $("practice-body");
+  const quiz = State.practiceQuiz;
+  clear(box);
+  quiz.questions.forEach((q, qi) => {
+    const opts = el("div", { class: "quiz-opts" }, q.options.map((opt, oi) =>
+      el("label", { class: "quiz-opt" }, [
+        el("input", { type: "radio", name: "q" + qi,
+          onchange: () => { State.practiceAnswers[qi] = oi; } }),
+        " " + opt,
+      ])));
+    box.appendChild(el("div", { class: "quiz-q" }, [
+      el("div", { class: "quiz-qtext", text: `${qi + 1}. ${q.question}` }), opts,
+    ]));
+  });
+  box.appendChild(el("button", { class: "primary", text: "Submit answers", onclick: submitPractice }));
+  box.appendChild(el("div", { id: "practice-score", class: "results" }));
+}
+
+async function submitPractice() {
+  try {
+    const res = await postJSON("/api/practice-quiz/grade", {
+      questions: State.practiceQuiz.questions, answers: State.practiceAnswers, record: true });
+    const out = $("practice-score");
+    clear(out);
+    out.appendChild(el("p", { class: res.pct >= 50 ? "banner ok" : "banner warn",
+      text: `Score: ${res.score} / ${res.total} (${res.pct}%)` }));
+    res.detail.forEach((d, i) => {
+      out.appendChild(el("div", { class: "quiz-result " + (d.correct ? "ok" : "bad") }, [
+        el("span", { text: (d.correct ? "✓ " : "✗ ") + d.question }),
+        d.correct ? null : el("span", { class: "muted small", text: " — answer: " + d.answer }),
+      ]));
+    });
+  } catch (e) { toast(e.message, "error"); }
+}
+
+// -- glossary & study guide -------------------------------------------------
+
+async function showGlossary() {
+  const box = $("glossary-body");
+  box.textContent = "Building glossary…";
+  try {
+    const g = await api("/api/glossary");
+    clear(box);
+    if (!g.count) { box.textContent = "No terms found yet. Transcribe some lectures first."; return; }
+    box.appendChild(el("div", { class: "hint", text: `${g.count} terms from ${g.lectures_scanned} lectures` }));
+    g.terms.slice(0, 60).forEach((t) => {
+      box.appendChild(el("div", { class: "gloss-term" }, [
+        el("strong", { text: t.term }), el("span", { text: " — " + t.definition }),
+      ]));
+    });
+  } catch (e) { box.textContent = "Error: " + e.message; }
+}
+
+async function exportGlossary() {
+  const dest = await pickFolder("Choose a folder for the glossary");
+  if (dest === null) return;
+  try {
+    const r = await postJSON("/api/export/glossary", { course: currentCourse(), output_dir: dest });
+    toast(`Glossary exported (${r.count} terms)`, "ok");
+  } catch (e) { toast(e.message, "error"); }
+}
+
+async function exportGuide() {
+  const dest = await pickFolder("Choose a folder for the study guide");
+  if (dest === null) return;
+  const box = $("guide-body");
+  box.textContent = "Building study guide…";
+  try {
+    const r = await postJSON("/api/export/study-guide", { course: currentCourse(), output_dir: dest });
+    box.textContent = "";
+    toast(`Study guide built (${r.lectures} lectures, ${r.glossary_terms} terms)`, "ok");
+  } catch (e) { box.textContent = ""; toast(e.message, "error"); }
+}
+
+$("study-refresh").addEventListener("click", loadStudy);
+$("practice-start").addEventListener("click", startPractice);
+$("glossary-view").addEventListener("click", showGlossary);
+$("glossary-export").addEventListener("click", exportGlossary);
+$("guide-export").addEventListener("click", exportGuide);
+
+// ---- command palette (Ctrl/Cmd+K) -----------------------------------------
+
+const PALETTE_ACTIONS = [
+  { label: "Go to Home", run: () => showTab("home") },
+  { label: "Go to Moodle import", run: () => showTab("moodle-quick") },
+  { label: "Go to Import", run: () => showTab("import") },
+  { label: "Go to Library", run: () => showTab("library") },
+  { label: "Go to Study", run: () => showTab("study") },
+  { label: "Go to Export", run: () => showTab("export") },
+  { label: "Go to Jobs", run: () => showTab("jobs") },
+  { label: "Search the library", run: () => { showTab("library"); const q = $("search-q"); if (q) q.focus(); } },
+  { label: "Start a practice quiz", run: () => { showTab("study"); startPractice(); } },
+  { label: "Show glossary", run: () => { showTab("study"); showGlossary(); } },
+  { label: "Toggle theme", run: () => $("theme-toggle").click() },
+];
+
+function openPalette() {
+  if ($("palette-overlay")) return;
+  const input = el("input", { type: "text", class: "palette-input", placeholder: "Type a command…", autocomplete: "off" });
+  const list = el("div", { class: "palette-list" });
+  const overlay = el("div", { id: "palette-overlay", class: "modal-overlay",
+    onclick: (e) => { if (e.target === overlay) overlay.remove(); } });
+  let filtered = PALETTE_ACTIONS.slice();
+  let active = 0;
+  function render() {
+    clear(list);
+    filtered.forEach((a, i) => list.appendChild(el("div", {
+      class: "palette-item" + (i === active ? " active" : ""),
+      onclick: () => { overlay.remove(); a.run(); },
+    }, [a.label])));
+  }
+  input.addEventListener("input", () => {
+    const q = input.value.toLowerCase();
+    filtered = PALETTE_ACTIONS.filter((a) => a.label.toLowerCase().includes(q));
+    active = 0; render();
+  });
+  input.addEventListener("keydown", (e) => {
+    if (e.key === "ArrowDown") { active = Math.min(active + 1, filtered.length - 1); render(); e.preventDefault(); }
+    else if (e.key === "ArrowUp") { active = Math.max(active - 1, 0); render(); e.preventDefault(); }
+    else if (e.key === "Enter") { const a = filtered[active]; overlay.remove(); if (a) a.run(); }
+    else if (e.key === "Escape") overlay.remove();
+  });
+  const box = el("div", { class: "modal-box palette-box" }, [input, list]);
+  overlay.appendChild(box);
+  document.body.appendChild(overlay);
+  render();
+  input.focus();
+}
+
+document.addEventListener("keydown", (e) => {
+  if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "k") { e.preventDefault(); openPalette(); }
+});
 
 $("transcripts-refresh").addEventListener("click", loadTranscripts);
 
@@ -1100,6 +1439,17 @@ function stageLabel(stage) {
   })[stage] || (stage ? stage.charAt(0).toUpperCase() + stage.slice(1) : "");
 }
 
+// Return a human "~Xm remaining" string for a running job, or "" if not enough data.
+function jobEta(j) {
+  if (j.status !== "running" || !j.started_at || j.progress < 0.05) return "";
+  const elapsedS = (Date.now() - new Date(j.started_at).getTime()) / 1000;
+  if (elapsedS < 2) return "";
+  const remainingS = Math.round((elapsedS / j.progress) * (1 - j.progress));
+  if (remainingS <= 0) return "";
+  if (remainingS < 60) return `~${remainingS}s remaining`;
+  return `~${Math.ceil(remainingS / 60)}m remaining`;
+}
+
 async function loadJobs() {
   const out = $("jobs-list");
   try {
@@ -1122,13 +1472,15 @@ async function loadJobs() {
     data.jobs.forEach((j) => {
       const pct = Math.round(j.progress * 100);
       const stageText = stageLabel(j.stage);
+      const eta = jobEta(j);
+      const hintParts = [stageText ? `${stageText} · ${pct}%` : `${pct}%`, eta].filter(Boolean);
       const card = el("div", { class: "card job " + j.status }, [
         el("div", { class: "job-head" }, [
           el("strong", { text: j.title }),
           el("span", { class: "badge " + j.status, text: j.status }),
         ]),
         el("div", { class: "progress" }, [el("div", { class: "bar", style: `width:${pct}%` })]),
-        el("div", { class: "hint", text: stageText ? `${stageText} · ${pct}%` : `${pct}%` }),
+        el("div", { class: "hint", text: hintParts.join(" · ") }),
       ]);
       if (j.status === "done" && j.result) {
         if (j.result.status === "skipped") {

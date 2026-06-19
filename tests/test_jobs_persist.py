@@ -60,6 +60,30 @@ def test_bind_recovers_interrupted_jobs(db: Database):
     assert mgr.get("crashed").status == "interrupted"
 
 
+def test_started_at_is_set_on_run_and_persisted(db: Database):
+    # started_at drives the Jobs-tab ETA: it must be NULL until a worker picks the
+    # job up, then stamped once it runs - in memory, in the DB, and in to_dict().
+    mgr = JobManager(db=db)
+    job = mgr.submit("eta", lambda p: {})
+    done = _wait(job, mgr)
+    assert done.status == "done"
+    assert done.started_at, "started_at should be stamped once the job runs"
+    assert done.to_dict()["started_at"] == done.started_at
+    row = db.get_job(job.id)
+    assert row["started_at"] == done.started_at
+
+
+def test_queued_job_has_no_started_at(db: Database):
+    # A job that hasn't run yet (inserted as queued) carries a NULL started_at,
+    # so the frontend ETA correctly shows nothing for it.
+    ts = "2026-06-16T00:00:00+00:00"
+    db.insert_job("waiting", "transcribe", "W", "queued", "", 0.0, "{}", None, ts, ts)
+    assert db.get_job("waiting")["started_at"] is None
+    mgr = JobManager()
+    mgr.bind(db)
+    assert mgr.get("waiting").started_at is None
+
+
 def test_manager_without_db_is_pure_memory(db: Database):
     # unchanged legacy behaviour: no DB bound -> nothing persisted
     mgr = JobManager()

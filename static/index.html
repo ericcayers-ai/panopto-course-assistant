@@ -17,6 +17,7 @@
         <div class="nav-group">Your course</div>
         <button class="tab" data-tab="import"><span class="ico">📥</span> Import</button>
         <button class="tab" data-tab="library"><span class="ico">📚</span> Library</button>
+        <button class="tab" data-tab="study"><span class="ico">🎯</span> Study</button>
         <button class="tab" data-tab="export"><span class="ico">📤</span> Export</button>
         <div class="nav-group">System</div>
         <button class="tab" data-tab="jobs"><span class="ico">⚙️</span> Jobs <span id="jobs-badge" class="count-badge hidden">0</span></button>
@@ -230,12 +231,90 @@
             <pre id="transcript-view" class="viewer">Select an item on the left to view it here.</pre>
           </div>
 
+          <!-- Notes, tags and citations for the selected item -->
+          <div id="item-meta" class="card item-meta hidden">
+            <h3>Notes &amp; tags <span id="item-meta-name" class="muted small"></span></h3>
+            <div class="item-tags-row">
+              <span class="muted small">Tags:</span>
+              <span id="item-tags" class="item-tags"></span>
+              <input type="text" id="item-tag-input" class="tag-input" placeholder="add a tag…" autocomplete="off" />
+            </div>
+            <div class="row note-add">
+              <input type="text" id="note-body" placeholder="Add a note for this item…" autocomplete="off" />
+              <label class="toggle" title="Mark this note as a bookmark"><input type="checkbox" id="note-bookmark" /> Bookmark</label>
+              <button id="note-add-go" class="ghost small">Add note</button>
+            </div>
+            <div id="item-notes" class="item-notes"></div>
+            <div class="row">
+              <button id="item-cite-go" class="ghost small">Show citations</button>
+            </div>
+            <div id="item-citations" class="item-citations"></div>
+          </div>
+
           <div class="card danger-card">
             <h3>Remove course files</h3>
             <p class="hint">Permanently delete this course's transcripts, documents, Notion pages, and
               generated exports from the library. The database, saved settings, and backups are retained.</p>
             <div class="row"><button id="course-clear" class="danger">Remove all files for this course</button></div>
             <div id="course-clear-results" class="results"></div>
+          </div>
+        </section>
+
+        <!-- STUDY -->
+        <section id="study" class="panel">
+          <h2><span class="step-chip">🎯</span> Study <button id="study-refresh" class="small ghost">↻ Refresh</button></h2>
+          <p class="panel-intro">Your revision cockpit - streak, what to study next, a glossary and a one-file
+            study guide built from the lecture transcripts, plus an offline practice quiz. All generated
+            locally; the text tools need no AI model.</p>
+
+          <div class="study-grid">
+            <div class="card" id="streak-card">
+              <h3>Study streak</h3>
+              <div id="streak-body" class="streak-body">Loading…</div>
+            </div>
+
+            <div class="card" id="nextup-card">
+              <h3>Study next</h3>
+              <div id="nextup-body">Loading…</div>
+            </div>
+          </div>
+
+          <div class="card" id="workload-card">
+            <h3>Study workload</h3>
+            <p class="hint">Estimated reading and active-review time from each lecture's length.</p>
+            <div id="workload-body">Loading…</div>
+          </div>
+
+          <div class="card" id="practice-card">
+            <h3>Practice quiz <span class="muted">— from your review deck, no AI needed</span></h3>
+            <p class="hint">Multiple-choice questions built from your spaced-repetition cards. Add cards by
+              grading reviews; once you have a few, a quiz appears here.</p>
+            <div class="row">
+              <label>Questions <input type="number" id="practice-count" value="10" min="1" max="50" style="max-width:90px" /></label>
+              <button id="practice-start" class="primary">Start quiz</button>
+            </div>
+            <div id="practice-body"></div>
+          </div>
+
+          <div class="study-grid">
+            <div class="card" id="glossary-card">
+              <h3>Glossary</h3>
+              <p class="hint">Key terms and definitions mined from the transcripts.</p>
+              <div class="row">
+                <button id="glossary-view" class="ghost small">Show glossary</button>
+                <button id="glossary-export" class="ghost small">Export Markdown…</button>
+              </div>
+              <div id="glossary-body"></div>
+            </div>
+
+            <div class="card" id="guide-card">
+              <h3>Study guide</h3>
+              <p class="hint">One Markdown document: per-lecture key points, key terms and a glossary.</p>
+              <div class="row">
+                <button id="guide-export" class="primary">Build study guide…</button>
+              </div>
+              <div id="guide-body"></div>
+            </div>
           </div>
         </section>
 

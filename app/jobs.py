@@ -99,6 +99,7 @@ class Job:
     logs: str = ""
     created_at: str = field(default_factory=now_iso)
     updated_at: str = field(default_factory=now_iso)
+    started_at: Optional[str] = None
 
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -116,6 +117,7 @@ class Job:
             "retryable": self.status in ("error", "interrupted", "canceled"),
             "created_at": self.created_at,
             "updated_at": self.updated_at,
+            "started_at": self.started_at,
         }
 
     @classmethod
@@ -136,6 +138,7 @@ class Job:
             failure_category=(row["failure_category"] if "failure_category" in keys else "") or "",
             logs=(row["logs"] if "logs" in keys else "") or "",
             created_at=row["created_at"], updated_at=row["updated_at"],
+            started_at=(row["started_at"] if "started_at" in keys else None) or None,
         )
 
 
@@ -200,7 +203,7 @@ class JobManager:
                 job.id, status=job.status, stage=job.stage, progress=job.progress,
                 result_json=json.dumps(job.result or {}), error=job.error,
                 attempts=job.attempts, failure_category=job.failure_category,
-                updated_at=job.updated_at,
+                updated_at=job.updated_at, started_at=job.started_at,
             )
         except Exception:
             pass
@@ -293,7 +296,8 @@ class JobManager:
             job.attempts += 1
             job.failure_category = ""
             job.error = ""
-            job.updated_at = now_iso()
+            job.started_at = now_iso()
+            job.updated_at = job.started_at
         self._log(job, f"started (attempt {job.attempts})")
         self._persist_update(job)
         try:

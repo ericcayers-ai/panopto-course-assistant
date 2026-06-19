@@ -168,6 +168,45 @@ _MIGRATIONS: List[tuple[int, List[str]]] = [
             "CREATE INDEX IF NOT EXISTS idx_audit_created ON audit_log(created_at)",
         ],
     ),
+    (
+        4,
+        [
+            "ALTER TABLE jobs ADD COLUMN started_at TEXT",
+        ],
+    ),
+    (
+        5,
+        [
+            # v3 - per-lecture notes & timestamped bookmarks.
+            """CREATE TABLE IF NOT EXISTS notes (
+                id          INTEGER PRIMARY KEY AUTOINCREMENT,
+                course_id   INTEGER REFERENCES courses(id) ON DELETE CASCADE,
+                path        TEXT NOT NULL DEFAULT '',
+                body        TEXT NOT NULL DEFAULT '',
+                timestamp_s REAL,
+                bookmark    INTEGER NOT NULL DEFAULT 0,
+                created_at  TEXT NOT NULL,
+                updated_at  TEXT NOT NULL
+            )""",
+            "CREATE INDEX IF NOT EXISTS idx_notes_path ON notes(path)",
+            "CREATE INDEX IF NOT EXISTS idx_notes_course ON notes(course_id)",
+            # v3 - user-defined tags on library items (distinct from inferred tags).
+            """CREATE TABLE IF NOT EXISTS tags (
+                id    INTEGER PRIMARY KEY AUTOINCREMENT,
+                name  TEXT NOT NULL,
+                color TEXT DEFAULT '',
+                UNIQUE(name)
+            )""",
+            """CREATE TABLE IF NOT EXISTS item_tags (
+                tag_id     INTEGER NOT NULL REFERENCES tags(id) ON DELETE CASCADE,
+                path       TEXT NOT NULL,
+                course_id  INTEGER,
+                created_at TEXT NOT NULL,
+                PRIMARY KEY (tag_id, path)
+            )""",
+            "CREATE INDEX IF NOT EXISTS idx_item_tags_path ON item_tags(path)",
+        ],
+    ),
 ]
 
 SCHEMA_VERSION = _MIGRATIONS[-1][0]
@@ -373,7 +412,7 @@ class Database:
 
     def update_job(self, id: str, **fields: Any) -> None:
         allowed = {"status", "stage", "progress", "result_json", "error", "attempts",
-                   "failure_category", "updated_at"}
+                   "failure_category", "updated_at", "started_at"}
         sets = {k: v for k, v in fields.items() if k in allowed}
         if not sets:
             return
@@ -560,6 +599,110 @@ class Database:
 
     def clear_audit(self) -> int:
         return self.execute("DELETE FROM audit_log").rowcount
+
+    # -- notes & bookmarks DAO (v3) ----------------------------------------
+
+    def add_note(self, path: str, body: str, *, course_id: Optional[int] = None,
+                 timestamp_s: Optional[float] = None, bookmark: bool = False) -> int:
+        ts = now_iso()
+        cur = self.execute(
+            "INSERT INTO notes(course_id, path, body, timestamp_s, bookmark, "
+            "created_at, updated_at) VALUES(?, ?, ?, ?, ?, ?, ?)",
+            (course_id, path, body, timestamp_s, 1 if bookmark else 0, ts, ts))
+        return int(cur.lastrowid)
+
+    def list_notes(self, path: Optional[str] = None,
+                   course_id: Optional[int] = None) -> List[sqlite3.Row]:
+        clauses, params = [], []
+        if path is not None:
+            clauses.append("path=?"); params.append(path)
+        if course_id is not None:
+            clauses.append("course_id=?"); params.append(course_id)
+        sql = "SELECT * FROM notes"
+        if clauses:
+            sql += " WHERE " + " AND ".join(clauses)
+        # bookmarks (which carry a timestamp) sort by position; plain notes by recency.
+        sql += " ORDER BY bookmark DESC, timestamp_s IS NULL, timestamp_s, created_at DESC"
+        return self.query(sql, tuple(params))
+
+    def update_note(self, id: int, **fields: Any) -> bool:
+        allowed = {"body", "timestamp_s", "bookmark"}
+        sets = {k: v for k, v in fields.items() if k in allowed}
+        if not sets:
+            return False
+        if "bookmark" in sets:
+            sets["bookmark"] = 1 if sets["bookmark"] else 0
+        sets["updated_at"] = now_iso()
+        cols = ", ".join(f"{k}=?" for k in sets)
+        return self.execute(f"UPDATE notes SET {cols} WHERE id=?",
+                            (*sets.values(), id)).rowcount > 0
+
+    def delete_note(self, id: int) -> bool:
+        return self.execute("DELETE FROM notes WHERE id=?", (id,)).rowcount > 0
+
+    def count_notes(self, course_id: Optional[int] = None) -> int:
+        if course_id is None:
+            return int(self.query_one("SELECT COUNT(*) AS n FROM notes")["n"])
+        return int(self.query_one(
+            "SELECT COUNT(*) AS n FROM notes WHERE course_id=?", (course_id,))["n"])
+
+    # -- tags DAO (v3) ------------------------------------------------------
+
+    def get_or_create_tag(self, name: str, color: str = "") -> int:
+        name = (name or "").strip()
+        row = self.query_one("SELECT id FROM tags WHERE name=? COLLATE NOCASE", (name,))
+        if row:
+            return int(row["id"])
+        cur = self.execute("INSERT INTO tags(name, color) VALUES(?, ?)", (name, color))
+        return int(cur.lastrowid)
+
+    def list_tags(self) -> List[sqlite3.Row]:
+        # name + how many items carry it, busiest first.
+        return self.query(
+            "SELECT t.id, t.name, t.color, COUNT(it.path) AS n "
+            "FROM tags t LEFT JOIN item_tags it ON it.tag_id = t.id "
+            "GROUP BY t.id ORDER BY n DESC, t.name COLLATE NOCASE")
+
+    def add_item_tag(self, path: str, name: str,
+                     course_id: Optional[int] = None) -> None:
+        tag_id = self.get_or_create_tag(name)
+        self.execute(
+            "INSERT OR IGNORE INTO item_tags(tag_id, path, course_id, created_at) "
+            "VALUES(?, ?, ?, ?)", (tag_id, path, course_id, now_iso()))
+
+    def remove_item_tag(self, path: str, name: str) -> bool:
+        row = self.query_one("SELECT id FROM tags WHERE name=? COLLATE NOCASE", (name,))
+        if not row:
+            return False
+        return self.execute("DELETE FROM item_tags WHERE tag_id=? AND path=?",
+                            (int(row["id"]), path)).rowcount > 0
+
+    def tags_for_path(self, path: str) -> List[str]:
+        rows = self.query(
+            "SELECT t.name FROM item_tags it JOIN tags t ON t.id = it.tag_id "
+            "WHERE it.path=? ORDER BY t.name COLLATE NOCASE", (path,))
+        return [r["name"] for r in rows]
+
+    def paths_for_tag(self, name: str) -> List[str]:
+        rows = self.query(
+            "SELECT it.path FROM item_tags it JOIN tags t ON t.id = it.tag_id "
+            "WHERE t.name=? COLLATE NOCASE", (name,))
+        return [r["path"] for r in rows]
+
+    def all_item_tags(self) -> Dict[str, List[str]]:
+        """path -> [tag names], for bulk decoration of a library listing."""
+        rows = self.query(
+            "SELECT it.path AS path, t.name AS name FROM item_tags it "
+            "JOIN tags t ON t.id = it.tag_id ORDER BY t.name COLLATE NOCASE")
+        out: Dict[str, List[str]] = {}
+        for r in rows:
+            out.setdefault(r["path"], []).append(r["name"])
+        return out
+
+    def prune_unused_tags(self) -> int:
+        return self.execute(
+            "DELETE FROM tags WHERE id NOT IN (SELECT DISTINCT tag_id FROM item_tags)"
+        ).rowcount
 
 
 # ---------------------------------------------------------------------------

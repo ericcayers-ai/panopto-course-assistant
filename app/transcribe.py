@@ -300,9 +300,9 @@ def _transcribe_faster_whisper(media: Path, model_name: str, language: str, devi
         condition_on_previous_text=True,
     )
     # faster-whisper yields segments lazily, so we can report how far through the
-    # audio we are (seg.end / total duration). Throttled to ~progress_period
-    # seconds of wall-clock so the percentage advances at least every 30s on a
-    # long lecture without spamming the job store.
+    # audio we are (seg.end / total duration). Throttled to one update per
+    # `progress_period` seconds of wall-clock so the percentage advances steadily
+    # on a long lecture without spamming the job store.
     total_dur = float(getattr(info, "duration", 0.0) or 0.0)
     last_emit = time.time()
     segments, parts = [], []
@@ -419,12 +419,13 @@ def transcribe_lecture(
         else:
             engine = "faster-whisper"
             # Map the audio-position fraction into the 0.45 to 0.9 transcription
-            # band so the job's percentage climbs steadily (refreshed ~every
-            # `interval` seconds).
+            # band so the job's percentage climbs steadily. Refreshed every ~2s
+            # (independent of `interval`, which only controls subtitle chunking)
+            # so the Jobs-tab ETA stays responsive.
             res = _transcribe_faster_whisper(
                 media, model, language, device, beam_size, vad_filter,
                 progress=lambda f: report("transcribing", 0.45 + f * 0.45),
-                progress_period=float(interval or 30))
+                progress_period=2.0)
         runtime = time.time() - t0
     finally:
         _TRANSCRIBE_SEM.release()

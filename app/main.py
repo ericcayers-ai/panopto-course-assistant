@@ -52,6 +52,9 @@ from . import secrets as secret_store
 from . import exports as export_engine
 from . import analytics
 from . import backup as backup_mod
+from . import (glossary, keywords, workload, nextup, citations, practice,
+               studyguide, lectures)
+from . import streak as streak_mod
 from .integrations import notion as notion_sync, anki as anki_sync, state as sync_state
 from .imports import moodle_web, folder as folder_import, preflight as import_preflight
 from .imports import moodle_resources
@@ -63,7 +66,7 @@ from .jobs import manager
 BASE_DIR = Path(__file__).resolve().parent.parent
 # Static assets live next to the app; CA_STATIC_DIR can override the location.
 STATIC_DIR = Path(os.environ.get("CA_STATIC_DIR", BASE_DIR / "static"))
-APP_VERSION = "2.8.0"
+APP_VERSION = "3.0.0"
 # Where transcripts are written/read. Override with PANOPTO_OUTPUT.
 OUTPUT_DIR = Path(os.environ.get("PANOPTO_OUTPUT", BASE_DIR / "transcripts")).resolve()
 core.ensure_dir(OUTPUT_DIR)
@@ -380,6 +383,40 @@ class QuizAttemptReq(BaseModel):
 
 class GradeReq(BaseModel):
     quality: int                       # 0–5 recall score (SM-2)
+
+
+# --- v3 study toolkit ------------------------------------------------------
+
+class NoteReq(BaseModel):
+    path: str
+    body: str
+    course_id: Optional[int] = None
+    timestamp_s: Optional[float] = None
+    bookmark: bool = False
+
+
+class NoteUpdate(BaseModel):
+    body: Optional[str] = None
+    timestamp_s: Optional[float] = None
+    bookmark: Optional[bool] = None
+
+
+class ItemTagReq(BaseModel):
+    path: str
+    name: str
+    course_id: Optional[int] = None
+
+
+class ExportNamedRequest(BaseModel):
+    course: str = ""
+    output_dir: Optional[str] = None   # also copy the file to this folder
+
+
+class PracticeGradeReq(BaseModel):
+    questions: List[Dict[str, Any]]
+    answers: List[Any]
+    course_id: Optional[int] = None
+    record: bool = True
 
 
 # --- Import expansion (§7) -------------------------------------------------
@@ -1011,6 +1048,191 @@ def api_quiz_attempt(req: QuizAttemptReq) -> Dict[str, Any]:
 def api_progress(course: Optional[int] = None) -> Dict[str, Any]:
     cid = _course_or_active(course)
     return study_planner.progress(db, cid)
+
+
+# ---------------------------------------------------------------------------
+# v3 study toolkit - streak, next-up, glossary, keywords, workload, study
+# guide, citations, offline practice quiz, notes & user tags. All local; the
+# text features are dependency-free (no AI model required).
+# ---------------------------------------------------------------------------
+
+
+def _active_course_name() -> str:
+    cid = settings_store.get_active_course(db)
+    if cid is None:
+        return ""
+    row = db.get_course(cid)
+    return (row["code"] or row["name"]) if row else ""
+
+
+@app.get("/api/streak")
+def api_streak(course: Optional[int] = None,
+               goal: int = streak_mod.DEFAULT_GOAL_MINUTES) -> Dict[str, Any]:
+    cid = course if course is not None else settings_store.get_active_course(db)
+    return streak_mod.compute(db, course_id=cid, goal_minutes=goal)
+
+
+@app.get("/api/next-up")
+def api_next_up(course: Optional[int] = None) -> Dict[str, Any]:
+    cid = course if course is not None else settings_store.get_active_course(db)
+    return nextup.compute(db, OUTPUT_DIR, course_id=cid)
+
+
+@app.get("/api/glossary")
+def api_glossary(course: Optional[str] = None) -> Dict[str, Any]:
+    name = course if course is not None else _active_course_name()
+    return glossary.build_glossary(OUTPUT_DIR, course=name)
+
+
+@app.post("/api/export/glossary")
+def api_export_glossary(req: ExportNamedRequest) -> Dict[str, Any]:
+    name = req.course or _active_course_name()
+    result = glossary.write_glossary(OUTPUT_DIR, course=name)
+    if result["count"] == 0:
+        raise HTTPException(status_code=404,
+                            detail="No terms found yet. Transcribe some lectures first.")
+    if req.output_dir:
+        dest = Path(req.output_dir).expanduser()
+        _copy_export_files([result["markdown"]], OUTPUT_DIR, dest)
+        result["output_dir"] = str(dest)
+    return result
+
+
+@app.get("/api/keywords")
+def api_keywords(limit: int = 30) -> Dict[str, Any]:
+    text = "\n".join(lec.get("text", "") for lec in lectures.iter_lectures(OUTPUT_DIR))
+    return {"keywords": keywords.keywords(text, limit=limit),
+            "phrases": keywords.key_phrases(text, limit=limit)}
+
+
+@app.get("/api/workload")
+def api_workload(read_wpm: int = workload.READ_WPM,
+                 review_wpm: int = workload.REVIEW_WPM) -> Dict[str, Any]:
+    return workload.estimate(OUTPUT_DIR, read_wpm=read_wpm, review_wpm=review_wpm)
+
+
+@app.get("/api/study-guide")
+def api_study_guide(course: Optional[str] = None) -> Dict[str, Any]:
+    name = course if course is not None else _active_course_name()
+    return studyguide.build_markdown(OUTPUT_DIR, course=name)
+
+
+@app.post("/api/export/study-guide")
+def api_export_study_guide(req: ExportNamedRequest) -> Dict[str, Any]:
+    name = req.course or _active_course_name()
+    result = studyguide.write_guide(OUTPUT_DIR, course=name)
+    if result["lectures"] == 0:
+        raise HTTPException(status_code=404,
+                            detail="Nothing to build yet. Transcribe some lectures first.")
+    if req.output_dir:
+        dest = Path(req.output_dir).expanduser()
+        _copy_export_files([result["path"]], OUTPUT_DIR, dest)
+        result["output_dir"] = str(dest)
+    return result
+
+
+@app.get("/api/citations")
+def api_citations(path: str) -> Dict[str, Any]:
+    for g in core.list_transcripts(OUTPUT_DIR):
+        if not core._is_transcript_group(g):
+            continue
+        if path != g.get("folder", "") + "/" + g["stem"] and \
+                path not in g["formats"].values():
+            continue
+        meta = lectures.lecture_meta(OUTPUT_DIR, g)
+        if not meta.get("course"):
+            meta["course"] = _active_course_name()
+        return {"path": path, "title": meta["title"],
+                "citations": citations.cite_all(meta)}
+    raise HTTPException(status_code=404, detail="Lecture not found")
+
+
+@app.get("/api/practice-quiz")
+def api_practice_quiz(course: Optional[int] = None, count: int = 10,
+                      choices: int = 4, seed: Optional[int] = None) -> Dict[str, Any]:
+    cid = course if course is not None else settings_store.get_active_course(db)
+    return practice.from_db(db, course_id=cid, count=count, choices=choices, seed=seed)
+
+
+@app.post("/api/practice-quiz/grade")
+def api_practice_grade(req: PracticeGradeReq) -> Dict[str, Any]:
+    result = practice.grade(req.questions, req.answers)
+    if req.record:
+        cid = req.course_id if req.course_id is not None \
+            else settings_store.get_active_course(db)
+        if cid is not None:
+            db.record_quiz_attempt(cid, "practice", result["score"],
+                                   result["total"], "practice")
+    return result
+
+
+# -- notes & bookmarks ------------------------------------------------------
+
+def _note_dict(row) -> Dict[str, Any]:
+    return {"id": row["id"], "path": row["path"], "body": row["body"],
+            "timestamp_s": row["timestamp_s"], "bookmark": bool(row["bookmark"]),
+            "created_at": row["created_at"], "updated_at": row["updated_at"]}
+
+
+@app.get("/api/notes")
+def api_notes_list(path: Optional[str] = None,
+                   course: Optional[int] = None) -> Dict[str, Any]:
+    rows = db.list_notes(path=path, course_id=course)
+    return {"notes": [_note_dict(r) for r in rows]}
+
+
+@app.post("/api/notes")
+def api_notes_create(req: NoteReq) -> Dict[str, Any]:
+    if not req.body.strip():
+        raise HTTPException(status_code=400, detail="Note body is required.")
+    cid = req.course_id if req.course_id is not None \
+        else settings_store.get_active_course(db)
+    nid = db.add_note(req.path, req.body.strip(), course_id=cid,
+                      timestamp_s=req.timestamp_s, bookmark=req.bookmark)
+    row = db.query_one("SELECT * FROM notes WHERE id=?", (nid,))
+    return _note_dict(row)
+
+
+@app.patch("/api/notes/{note_id}")
+def api_notes_update(note_id: int, req: NoteUpdate) -> Dict[str, Any]:
+    if not db.update_note(note_id, **req.model_dump(exclude_none=True)):
+        raise HTTPException(status_code=404, detail="Note not found")
+    return {"updated": note_id}
+
+
+@app.delete("/api/notes/{note_id}")
+def api_notes_delete(note_id: int) -> Dict[str, Any]:
+    if not db.delete_note(note_id):
+        raise HTTPException(status_code=404, detail="Note not found")
+    return {"deleted": note_id}
+
+
+# -- user tags --------------------------------------------------------------
+
+@app.get("/api/tags")
+def api_tags_list(path: Optional[str] = None) -> Dict[str, Any]:
+    if path is not None:
+        return {"path": path, "tags": db.tags_for_path(path)}
+    return {"tags": [{"name": r["name"], "count": r["n"], "color": r["color"]}
+                     for r in db.list_tags()]}
+
+
+@app.post("/api/tags")
+def api_tags_add(req: ItemTagReq) -> Dict[str, Any]:
+    name = req.name.strip()
+    if not name:
+        raise HTTPException(status_code=400, detail="Tag name is required.")
+    cid = req.course_id if req.course_id is not None \
+        else settings_store.get_active_course(db)
+    db.add_item_tag(req.path, name, course_id=cid)
+    return {"path": req.path, "tags": db.tags_for_path(req.path)}
+
+
+@app.delete("/api/tags")
+def api_tags_remove(path: str, name: str) -> Dict[str, Any]:
+    db.remove_item_tag(path, name)
+    db.prune_unused_tags()
+    return {"path": path, "tags": db.tags_for_path(path)}
 
 
 # ---------------------------------------------------------------------------
