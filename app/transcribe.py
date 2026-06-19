@@ -100,11 +100,30 @@ def engine_status() -> Dict[str, Any]:
     }
 
 
+def _gpu_vram_mb() -> int:
+    """Best-effort GPU VRAM in MB. Returns 0 when no GPU or size is unknown."""
+    if _have("torch"):
+        try:
+            import torch
+            if torch.cuda.is_available():
+                return torch.cuda.get_device_properties(0).total_memory // (1024 * 1024)
+        except Exception:
+            pass
+    if _have("ctranslate2"):
+        try:
+            import ctranslate2
+            if ctranslate2.get_cuda_device_count() > 0:
+                return 4096  # GPU detected but no VRAM query available; assume 4 GB
+        except Exception:
+            pass
+    return 0
+
+
 def recommend_settings() -> Dict[str, Any]:
-    """Best transcription settings for the current machine - used by Simple mode's
-    "auto-transcribe with best detected settings". Picks the strongest installed
-    engine, the right device, and a model size that suits CPU-vs-GPU so the user
-    needn't choose. Returns ``ready=False`` with a reason when no engine exists."""
+    """Best transcription settings for the current machine. Picks the strongest
+    installed engine, the right device, and a Whisper model size calibrated to the
+    detected GPU VRAM so accuracy is maximised without exhausting memory. Returns
+    ``ready=False`` with a reason when no engine exists."""
     st = engine_status()
     engine = st["default_engine"]
     if not engine:
@@ -112,17 +131,28 @@ def recommend_settings() -> Dict[str, Any]:
                 "reason": "No transcription engine installed (faster-whisper / whisper).",
                 "engine": None}
     cuda = st["cuda"]
-    # On a GPU a larger model is affordable; on CPU keep it responsive.
-    model = "medium" if cuda else "small"
+    vram_mb = _gpu_vram_mb() if cuda else 0
+
+    if vram_mb >= 10_000:
+        model, gpu_note = "large-v3", f"GPU ({vram_mb // 1024} GB VRAM) → large-v3"
+    elif vram_mb >= 6_000:
+        model, gpu_note = "large", f"GPU ({vram_mb // 1024} GB VRAM) → large"
+    elif vram_mb >= 4_000:
+        model, gpu_note = "medium", f"GPU ({vram_mb // 1024} GB VRAM) → medium"
+    elif cuda:
+        model, gpu_note = "small", f"GPU (limited VRAM) → small"
+    else:
+        model, gpu_note = "small", "CPU → small"
+
     return {
         "ready": True,
         "engine": engine,
         "device": "cuda" if cuda else "cpu",
         "model": model,
         "language": "en",
-        "interval": 30,           # progress/segment cadence (seconds)
-        "rationale": (f"{engine} on {'GPU (CUDA)' if cuda else 'CPU'} with the "
-                      f"{model} model - best speed/accuracy for this machine."),
+        "interval": 30,
+        "vram_mb": vram_mb,
+        "rationale": f"{engine} on {gpu_note} — best speed/accuracy for this machine.",
     }
 
 

@@ -269,8 +269,9 @@ details.adv-settings[open] > summary { margin-bottom: 8px; }
 .mq-sso-waiting a { color: var(--muted); text-decoration: underline; font-size: .82rem; }
 .mq-sso-spinner { width: 13px; height: 13px; border-radius: 50%; flex-shrink: 0;
   border: 2px solid var(--border); border-top-color: var(--brand);
-  animation: mq-spin 0.7s linear infinite; }
+  animation: mq-spin 0.7s linear infinite; display: inline-block; vertical-align: middle; }
 @keyframes mq-spin { to { transform: rotate(360deg); } }
+.import-loading { display: flex; align-items: center; gap: 8px; color: var(--muted); font-size: 13px; margin: 6px 0; }
 
 /* Course picker (revealed after connect). */
 .mq-course-field { display: flex; align-items: center; gap: 10px; margin: 14px 0 4px; }

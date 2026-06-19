@@ -20,10 +20,62 @@ import time
 from typing import Any, Callable, Dict, List, Optional
 
 DEFAULT_HOST = "http://127.0.0.1:11434"
-DEFAULT_MODEL = "llama3"
+DEFAULT_MODEL = "llama3.2:3b"
 
 # Handle to a server we started ourselves, so we don't spawn duplicates.
 _server_proc: Optional[subprocess.Popen] = None
+
+# ---------------------------------------------------------------------------
+# Curated model catalogue
+# (label, ollama_tag, min_vram_mb_to_recommend_for_gpu)
+# ---------------------------------------------------------------------------
+_CURATED: List[tuple] = [
+    ("Llama 3.2 1B (tiny, very fast)", "llama3.2:1b", 0),
+    ("Gemma 3 1B (tiny, very fast)", "gemma3:1b", 0),
+    ("Llama 3.2 3B (balanced, recommended)", "llama3.2:3b", 0),
+    ("Gemma 3 4B (balanced)", "gemma3:4b", 0),
+    ("Qwen 3 4B (balanced)", "qwen3:4b", 0),
+    ("Qwen 3 8B (accurate, needs 8 GB+)", "qwen3:8b", 7_000),
+    ("Gemma 3 12B (accurate, needs 10 GB+)", "gemma3:12b", 10_000),
+    ("Qwen 3 14B (most accurate, needs 12 GB+)", "qwen3:14b", 12_000),
+]
+
+
+def get_vram_mb() -> int:
+    """Best-effort GPU VRAM in MB via PyTorch or CTranslate2. Returns 0 if unknown."""
+    try:
+        import torch
+        if torch.cuda.is_available():
+            return torch.cuda.get_device_properties(0).total_memory // (1024 * 1024)
+    except Exception:
+        pass
+    try:
+        import ctranslate2
+        if ctranslate2.get_cuda_device_count() > 0:
+            return 4096  # GPU present but can't query VRAM; guess 4 GB
+    except Exception:
+        pass
+    return 0
+
+
+def recommended_model(vram_mb: int = 0) -> str:
+    """Pick the best model tag for the detected VRAM (or CPU)."""
+    if vram_mb >= 12_000:
+        return "qwen3:14b"
+    if vram_mb >= 10_000:
+        return "gemma3:12b"
+    if vram_mb >= 7_000:
+        return "qwen3:8b"
+    return "llama3.2:3b"
+
+
+def curated_models(vram_mb: int = 0) -> List[Dict[str, Any]]:
+    """Return the curated catalogue, marking the best pick as recommended."""
+    best = recommended_model(vram_mb)
+    return [
+        {"label": label, "tag": tag, "recommended": tag == best}
+        for label, tag, _ in _CURATED
+    ]
 
 
 def binary() -> Optional[str]:
@@ -53,14 +105,18 @@ def list_models(host: str = DEFAULT_HOST) -> List[str]:
 
 
 def status(host: str = DEFAULT_HOST) -> Dict[str, Any]:
-    """A single snapshot for the UI: installed / running / models."""
+    """A single snapshot for the UI: installed / running / models / VRAM / curated list."""
     running = is_running(host)
+    vram = get_vram_mb()
+    installed_models = list_models(host) if running else []
     return {
         "installed": binary() is not None,
         "running": running,
         "host": host,
-        "models": list_models(host) if running else [],
-        "default_model": DEFAULT_MODEL,
+        "models": installed_models,
+        "default_model": recommended_model(vram),
+        "vram_mb": vram,
+        "curated_models": curated_models(vram),
         "install_url": "https://ollama.com/download",
     }
 
@@ -132,3 +188,61 @@ def pull_model(name: str, host: str = DEFAULT_HOST,
     if progress:
         progress("done", 1.0)
     return {"model": name, "models": list_models(host)}
+
+
+def install_windows() -> Dict[str, Any]:
+    """Run the official Ollama Windows PowerShell installer.
+
+    Only called when ``binary()`` returns ``None`` (Ollama not on PATH) and the
+    platform is ``win32``. The installer script is fetched from ollama.com over
+    HTTPS by PowerShell itself — the app does not bundle or proxy it.
+    """
+    if binary():
+        return {"ok": True, "already_installed": True}
+    try:
+        result = subprocess.run(
+            ["powershell", "-ExecutionPolicy", "Bypass", "-Command",
+             "irm https://ollama.com/install.ps1 | iex"],
+            capture_output=True, text=True, timeout=300,
+        )
+        # Refresh PATH so the new binary is visible without restarting Python.
+        shutil.which.cache_clear() if hasattr(shutil.which, "cache_clear") else None
+        ok = result.returncode == 0 or binary() is not None
+        return {"ok": ok,
+                "stdout": result.stdout[-2000:],
+                "stderr": result.stderr[-500:]}
+    except FileNotFoundError:
+        raise RuntimeError("PowerShell is not available on this system.")
+    except subprocess.TimeoutExpired:
+        raise RuntimeError("Ollama installer timed out after 5 minutes.")
+    except Exception as e:
+        raise RuntimeError(f"Could not run Ollama installer: {e}") from e
+
+
+def initialize_model(
+    model: str,
+    host: str = DEFAULT_HOST,
+    progress: Optional[Callable[[str, float], None]] = None,
+) -> Dict[str, Any]:
+    """Start the server (if needed) and pull ``model`` if it is not installed.
+
+    This is the single "one-click" path: start → pull → ready. Returns the
+    resulting :func:`status` dict plus a ``message`` key for the UI.
+    """
+    if not binary():
+        return {"installed": False, "running": False, "message":
+                "Ollama is not installed. Click Install to set it up automatically."}
+
+    if not is_running(host):
+        start_server(host)
+
+    installed = list_models(host)
+    base = model.split(":")[0]
+    already = any(m == model or m.startswith(base + ":") for m in installed)
+
+    if not already:
+        pull_model(model, host=host, progress=progress)
+
+    s = status(host)
+    s["message"] = f'Model "{model}" is ready. AI features are now active.'
+    return s

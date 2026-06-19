@@ -953,22 +953,29 @@ function renderOllamaStatus(s) {
   const dot = (state, label) => el("span", { class: "env-pill" }, [el("span", { class: "dot " + state }), label]);
   box.appendChild(dot(s.installed ? "on" : "off", s.installed ? "Ollama installed" : "Ollama not installed"));
   box.appendChild(dot(s.running ? "on" : "warn", s.running ? "Server running" : "Server stopped"));
-  if (!s.installed) {
-    box.appendChild(el("p", { class: "hint" }, [
-      "Install Ollama from ",
-      el("a", { href: s.install_url || "https://ollama.com/download", target: "_blank", rel: "noopener", text: "ollama.com" }),
-      ", then return here to start it.",
-    ]));
+  if (s.models && s.models.length) {
+    box.appendChild(dot("on", `${s.models.length} model(s) installed`));
   }
-  // Populate the installed-model dropdown.
+
+  // Populate the model dropdown with the curated list; mark installed ones.
   const sel = $("ollama-model");
   if (sel) {
     const prev = sel.value;
     clear(sel);
-    const models = s.models || [];
-    if (!models.length) sel.appendChild(el("option", { value: "", text: "(no models installed)" }));
-    models.forEach((m) => sel.appendChild(el("option", { value: m, text: m })));
-    if (prev && models.includes(prev)) sel.value = prev;
+    const curated = s.curated_models || [];
+    const installed = new Set(s.models || []);
+    curated.forEach((m) => {
+      const ready = installed.has(m.tag) || [...installed].some((im) => im.startsWith(m.tag.split(":")[0] + ":"));
+      const label = m.label + (m.recommended ? " ★" : "") + (ready ? " ✓" : "");
+      sel.appendChild(el("option", { value: m.tag, text: label }));
+    });
+    // Pre-select: previous choice → recommended → first
+    if (prev && [...sel.options].some((o) => o.value === prev)) {
+      sel.value = prev;
+    } else {
+      const rec = curated.find((m) => m.recommended);
+      if (rec) sel.value = rec.tag;
+    }
   }
 }
 
@@ -979,20 +986,11 @@ async function refreshOllama() {
 
 $("ollama-refresh")?.addEventListener("click", refreshOllama);
 
-$("ollama-start")?.addEventListener("click", async () => {
-  const out = $("ollama-results");
-  out.textContent = "Starting the local Ollama server…";
-  try {
-    const s = await postJSON("/api/ollama/start", {});
-    renderOllamaStatus(s);
-    out.textContent = s.running ? "Local server is running." : "Could not confirm the server started.";
-    toast(s.running ? "Ollama server running." : "Ollama did not start.", s.running ? "ok" : "warn");
-  } catch (e) { out.textContent = "Error: " + e.message; toast(e.message, "warn"); }
-});
-
+// "Download" button inside the hidden custom-model details.
 $("ollama-pull")?.addEventListener("click", async () => {
   const out = $("ollama-results");
-  const model = ($("ollama-model-custom").value.trim() || $("ollama-model").value || "llama3");
+  const model = $("ollama-model-custom")?.value.trim();
+  if (!model) { toast("Enter a model name to download.", "warn"); return; }
   out.textContent = `Queuing download of ${model}…`;
   try {
     const data = await postJSON("/api/ollama/pull", { model });
@@ -1004,16 +1002,46 @@ $("ollama-pull")?.addEventListener("click", async () => {
   } catch (e) { out.textContent = "Error: " + e.message; toast(e.message, "warn"); }
 });
 
-$("ollama-use")?.addEventListener("click", async () => {
+// "Initialize model" — one-click: install Ollama if needed, start server, pull model, activate.
+$("ollama-init")?.addEventListener("click", async () => {
   const out = $("ollama-results");
-  const model = ($("ollama-model-custom").value.trim() || $("ollama-model").value);
-  if (!model) { toast("Select or enter a model first.", "warn"); return; }
+  const btn = $("ollama-init");
+  const model = $("ollama-model")?.value || "llama3.2:3b";
+
+  btn.disabled = true;
+  out.innerHTML = '<span class="mq-sso-spinner"></span> Initializing — this may take a few minutes…';
+
   try {
-    await postJSON("/api/ollama/use", { model });
-    out.textContent = `AI features will now use the local model "${model}".`;
-    toast("AI model set.", "ok");
-    loadStatus();   // refresh LLM-ready state so AI buttons enable
-  } catch (e) { out.textContent = "Error: " + e.message; toast(e.message, "warn"); }
+    let s = await postJSON("/api/ollama/initialize", { model });
+
+    if (s.installed === false) {
+      // Ollama not on PATH — offer automatic Windows install.
+      out.textContent = "Ollama is not installed. Installing now (this may take a minute)…";
+      let inst;
+      try {
+        inst = await postJSON("/api/ollama/install", {});
+      } catch (ie) {
+        out.innerHTML = `Install failed: ${ie.message}. <a href="https://ollama.com/download" target="_blank" rel="noopener">Install manually ↗</a>`;
+        toast("Ollama install failed.", "warn"); btn.disabled = false; return;
+      }
+      if (!inst.ok) {
+        out.innerHTML = `Install did not complete. <a href="https://ollama.com/download" target="_blank" rel="noopener">Install manually ↗</a>`;
+        toast("Ollama install failed.", "warn"); btn.disabled = false; return;
+      }
+      out.textContent = "Ollama installed — pulling model now…";
+      s = await postJSON("/api/ollama/initialize", { model });
+    }
+
+    renderOllamaStatus(s);
+    out.textContent = s.message || `Model "${model}" is ready.`;
+    toast("Local AI model ready.", "ok");
+    loadStatus();  // enable flashcard / cheat-sheet buttons
+  } catch (e) {
+    out.textContent = "Error: " + e.message;
+    toast(e.message, "warn");
+  } finally {
+    btn.disabled = false;
+  }
 });
 
 // Refresh Ollama status whenever its panel is opened.
@@ -1525,7 +1553,10 @@ $("mq-import")?.addEventListener("click", async () => {
   }
   const btn = $("mq-import"); btn.disabled = true; btn.textContent = "Importing…";
   const out = $("mq-import-result"); clear(out);
-  out.appendChild(el("p", { class: "muted", text: "Reading the course from Moodle…" }));
+  out.appendChild(el("p", { class: "import-loading" }, [
+    el("span", { class: "mq-sso-spinner" }),
+    " Reading the course from Moodle…",
+  ]));
   try {
     const data = await postJSON("/api/moodle/api-import", {
       url: _mqBaseUrl, course_id: courseId,

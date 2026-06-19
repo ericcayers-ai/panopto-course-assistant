@@ -63,7 +63,7 @@ from .jobs import manager
 BASE_DIR = Path(__file__).resolve().parent.parent
 # Static assets live next to the app; CA_STATIC_DIR can override the location.
 STATIC_DIR = Path(os.environ.get("CA_STATIC_DIR", BASE_DIR / "static"))
-APP_VERSION = "2.7.0"
+APP_VERSION = "2.8.0"
 # Where transcripts are written/read. Override with PANOPTO_OUTPUT.
 OUTPUT_DIR = Path(os.environ.get("PANOPTO_OUTPUT", BASE_DIR / "transcripts")).resolve()
 core.ensure_dir(OUTPUT_DIR)
@@ -251,6 +251,10 @@ class OllamaPullRequest(BaseModel):
 
 
 class OllamaUseRequest(BaseModel):
+    model: str = ""
+
+
+class OllamaInitRequest(BaseModel):
     model: str = ""
 
 
@@ -554,6 +558,39 @@ def api_ollama_use(req: OllamaUseRequest) -> Dict[str, Any]:
     cfg = llm.set_config(db, cid, {"provider": "ollama", "model": model,
                                    "host": ollama_mgr.DEFAULT_HOST})
     return {"ok": True, "config": _safe_ai_config(cfg)}
+
+
+@app.post("/api/ollama/install")
+def api_ollama_install() -> Dict[str, Any]:
+    """Run the official Ollama installer (Windows PowerShell). No-op if already
+    installed. Returns ``{"ok": true}`` on success."""
+    import sys
+    if sys.platform != "win32":
+        raise HTTPException(status_code=400,
+                            detail="Automated install is only supported on Windows. "
+                                   "Install Ollama from https://ollama.com/download.")
+    try:
+        return ollama_mgr.install_windows()
+    except RuntimeError as e:
+        raise HTTPException(status_code=503, detail=str(e))
+
+
+@app.post("/api/ollama/initialize")
+def api_ollama_initialize(req: OllamaInitRequest) -> Dict[str, Any]:
+    """One-click: start server, pull model if not installed, activate for AI features.
+
+    If Ollama itself is not installed, returns ``{"installed": false}`` so the
+    frontend can call ``/api/ollama/install`` first.
+    """
+    model = (req.model or ollama_mgr.DEFAULT_MODEL).strip()
+    s = ollama_mgr.initialize_model(model)
+    if not s.get("installed", True):
+        return s   # frontend handles the not-installed case
+    # Wire up the LLM config so AI features (flashcards, cheat sheet…) activate.
+    cid = settings_store.get_active_course(db)
+    llm.set_config(db, cid, {"provider": "ollama", "model": model,
+                              "host": ollama_mgr.DEFAULT_HOST})
+    return s
 
 
 def _safe_ai_config(cfg: Dict[str, Any]) -> Dict[str, Any]:
