@@ -84,6 +84,21 @@ def test_queued_job_has_no_started_at(db: Database):
     assert mgr.get("waiting").started_at is None
 
 
+def test_progress_callback_accepts_stage_only(db: Database):
+    # AI jobs (flashcards, categorize, study CSV) report a stage label with no
+    # percentage: progress(stage) must work, not just progress(stage, frac).
+    mgr = JobManager(db=db)
+
+    def work(progress):
+        progress("Generating flashcards with LLM...")   # one-arg call
+        progress("Finalizing", 0.5)                      # two-arg still works
+        return {"cards": 3}
+
+    done = _wait(mgr.submit("flashcards", work), mgr)
+    assert done.status == "done"
+    assert done.result == {"cards": 3}
+
+
 def test_manager_without_db_is_pure_memory(db: Database):
     # unchanged legacy behaviour: no DB bound -> nothing persisted
     mgr = JobManager()

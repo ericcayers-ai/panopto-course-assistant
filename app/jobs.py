@@ -269,16 +269,20 @@ class JobManager:
                 self._queue.task_done()
 
     def _run(self, job: Job, fn: Callable) -> None:
-        def progress_cb(stage: str, frac: float) -> None:
+        def progress_cb(stage: str, frac: Optional[float] = None) -> None:
             # Cooperative cancellation: each progress tick is a checkpoint where we
             # can bail out cleanly instead of being killed mid-write.
+            # ``frac`` is optional: jobs with no measurable progress (AI summary,
+            # flashcards, categorize) just report a stage label and keep their
+            # current percentage until they finish.
             if self._is_cancelled(job):
                 raise JobCancelled()
             with self._lock:
                 if stage and stage != job.stage:
                     self._log(job, f"stage: {stage}")
                 job.stage = stage
-                job.progress = float(frac)
+                if frac is not None:
+                    job.progress = float(frac)
                 job.updated_at = now_iso()
             self._persist_update(job)
 
