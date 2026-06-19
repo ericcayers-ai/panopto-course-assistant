@@ -66,7 +66,7 @@ from .jobs import manager
 BASE_DIR = Path(__file__).resolve().parent.parent
 # Static assets live next to the app; CA_STATIC_DIR can override the location.
 STATIC_DIR = Path(os.environ.get("CA_STATIC_DIR", BASE_DIR / "static"))
-APP_VERSION = "3.0.1"
+APP_VERSION = "3.0.2"
 # Where transcripts are written/read. Override with PANOPTO_OUTPUT.
 OUTPUT_DIR = Path(os.environ.get("PANOPTO_OUTPUT", BASE_DIR / "transcripts")).resolve()
 core.ensure_dir(OUTPUT_DIR)
@@ -1742,6 +1742,7 @@ def api_flashcards_generate(req: FlashcardGenRequest) -> Dict[str, Any]:
         result["course"] = course
         result["generated"] = out.get("generated")
         result["provider"] = out.get("provider")
+        result["reason"] = out.get("reason", "")
         if out_dir_str:
             dest = Path(out_dir_str).expanduser()
             _copy_export_files([result.get("anki_tsv", ""), result.get("csv", "")],

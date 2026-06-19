@@ -126,3 +126,44 @@ def test_cheatsheet_render_respects_page_cap(tmp_path: Path):
     assert out.exists()
     assert info["pages"] <= 2
     assert info["truncated"] is True
+
+
+def _seed_cs(tmp_path: Path, title: str, text: str):
+    from app import core
+    it = core.LectureItem(title=title, url="u", duration=600)
+    core.write_outputs(it, [{"start": 0, "end": 6, "text": text}], text,
+                       core.output_dir_for(tmp_path, it, "week"), ["txt", "json"], 30,
+                       {"course": "X"})
+
+
+def test_cheatsheet_condense_is_per_lecture(tmp_path: Path, monkeypatch):
+    # map-reduce: each lecture is summarised separately, not in one giant prompt
+    from app import cheatsheet, llm
+    _seed_cs(tmp_path, "Week1 Networking",
+             "The transport layer provides reliable delivery between hosts. " * 10)
+    calls = {"n": 0}
+
+    def fake_complete(prompt, system="", config=None):
+        calls["n"] += 1
+        assert len(prompt) < 8000             # never the whole course in one prompt
+        return "- Transport layer gives reliable delivery\n- Ports multiplex connections"
+
+    monkeypatch.setattr(llm, "complete", fake_complete)
+    md = cheatsheet.condense(tmp_path, "X", 2, {"provider": "ollama", "model": "m"})
+    assert calls["n"] >= 1
+    assert "## Week1 Networking" in md
+    assert "Transport layer gives reliable delivery" in md
+
+
+def test_cheatsheet_extractive_fallback_when_model_empty(tmp_path: Path, monkeypatch):
+    # model returns nothing usable -> build falls back rather than yielding an empty sheet
+    from pathlib import Path as _P
+    from app import cheatsheet, llm
+    _seed_cs(tmp_path, "Week1 Networking",
+             "The transport layer provides reliable delivery between hosts. "
+             "It uses port numbers to multiplex connections. Routing forwards packets. " * 6)
+    monkeypatch.setattr(llm, "complete", lambda *a, **k: "")
+    res = cheatsheet.build(tmp_path, course="X", max_pages=1,
+                           config={"provider": "ollama", "model": "m"})
+    assert res["generated"] == "extractive"
+    assert _P(res["path"]).exists() and _P(res["path"]).stat().st_size > 0

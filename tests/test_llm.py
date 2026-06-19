@@ -55,7 +55,10 @@ def test_summarize_extractive_then_ai(tmp_path: Path, monkeypatch):
 
 
 def test_flashcards_ai_parses_json(tmp_path: Path, monkeypatch):
-    _seed(tmp_path, "Week1_TCP", "TCP is a reliable transport protocol.")
+    _seed(tmp_path, "Week1_TCP",
+          "TCP is a reliable transport protocol that guarantees ordered delivery. "
+          "It uses a three-way handshake to establish a connection between hosts. "
+          "Flow control stops the sender from overwhelming the receiver. " * 2)
     monkeypatch.setattr(llm, "complete",
                         lambda *a, **k: '[{"front":"What is TCP?","back":"reliable","type":"qa"}]')
     out = ai.generate_flashcards(tmp_path, config={"provider": "ollama", "model": "x"})

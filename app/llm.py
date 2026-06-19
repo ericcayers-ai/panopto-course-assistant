@@ -153,10 +153,22 @@ def _http_json(url: str, payload: Dict[str, Any], headers: Dict[str, str],
 
 def _complete_ollama(prompt: str, system: str, cfg: Dict[str, Any]) -> str:
     host = cfg.get("host") or "http://127.0.0.1:11434"
-    data = _http_json(host.rstrip("/") + "/api/generate", {
+    # num_predict caps the *output* tokens; without it Ollama applies a small
+    # default and truncates long JSON (e.g. a 50-card deck), so honour max_tokens.
+    options = {"temperature": cfg.get("temperature", 0.3)}
+    try:
+        options["num_predict"] = int(cfg.get("max_tokens") or 1024)
+    except (TypeError, ValueError):
+        pass
+    payload = {
         "model": cfg["model"], "prompt": prompt, "system": system, "stream": False,
-        "options": {"temperature": cfg.get("temperature", 0.3)},
-    }, headers={})
+        "options": options,
+    }
+    # Constrain output to valid JSON when the caller asks (flashcards/quiz), so a
+    # small model can't drift into prose or markdown that won't parse.
+    if cfg.get("format") == "json":
+        payload["format"] = "json"
+    data = _http_json(host.rstrip("/") + "/api/generate", payload, headers={})
     return (data.get("response") or "").strip()
 
 

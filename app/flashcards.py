@@ -71,23 +71,64 @@ _DEF_VERBS = (
     "removes|enables|allows|consists of|comprises|contains|specifies|"
     "is used to|are used to"
 )
+# The leading article must be a whole word ("a deadlock"), not the start of one -
+# the old "(?:The|A|An)?" happily ate the "A" of "And", yielding "nd so the idea".
 _DEF_RE = re.compile(
-    r"^(?:The|A|An)?\s*([A-Za-z][\w-]+(?:\s+[\w-]+){0,4}?)\s+"
+    r"^(?:(?:the|a|an)\s+)?([A-Za-z][\w-]+(?:\s+[\w-]+){0,4}?)\s+"
     r"(" + _DEF_VERBS + r")\s+(.+)$",
     re.I,
 )
 _PRONOUNS = {"it", "this", "that", "these", "those", "there", "they", "he", "she", "we", "you", "i",
              "here", "today", "now", "so", "then", "okay", "ok", "well", "right",
              "yeah", "alright", "basically", "essentially", "anyway"}
+# Conjunctions/subordinators that begin a clause but never a defined term - a
+# subject starting with one ("But it", "if you", "And so the idea") is a fragment.
+_CLAUSE_LEAD = {"and", "but", "so", "or", "nor", "yet", "for", "because", "since",
+                "although", "though", "while", "whereas", "if", "unless", "until",
+                "when", "whenever", "where", "wherever", "as", "than", "that",
+                "whether", "plus", "also", "then", "thus", "hence", "therefore",
+                "however", "meanwhile", "otherwise", "like", "maybe", "perhaps"}
+# Thin filler tokens that carry no concept; a subject made only of these is junk.
+_THIN = {"a", "an", "the", "of", "to", "in", "on", "at", "by", "for", "with",
+         "kind", "sort", "lot", "very", "really", "just", "more", "most", "some",
+         "any", "thing", "things", "stuff", "way", "ways", "actually", "u", "its",
+         "their", "our", "your", "his", "her"}
+
 # Discourse fillers that lecturers prefix sentences with - stripped before
 # matching so a definition isn't lost (or mis-subjected as "Okay so throughput").
 _FILLER_PREFIX = re.compile(
     r"^(?:(?:okay|ok|so|now|well|um+|uh+|right|yeah|yep|alright|basically|"
-    r"essentially|remember|today|anyway|anyways)\b[\s,]*)+", re.I)
+    r"essentially|remember|today|anyway|anyways|like|actually)\b[\s,]*)+", re.I)
 
 
 def _clean_sentence(s: str) -> str:
     return re.sub(r"\s+", " ", s).strip()
+
+
+def _dedupe_adjacent(words: List[str]) -> List[str]:
+    out: List[str] = []
+    for w in words:
+        if not out or out[-1].lower() != w.lower():
+            out.append(w)               # collapse stutter ("invalid invalid bit")
+    return out
+
+
+def _good_subject(subject: str) -> bool:
+    """A subject is a plausible flashcard term: 1-4 words, not led by a
+    conjunction/filler, no pronouns, and carrying at least one real concept word
+    (an acronym, a capitalised term, or a content word >= 5 chars)."""
+    words = _dedupe_adjacent(subject.split())
+    if not (1 <= len(words) <= 4):
+        return False
+    low = [w.lower() for w in words]
+    if low[0] in _CLAUSE_LEAD or low[0] in _PRONOUNS:
+        return False
+    if any(w in _PRONOUNS for w in low):
+        return False
+    if all(w in _THIN or w in _CLAUSE_LEAD for w in low):
+        return False
+    return any(w.isupper() or w[0].isupper()
+               or (len(w) >= 5 and w.lower() not in _THIN) for w in words)
 
 
 def _front_for_definition(subject: str, verb: str) -> str:
@@ -132,7 +173,8 @@ def extract_cards(text: str, tags: List[str], max_cards: int = 20) -> List[Dict[
         if not m:
             continue
         subject, verb, predicate = m.group(1), m.group(2), m.group(3)
-        if subject.split()[0].lower() in _PRONOUNS:
+        subject = " ".join(_dedupe_adjacent(subject.split()))
+        if not _good_subject(subject):
             continue
         if len(predicate) < 12:
             continue
