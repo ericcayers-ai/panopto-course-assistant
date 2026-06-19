@@ -20,7 +20,6 @@ so the caller can append an "Images & diagrams" section to the Markdown.
 """
 from __future__ import annotations
 
-import io
 import shutil
 import zipfile
 from pathlib import Path

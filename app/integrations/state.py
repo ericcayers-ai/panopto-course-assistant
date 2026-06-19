@@ -12,7 +12,7 @@ Tokens are never echoed back through the API (see ``public_status``).
 from __future__ import annotations
 
 import os
-from typing import Any, Dict, Optional
+from typing import Any, Dict
 
 from .. import settings_store
 from ..database import Database

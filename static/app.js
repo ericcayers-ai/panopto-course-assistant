@@ -275,15 +275,19 @@ function selectedDocExts() {
 
 function gatherSettings() {
   // Output formats / organisation are no longer chosen here - transcription
-  // writes a sensible canonical set and the Export step owns the rest.
+  // writes a sensible canonical set and the Export step owns the rest. The
+  // legacy opt-* controls may be absent (the guided Moodle flow replaced them),
+  // so read each defensively and fall back to sensible defaults.
+  const val = (id, def = "") => { const n = $(id); return n ? n.value : def; };
+  const checked = (id, def = false) => { const n = $(id); return n ? n.checked : def; };
   return {
-    engine: $("opt-engine").value,
-    model: $("opt-model").value,
-    language: $("opt-language").value.trim() || "en",
-    device: $("opt-device").value,
-    audio_only: $("opt-audio").checked,
-    skip_existing: $("opt-skip").checked,
-    cookies: $("opt-cookies").value.trim(),
+    engine: val("opt-engine"),
+    model: val("opt-model"),
+    language: val("opt-language").trim() || "en",
+    device: val("opt-device") || "auto",
+    audio_only: checked("opt-audio"),
+    skip_existing: checked("opt-skip", true),
+    cookies: val("opt-cookies").trim(),
     course: currentCourse(),
   };
 }
@@ -393,6 +397,7 @@ function lectureDone(lec) { return State.transcribedStems.has(lec.safe_title); }
 
 function renderLectures() {
   const list = $("lectures-list");
+  if (!list) return;   // legacy feed-based transcribe UI is not present in this build
   clear(list);
   const has = State.lectures.length > 0;
   ["lectures-heading", "lectures-toolbar"].forEach((id) =>

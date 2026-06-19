@@ -24,7 +24,7 @@ import datetime as dt
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from . import core, search
+from . import search
 from .database import Database
 
 # Assessment lifecycle (matches schema default 'not_started').

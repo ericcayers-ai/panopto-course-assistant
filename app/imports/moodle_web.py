@@ -15,9 +15,8 @@ fully offline. Nothing here runs unless the user initiates an import.
 from __future__ import annotations
 
 import re
-from http.cookies import SimpleCookie
 from typing import Any, Callable, Dict, List, Optional
-from urllib.parse import urljoin, urlparse, parse_qs
+from urllib.parse import urljoin
 
 from .. import sources
 

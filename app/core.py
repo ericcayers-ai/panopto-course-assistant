@@ -12,7 +12,7 @@ import datetime as dt
 import json
 import re
 import xml.etree.ElementTree as ET
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -801,14 +801,12 @@ def convert_documents(
         if input_path.suffix.lower() not in wanted:
             raise ValueError(f"Unsupported file type: {input_path.suffix}")
         items = [(input_path, Path(input_path.name))]
-        base = input_path.parent
     else:
         globber = input_path.rglob("*") if include_subfolders else input_path.glob("*")
         files = sorted(p for p in globber if p.is_file() and p.suffix.lower() in wanted)
         if not files:
             raise ValueError("No supported documents found to convert.")
         items = [(p, p.relative_to(input_path)) for p in files]
-        base = input_path
 
     if target == "copy":
         if not input_path.is_dir():
@@ -1324,7 +1322,6 @@ def summarize_text(text: str, max_sentences: int = 8) -> List[str]:
         freq[word] = freq.get(word, 0) + 1
     if not freq:
         return sentences[:max_sentences]
-    peak = max(freq.values())
 
     scored = []
     for idx, sent in enumerate(sentences):

@@ -39,7 +39,7 @@ from typing import Any, Dict, List, Optional
 from urllib.parse import urlparse
 
 from fastapi import FastAPI, HTTPException, UploadFile, File, Form
-from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Response
+from fastapi.responses import FileResponse, HTMLResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
@@ -1769,7 +1769,7 @@ def api_moodle_connect(req: MoodleConnectReq) -> Dict[str, Any]:
                            "web-service token from the Moodle mobile app.")
             try:
                 token = moodle_api.fetch_token(base, req.username, req.password)
-            except moodle_api.MoodleApiError as e:
+            except moodle_api.MoodleApiError:
                 # A generic "invalid login" on an SSO-fronted site usually means
                 # the password grant is disabled, not a wrong password. Detect the
                 # external IdP and steer the user to the browser token flow.

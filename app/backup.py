@@ -23,7 +23,7 @@ import zipfile
 from pathlib import Path
 from typing import Any, Dict
 
-from . import core, transcribe
+from . import transcribe
 
 # Never bundle secret material or transient WAL files into a portable backup.
 _EXCLUDE_NAMES = {".secrets.json", ".secrets.key", ".secret_names.json"}
