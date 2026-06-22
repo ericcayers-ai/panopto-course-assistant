@@ -101,3 +101,35 @@ def pick_save_file(title: str = "Save as", default_name: str = "",
     """Open a native "Save As" dialog. Returns the chosen file path, or ``None``
     if the user cancelled or no dialog could be shown."""
     return _run(_SAVE_SCRIPT, [title, default_name, initial_dir, ext])
+
+
+_OPEN_SCRIPT = r"""
+import sys
+import tkinter as tk
+from tkinter import filedialog
+
+title = sys.argv[1] if len(sys.argv) > 1 else "Open file"
+initial_dir = sys.argv[2] if len(sys.argv) > 2 else ""
+ext = sys.argv[3] if len(sys.argv) > 3 else ""
+
+root = tk.Tk()
+root.withdraw()
+root.attributes("-topmost", True)
+root.update()
+kwargs = {"title": title}
+if initial_dir:
+    kwargs["initialdir"] = initial_dir
+if ext:
+    label = ext.lstrip(".").upper()
+    kwargs["filetypes"] = [(f"{label} file", f"*{ext}"), ("All files", "*.*")]
+path = filedialog.askopenfilename(**kwargs)
+root.destroy()
+sys.stdout.write(path or "")
+"""
+
+
+def pick_open_file(title: str = "Open file", initial_dir: str = "",
+                   ext: str = "") -> Optional[str]:
+    """Open a native file-open dialog. Returns the chosen file path, or ``None``
+    if the user cancelled or no dialog could be shown."""
+    return _run(_OPEN_SCRIPT, [title, initial_dir, ext])

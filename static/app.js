@@ -2064,3 +2064,146 @@ $("course-clear")?.addEventListener("click", async () => {
     loadDashboard();
   } catch (e) { out.textContent = "Error: " + e.message; toast(e.message, "warn"); }
 });
+
+// ---- VibeVoice TTS --------------------------------------------------------
+
+async function initTts() {
+  const unavailBanner = $("tts-unavail");
+  const voiceSel = $("tts-voice");
+  const genBtn = $("tts-generate");
+  try {
+    const data = await api("/api/tts/status");
+    // Populate the voice dropdown regardless — presets download on demand.
+    const voices = data.voices || [];
+    voiceSel.innerHTML = "";
+    const opt = (v) => el("option", { value: v.id,
+      text: v.label + (v.downloaded ? "" : " ⬇") });
+    const eng = voices.filter(v => v.id.startsWith("en-"));
+    const rest = voices.filter(v => !v.id.startsWith("en-"));
+    if (eng.length) {
+      const grp = el("optgroup", { label: "English" });
+      eng.forEach(v => grp.appendChild(opt(v)));
+      voiceSel.appendChild(grp);
+    }
+    if (rest.length) {
+      const grp = el("optgroup", { label: "Other languages (experimental)" });
+      rest.forEach(v => grp.appendChild(opt(v)));
+      voiceSel.appendChild(grp);
+    }
+    if (!data.available) {
+      unavailBanner.classList.remove("hidden");
+      genBtn.disabled = true;          // installed package required to generate
+    } else {
+      genBtn.disabled = false;
+    }
+  } catch (e) {
+    unavailBanner.textContent = "Could not reach TTS status endpoint: " + e.message;
+    unavailBanner.classList.remove("hidden");
+  }
+}
+
+// Lazy-init TTS section when the user first opens the tab
+const _ttsTabBtn = document.querySelector('[data-tab="tts"]');
+if (_ttsTabBtn) {
+  let _ttsInited = false;
+  _ttsTabBtn.addEventListener("click", () => {
+    if (!_ttsInited) { _ttsInited = true; initTts(); }
+  });
+}
+
+// Browse for a .md file
+$("tts-pick-file")?.addEventListener("click", async () => {
+  try {
+    const d = await postJSON("/api/pick-file", { title: "Choose a Markdown file", ext: ".md" });
+    if (d.available === false) {
+      const p = await promptModal("Enter path to the .md file", "C:\\path\\to\\notes.md");
+      if (p) $("tts-md-path").value = p;
+    } else if (d.path) {
+      $("tts-md-path").value = d.path;
+    }
+  } catch (e) { toast("File picker error: " + e.message, "warn"); }
+});
+
+// Generate button
+$("tts-generate")?.addEventListener("click", async () => {
+  const out = $("tts-results");
+  const btn = $("tts-generate");
+  const mdPath = $("tts-md-path").value.trim();
+  const voice = $("tts-voice").value;
+  const modelPath = $("tts-model-path").value.trim() || "microsoft/VibeVoice-Realtime-0.5B";
+
+  if (!mdPath) { toast("Choose a Markdown file first.", "warn"); return; }
+  if (!voice)  { toast("Select a voice.", "warn"); return; }
+
+  btn.disabled = true;
+  clear(out);
+  out.appendChild(el("p", { class: "hint", text: "Queuing TTS job…" }));
+
+  try {
+    const data = await postJSON("/api/tts/generate", {
+      md_path: mdPath, voice, model_path: modelPath,
+    });
+    clear(out);
+    if (data.id) {
+      // Background job queued — show status and poll
+      const outputPath = data.output_path || "";
+      const statusP = el("p", { class: "ok-text",
+        text: `Job queued (${data.id.slice(0, 8)}…). Generating audio — this may take several minutes.` });
+      out.appendChild(statusP);
+      out.appendChild(el("button", { class: "tag", text: "Watch in Jobs",
+        onclick: () => { showTab("jobs"); startJobsPolling(); } }));
+      startJobsPolling();
+
+      // Poll until done, then show download link
+      if (outputPath) _pollTtsJob(data.id, outputPath, out);
+    } else {
+      _renderTtsResult(data, out);
+    }
+  } catch (e) {
+    clear(out);
+    out.appendChild(el("div", { class: "warn-box", text: "TTS error: " + e.message }));
+    toast("TTS failed: " + e.message, "warn");
+  } finally {
+    btn.disabled = false;
+  }
+});
+
+async function _pollTtsJob(jobId, outputPath, out) {
+  for (let i = 0; i < 360; i++) {          // max ~30 min at 5-second intervals
+    await new Promise(r => setTimeout(r, 5000));
+    try {
+      const job = await api(`/api/jobs/${jobId}`);
+      if (job.status === "done") {
+        _renderTtsResult({ output_path: outputPath, voice: job.payload?.voice }, out);
+        return;
+      }
+      if (job.status === "failed" || job.status === "interrupted") {
+        out.appendChild(el("p", { class: "warn-box",
+          text: `TTS job ${job.status}. Check the Jobs panel for details.` }));
+        return;
+      }
+    } catch (_) { /* ignore transient fetch errors while polling */ }
+  }
+}
+
+function _renderTtsResult(data, out) {
+  clear(out);
+  const path = data.output_path || "";
+  const dur = data.duration_s != null ? ` (${data.duration_s}s)` : "";
+  out.appendChild(el("p", { class: "ok-text", text: `Audio ready${dur}: ${path}` }));
+  if (path) {
+    const encodedPath = encodeURIComponent(path);
+    out.appendChild(el("a", {
+      href: `/api/tts/audio?path=${encodedPath}`,
+      download: path.split(/[\\/]/).pop(),
+      class: "tag",
+      text: "Download WAV",
+    }));
+    out.appendChild(el("span", { text: " " }));
+    // Inline audio player
+    const audio = el("audio", { controls: true, style: "display:block;margin-top:8px" });
+    audio.src = `/api/tts/audio?path=${encodedPath}`;
+    out.appendChild(audio);
+  }
+  toast("Audio generated.", "ok");
+}

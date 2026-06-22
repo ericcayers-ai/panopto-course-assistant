@@ -18,6 +18,9 @@ POST /api/flashcards/generate -> Anki-importable flashcards from transcripts
 POST /api/flashcards/categorize -> tag/categorise an existing flashcard deck
 POST /api/export/notion-csv -> export a Notion-importable study-database CSV
 POST /api/transcribe       -> queue a transcription job (needs whisper installed)
+GET  /api/tts/status       -> check VibeVoice availability + list voices
+POST /api/tts/generate     -> queue a TTS job (markdown → WAV, needs VibeVoice)
+GET  /api/tts/audio        -> stream a generated WAV file from _tts/
 POST /api/organize         -> reorganize existing transcripts into folders
 POST /api/moodle/parse     -> parse a whole Moodle course export into an outline
 POST /api/notion/convert   -> convert a Notion export (.zip/.html/folder) into Markdown
@@ -44,6 +47,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from . import core, transcribe, sources, notion, flashcards, study, database, courses, settings_store, search, llm, ai, study_planner
+from . import tts as tts_mod
 from . import imageextract
 from . import nativeui
 from . import ollama_mgr
@@ -66,7 +70,7 @@ from .jobs import manager
 BASE_DIR = Path(__file__).resolve().parent.parent
 # Static assets live next to the app; CA_STATIC_DIR can override the location.
 STATIC_DIR = Path(os.environ.get("CA_STATIC_DIR", BASE_DIR / "static"))
-APP_VERSION = "3.0.2"
+APP_VERSION = "3.1.0"
 # Where transcripts are written/read. Override with PANOPTO_OUTPUT.
 OUTPUT_DIR = Path(os.environ.get("PANOPTO_OUTPUT", BASE_DIR / "transcripts")).resolve()
 core.ensure_dir(OUTPUT_DIR)
@@ -247,6 +251,17 @@ class PickSaveRequest(BaseModel):
     title: str = "Save as"
     default_name: str = ""
     ext: str = ""                          # e.g. ".pdf" / ".csv" for the save dialog
+
+
+class PickFileRequest(BaseModel):
+    title: str = "Open file"
+    ext: str = ""                          # e.g. ".md" to filter the dialog
+
+
+class TtsGenerateRequest(BaseModel):
+    md_path: str                           # absolute path to the source .md file
+    voice: str = "en-Carter_man"
+    model_path: str = tts_mod.MODEL_ID
 
 
 class OllamaPullRequest(BaseModel):
@@ -549,6 +564,89 @@ def api_pick_save(req: PickSaveRequest) -> Dict[str, Any]:
     path = nativeui.pick_save_file(req.title or "Save as", req.default_name,
                                    str(OUTPUT_DIR), req.ext or "")
     return {"path": path, "available": True}
+
+
+@app.post("/api/pick-file")
+def api_pick_file(req: PickFileRequest) -> Dict[str, Any]:
+    """Open a native file-open dialog and return the chosen path (null if cancelled)."""
+    if not nativeui.available():
+        return {"path": None, "available": False}
+    path = nativeui.pick_open_file(req.title or "Open file", str(OUTPUT_DIR), req.ext or "")
+    return {"path": path, "available": True}
+
+
+# ---------------------------------------------------------------------------
+# VibeVoice TTS — convert a Markdown file to speech
+# ---------------------------------------------------------------------------
+
+
+@app.get("/api/tts/status")
+def api_tts_status() -> Dict[str, Any]:
+    """Check whether VibeVoice is installed and return the voice catalog.
+
+    Voices are always listed (downloaded on demand), so the catalog is returned
+    regardless of whether any preset has been cached yet."""
+    available = tts_mod.is_available()
+    voices = tts_mod.list_voices(OUTPUT_DIR / "_tts_voices")
+    return {"available": available, "voices": voices}
+
+
+@app.post("/api/tts/generate")
+def api_tts_generate(req: TtsGenerateRequest) -> Dict[str, Any]:
+    """Queue a VibeVoice TTS job. The audio is saved inside the _tts/ subdirectory."""
+    if not tts_mod.is_available():
+        raise HTTPException(
+            status_code=503,
+            detail="VibeVoice is not installed. Run: pip install -r requirements-tts.txt",
+        )
+    md_path = req.md_path.strip()
+    if not md_path or not Path(md_path).is_file():
+        raise HTTPException(status_code=400, detail=f"File not found: {md_path!r}")
+    if not md_path.lower().endswith(".md"):
+        raise HTTPException(status_code=400, detail="Only .md files are supported.")
+
+    stem = Path(md_path).stem
+    safe_stem = "".join(c if c.isalnum() or c in "-_." else "_" for c in stem)[:60]
+    safe_voice = "".join(c if c.isalnum() or c in "-_." else "_" for c in req.voice)
+    out_path = str(OUTPUT_DIR / "_tts" / f"{safe_stem}_{safe_voice}.wav")
+
+    captured = {"md_path": md_path, "voice": req.voice,
+                "output_path": out_path, "model_path": req.model_path}
+
+    voices_cache = OUTPUT_DIR / "_tts_voices"
+
+    def work(_progress):
+        result = tts_mod.generate(
+            md_path=captured["md_path"],
+            voice_id=captured["voice"],
+            output_path=captured["output_path"],
+            cache_dir=voices_cache,
+            progress=_progress,
+            model_path=captured["model_path"],
+        )
+        return result
+
+    job = manager.submit(
+        f"TTS: {Path(md_path).name} ({req.voice})",
+        work,
+        type="tts",
+        payload=captured,
+        course_id=settings_store.get_active_course(db),
+    )
+    return {**job.to_dict(), "output_path": out_path}
+
+
+@app.get("/api/tts/audio")
+def api_tts_audio(path: str) -> FileResponse:
+    """Stream a generated WAV file. Only serves files inside OUTPUT_DIR/_tts/."""
+    tts_dir = (OUTPUT_DIR / "_tts").resolve()
+    target = Path(path).resolve()
+    if not str(target).startswith(str(tts_dir)):
+        raise HTTPException(status_code=403, detail="Access denied.")
+    if not target.is_file():
+        raise HTTPException(status_code=404, detail="Audio file not found.")
+    return FileResponse(str(target), media_type="audio/wav",
+                        filename=target.name)
 
 
 # ---------------------------------------------------------------------------
