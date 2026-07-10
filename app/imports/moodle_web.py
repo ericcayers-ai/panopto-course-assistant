@@ -19,6 +19,7 @@ from typing import Any, Callable, Dict, List, Optional
 from urllib.parse import urljoin
 
 from .. import sources
+from ..errors import AppError
 
 # fetcher(url, cookie_header) -> html
 Fetcher = Callable[[str, str], str]
@@ -27,8 +28,11 @@ _SECTION_HREF_RE = re.compile(r'href="([^"]*course/section\.php\?id=\d+[^"]*)"',
 _VIEW_SECTION_RE = re.compile(r'href="([^"]*course/view\.php\?id=\d+&[^"]*section=\d+[^"]*)"', re.I)
 
 
-class MoodleWebError(Exception):
-    pass
+class MoodleWebError(AppError):
+    """The course page could not be fetched, or wasn't a Moodle course page."""
+
+    category = "invalid_source"
+    status_code = 400
 
 
 def parse_cookies(raw: str) -> str:

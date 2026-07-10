@@ -22,10 +22,14 @@ from typing import Any, Dict, Optional
 
 from . import settings_store
 from .database import Database
+from .errors import AppError
 
 
-class LLMError(Exception):
+class LLMError(AppError):
     """Any provider/transport failure. Callers fall back to the offline path."""
+
+    category = "network"
+    status_code = 502
 
 
 # Per-provider default model. Cloud defaults to the latest capable Claude; all

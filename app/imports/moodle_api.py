@@ -42,6 +42,7 @@ from typing import Any, Callable, Dict, List, Optional, Tuple
 from urllib.parse import parse_qsl, quote, urlencode, urlparse, urlunparse
 
 from .. import core
+from ..errors import AppError
 
 # http_post(url, data) -> (status_code, response_text)
 HttpPost = Callable[[str, Dict[str, str]], Tuple[int, str]]
@@ -51,8 +52,11 @@ HttpGet = Callable[[str], Tuple[int, bytes, str, str]]
 MOBILE_SERVICE = "moodle_mobile_app"
 
 
-class MoodleApiError(Exception):
+class MoodleApiError(AppError):
     """Raised when the Moodle web service rejects a request or is unreachable."""
+
+    category = "authentication"
+    status_code = 400
 
 
 # ---------------------------------------------------------------------------

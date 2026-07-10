@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional
 
 from .. import search
+from ..errors import AppError
 
 NOTION_VERSION = "2022-06-28"
 API = "https://api.notion.com/v1"
@@ -24,8 +25,11 @@ DEFAULT_FIELD_MAP = {
 }
 
 
-class NotionError(Exception):
-    pass
+class NotionError(AppError):
+    """The Notion API rejected the request, or no token is configured."""
+
+    category = "network"
+    status_code = 502
 
 
 Transport = Callable[[str, str, Dict[str, Any], Dict[str, str]], Dict[str, Any]]

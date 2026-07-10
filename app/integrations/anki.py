@@ -10,13 +10,18 @@ from __future__ import annotations
 
 from typing import Any, Callable, Dict, List, Optional
 
+from ..errors import AppError
+
 DEFAULT_URL = "http://127.0.0.1:8765"
 
 Transport = Callable[[Dict[str, Any]], Dict[str, Any]]
 
 
-class AnkiError(Exception):
-    pass
+class AnkiError(AppError):
+    """AnkiConnect is unreachable, or rejected the request."""
+
+    category = "network"
+    status_code = 502
 
 
 def _http_transport(payload: Dict[str, Any], url: str = DEFAULT_URL) -> Dict[str, Any]:

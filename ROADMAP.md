@@ -20,6 +20,46 @@ Evolve from a **single-session, single-course, file + in-memory tool** into a **
 
 ---
 
+## Revamp Mandate - Frontend, Design & Suite Cohesion (§14-§17)
+
+§1-§7 and §9-§13 are shipped or substantially shipped - the backend is a real multi-course, persistent,
+offline-first platform. §8 (Frontend) is the one phase that stalled at "wire up the shipped backend," and
+its remaining scope undersold what's actually needed. §14-§17 replace the rest of §8 (which now points here)
+with four phases scoped from a structural audit of the current app, not a generic UI wishlist.
+
+**Audit basis** (`graphify` structural scan of `app/` + `static/`, 2026-07-10 - 85 files, 1,757 nodes,
+3,671 edges, 84 communities; full findings in `graphify-out/GRAPH_REPORT.md`, plus direct grep/read audit):
+
+- `app/main.py` is 129 flat `@app.` routes with zero `APIRouter`. The graph's own clustering split it into
+  12 disconnected sub-communities anyway (Export Routes, Assessment/Import Routes, Moodle Connect Routes,
+  LLM Settings Routes, Upload Routes, Feed Routes, TTS/Static Routes, Docs Convert, SSO Poll, Panopto
+  Download, Docs, plus a 104-node "Main API Surface" catch-all at cohesion 0.04 - the lowest in the graph).
+  The file already *is* twelve modules; it just isn't organized as one.
+- `static/app.js` (2,209 lines, one file) forms a single "Frontend App Shell" community of 90 nodes at
+  cohesion 0.08, held together only by the `$()` DOM helper (70 edges - the #2 god node in the whole graph)
+  and `el()`/`api()`/`toast()`. No module boundaries exist on the frontend at all.
+- Six integrations define six bespoke exceptions with no shared shape - `MoodleApiError`, `ResourceError`,
+  `MoodleWebError`, `AnkiError`, `NotionError`, `LLMError` - so every caller special-cases every integration's
+  failure instead of handling one error contract.
+- Zero `aria-*` attributes, zero `role=` attributes, zero `tabindex` anywhere in `static/`; no focus trap or
+  `role="dialog"` on the hand-rolled modals; two rules explicitly strip the focus outline (`outline: none` on
+  `.course-switcher:focus` and `.course-field input:focus`).
+- The only iconography is emoji glyphs (🎓🏠📘📥📚🎯📤🎙️⚙️🌙☰＋) standing in for a real icon system, on a
+  stock light-blue-on-white/dark-sidebar palette (`--brand: #3b6ef5`, `system-ui` font) - indistinguishable
+  from a generic SaaS template, and the exact tell of an unplanned, template-first build.
+- The sidebar step-flow numbering is broken (`2 Import -> 3 Library -> 🎯 Study -> 4 Export`) - Study was
+  added later without renumbering, a visible trace of accretion rather than intentional design.
+- Backend composition is often *already* correct - `studyguide.py` genuinely imports and reuses
+  `glossary.py` + `keywords.py` + `lectures.py`; `exports.py` is a real preset x scope engine - but the UI
+  never surfaces these relationships: the Study panel renders streak / next-up / workload / practice quiz /
+  glossary / study guide as six unrelated cards with no cross-links, even though the study guide is *built
+  from* the glossary sitting right next to it.
+
+§14-§17 (after §13, below) fix these findings directly: visual identity, accessibility, content/tone, and
+suite cohesion. Read them alongside §8, whose status line now points here.
+
+---
+
 ## §0 Baseline (current state - what exists today)
 
 | Module | LoC | Responsibility | Persistence |
@@ -66,7 +106,14 @@ app/
   study_planner.py   §6  assessments, calendar(.ics), spaced repetition, progress   [NEW]
   secrets.py         §10 OS-keyring-backed secret store                             [NEW]
   analytics.py       §13 local usage stats / funnels (reads DB, no cloud)           [NEW]
+  errors.py          §17 shared AppError base for all integration exceptions        [NEW]
+  routers/           §17 main.py's 129 routes split into ~12 APIRouter modules      [NEW]
   core.py / sources.py / notion.py / flashcards.py / study.py / transcribe.py / main.py  [EXTEND]
+static/
+  style.css           §14 token-driven design system (palette, type scale, motion)  [REWRITE]
+  icons/ or icons.js   §14 inline-SVG icon set replacing emoji glyphs               [NEW]
+  CONTENT_STYLE.md     §16 tone/copy style guide                                    [NEW]
+  index.html / app.js  §14/§15/§16/§17 visual, a11y, copy, cross-linking passes     [EXTEND]
 ```
 
 ---
@@ -85,10 +132,12 @@ app/
 §1/§2 ──► §7 Import Expansion (writes to index)
 §1..§9 ──► §11 Packaging
 §1 ──► §13 Analytics & Local Feedback (reads job/export rows; no cloud)
+§14 Design System ──► §15 Accessibility ──► (§16 Content Language runs in parallel with §14/§15)
+§1/§2/§9/§14 ──► §17 Suite Cohesion & API Consolidation (needs the design language + the collections hook)
 ```
 
-**Recommended order:** §1 → §3 → §2 → §10(secrets) → §4 → §6 → §5 → §7 → §9 → §8 → §11. §12 + §13 continuous.
-Rationale: lock the data layer (§1) and make it reliable (§3) before building features on it; stand up the index (§2) before AI/RAG (§4); land secret storage (§10) before any cloud call; planner (§6) is independent of AI so it can run in parallel; packaging (§11) and frontend polish (§8) last. §13 (local analytics) accretes once §1 gives it tables to read.
+**Recommended order:** §1 → §3 → §2 → §10(secrets) → §4 → §6 → §5 → §7 → §9 → §14 → §15 → §16 → §17 → §11. §12 + §13 continuous.
+Rationale: lock the data layer (§1) and make it reliable (§3) before building features on it; stand up the index (§2) before AI/RAG (§4); land secret storage (§10) before any cloud call; planner (§6) is independent of AI so it can run in parallel; §14-§17 (design, accessibility, content, cohesion) come after the feature backend is stable so the revamp isn't redone mid-flight, and packaging (§11) closes once the frontend it packages is settled. §13 (local analytics) accretes once §1 gives it tables to read.
 
 ---
 
@@ -337,7 +386,7 @@ GET  /api/progress?course=
 
 ## §8 - Frontend Modernization
 
-**Status:** 🟡 **Partial.** Course switcher, library filter/sort, jobs panel with controls, and toast notifications already shipped in earlier passes. This pass added the **window/mode launcher**: pick *Full workspace* vs *Just my Moodle course*, each with *Simple* vs *Advanced*; the choice persists (localStorage + `/api/settings`) and reflows the UI (the Moodle window hides the course/import tabs and drives a guided quick-import → auto-transcribe → one-click export flow; Simple mode hides advanced transcription knobs in favour of best defaults). Remaining for a later pass: full dashboard metric tiles, drag-and-drop import zones, an automated axe a11y check, and deeper mobile layouts.
+**Status:** 🟡 **Partial - remaining scope superseded by §14-§17.** Course switcher, library filter/sort, jobs panel with controls, and toast notifications already shipped in earlier passes. A later pass added the **window/mode launcher**: pick *Full workspace* vs *Just my Moodle course*, each with *Simple* vs *Advanced*; the choice persists (localStorage + `/api/settings`) and reflows the UI (the Moodle window hides the course/import tabs and drives a guided quick-import → auto-transcribe → one-click export flow; Simple mode hides advanced transcription knobs in favour of best defaults). Everything else this section originally listed as "remaining" - accessibility, visual design, dashboard cohesion, drag-and-drop polish - is scoped in detail (with an evidence-based audit, not a wishlist) in the **Revamp Mandate** above and **§14-§17** below. Treat those as this phase's actual remainder.
 
 **Goal:** Better usability with **no frontend framework / no build step** (preserve vanilla SPA).
 **Depends:** §1 (course switcher), §2 (filters), §3 (job stages), §6 (dashboard metrics).
@@ -452,6 +501,83 @@ POST /api/analytics/export         write an anonymised diagnostics JSON (user-in
 
 ---
 
+## §14 - Design System & Visual Identity
+
+**Status:** 🔴 Not started.
+
+**Goal:** Replace the ad hoc, template-blue-and-emoji visual layer with a deliberate, distinctive design system - same vanilla-JS/no-build-step constraint as the rest of the frontend (§8's invariant holds).
+**Depends:** none (can start immediately; informs §15-§17, which touch the same files).
+**Files:** `static/style.css` [rewrite as token-driven], `static/icons/` or `static/icons.js` [NEW - replaces emoji glyphs], `static/index.html` [icon + heading pass], `static/app.js` [wherever it injects emoji into dynamically-built DOM].
+
+- **Kill emoji-as-iconography.** Every nav icon, section marker, and status glyph (🎓🏠📘📥📚🎯📤🎙️⚙️🌙☰＋, plus any built at runtime in `app.js`) becomes a real inline SVG from one small, self-drawn or single-license icon set - 18-20px, `currentColor`-stroked so it inherits light/dark theme automatically. No icon font, no CDN (offline-first invariant).
+- **Palette.** Replace the default `--brand: #3b6ef5` SaaS-blue with a palette that isn't the default output of "pick an accent color for a dashboard" - one primary + 1-2 accent hues with a rationale tied to the product (an academic/paper-and-ink register, or a hue family distinct from the Tailwind/Bootstrap indigo default), keeping WCAG-AA contrast in both themes (feeds §15).
+- **Type.** A deliberate type scale, not just `font: 15px/1.55 system-ui` plus 30+ one-off `font-size` declarations scattered through `style.css`: pick a distinct sans (or sans+serif pairing) for headings vs. body, define `--text-xs` … `--text-2xl` as tokens, and use them everywhere.
+- **Layout rhythm.** Replace the generic "white cards on light-gray background, dark sidebar" shell with a layout that reflects this app's actual mental model - a course *workspace*, not a marketing dashboard. Concretely: the six-card Study panel and the flat Export panel should visually express the pipeline (source → transcript → derived artifacts → export), not read as a list of unrelated boxes.
+- **Fix the step-flow.** Renumber (or drop numbering for a real information architecture) so `Import → Library → Study → Export` reads as one continuous flow, not `2 → 3 → 🎯 → 4`.
+- **Motion.** Small, purposeful transitions (panel switch, toast enter/exit, job progress) - currently only `transition: background .1s` on buttons; respect `prefers-reduced-motion` (ties into §15).
+
+**Done-when:** no emoji glyph remains as a functional icon anywhere in `static/`; palette + type scale are CSS custom properties used everywhere (zero one-off hex colors or ad hoc `font-size` left in `style.css`); step-flow numbering is consistent; a before/after screenshot pair shows a UI that no longer reads as a generic dashboard template; `prefers-reduced-motion` respected.
+
+---
+
+## §15 - Accessibility & Inclusive Interaction
+
+**Status:** 🔴 Not started (supersedes the unshipped "Accessibility" bullet under the old §8).
+
+**Goal:** Meet WCAG 2.1 AA in practice - the audit found zero `aria-*`/`role`/`tabindex` attributes anywhere in `static/`, and two rules that actively remove focus indicators.
+**Depends:** §14 (icon/contrast tokens land first so a11y work isn't redone).
+**Files:** `static/index.html`, `static/app.js`, `static/style.css`, `tests/test_a11y.py` [NEW].
+
+- **Semantics.** Every icon-only control gets an accessible name (`aria-label` or visually-hidden text); the emoji-as-icon nav items (§14) get real labelled `<button>`/`<a>` semantics, not decoration-only glyphs read aloud unpredictably by screen readers.
+- **Focus.** Remove both `outline: none` rules (`.course-switcher:focus`, `.course-field input:focus`) and replace with the visible focus ring already used elsewhere (`outline: 2px solid var(--brand-soft)` on `input:focus`/`.modal-input:focus`) - apply it everywhere instead of carving out two exceptions. Full keyboard reachability: every one of the 54 buttons and 29 labelled fields in `index.html` must be reachable and operable via Tab/Enter/Space alone.
+- **Modals.** The hand-rolled `.modal-overlay`/`.modal-box` prompt (replacing `window.prompt`/`alert`) gets `role="dialog"`, `aria-modal="true"`, a focus trap, focus-return to the triggering element on close, and `Escape`-to-close everywhere (already present at 2 of 3 modal call sites - extend to all).
+- **Live regions.** Toasts (`toast()`, 26 call sites and the #7 god node in the graph) and job-progress updates get `aria-live="polite"` (`assertive` for errors) so screen-reader users get the same feedback sighted users get from a transient toast.
+- **Status without color.** The connection-status `<span class="dot off">` and any other color-only state indicator gets a text/icon pairing, not color alone.
+- **Contrast.** Audit every `--muted`/`--sidebar-ink-dim` text-on-background pairing in both themes against WCAG AA (4.5:1 body, 3:1 large text) - several "hint"/"muted" text sizes are borderline today.
+- **Forms.** Verify every existing `<label>` has a correct `for`/id pairing (not just visual placement) and every input with an essential `.hint` paragraph exposes `aria-describedby`.
+
+**API/Schema:** none - frontend + test-only.
+**Done-when:** an automated axe scan (named in §8/§12 but never wired up) returns zero critical/serious violations on every panel; a full keyboard-only walkthrough reaches and operates every control; both themes pass WCAG AA contrast; `tests/test_a11y.py` runs the axe check and gates `pytest -q`.
+
+---
+
+## §16 - Content & Interaction Language
+
+**Status:** 🔴 Not started.
+
+**Goal:** One consistent voice - precise, plain, a little dry - instead of the current mix of workmanlike error strings and occasional marketing-adjacent flourishes ("revision cockpit," a "no AI needed" reassurance repeated across three separate cards). Read as a tool built by someone who understands the domain, not a landing page.
+**Depends:** none; pairs naturally with §14 (copy changes land alongside the visual pass).
+**Files:** `static/CONTENT_STYLE.md` [NEW], `static/index.html` (headings, panel intros, empty states), `static/app.js` (`toast()` call sites, ~45 today), `README.md` [tone pass].
+
+- **Write the style guide first** - this phase's actual deliverable: sentence case not title case, no rhetorical questions, no exclamation points outside genuine errors, name the mechanism instead of the benefit ("built locally from your review deck," not "your revision cockpit"), state a caveat once per feature rather than defensively repeating it.
+- **Audit every heading/intro/empty-state string** in `index.html` against the guide - the hero (`"A complete workspace for each course"`), panel intros, and card copy (`"Your revision cockpit — streak, what to study next…"`) all get a precision pass.
+- **Deduplicate reassurance copy.** "No AI needed" / "works with no AI model configured" currently appears independently in the Study panel intro, the practice-quiz card, and multiple module docstrings - say it once, where a user would actually wonder about it, not on every card.
+- **Normalize `toast()` copy** (~45 call sites): consistent tense (imperative vs. past - currently mixes "Export complete." with "Course set to…"), consistent punctuation, and one shared formatter for the `Error: ` prefix instead of manually prepending it per call site.
+- **Unify integration error copy** (ties to §17): once integrations share an error envelope, Moodle/Notion/Anki/LLM failures can render through one message path instead of six bespoke shapes.
+
+**Done-when:** `static/CONTENT_STYLE.md` exists and is followed; every user-facing string in `index.html`/`app.js` passes a manual read-through against it; no duplicated caveat appears more than once per feature; `toast()` error calls route through one formatter.
+
+---
+
+## §17 - Suite Cohesion & API Consolidation
+
+**Status:** 🔴 Not started.
+
+**Goal:** Make the app behave like one coherent workspace instead of a list of features that happen to share a sidebar. The backend already composes in places (`studyguide.py` reuses `glossary` + `keywords` + `lectures`; `exports.py` is a real preset×scope engine) - extend that pattern to the routes, error handling, and the UI's cross-linking.
+**Depends:** §1/§2 (courses + index already exist), §9 (`exports.py` pattern to generalize), §14 (visual language to express the linkage).
+**Files:** `app/main.py` [split into `app/routers/*.py`], `app/errors.py` [NEW], `app/imports/*.py` + `app/integrations/*.py` + `app/llm.py` [error classes → shared base], `static/app.js`, `static/index.html`.
+
+- **Split `app/main.py` into routers.** The graphify audit already found the natural seams - main.py's 129 routes cluster into the same ~12 groups the graph found on its own (export, assessment/import, moodle-connect, llm-settings, upload, feed, tts/static, docs-convert, sso-poll, panopto-download, docs, plus core library/transcript routes). Move each to `app/routers/<name>.py` behind `APIRouter`, mounted in `main.py`. Pure reorganization, no behavior change - low-risk and testable against the same paths without modifying existing route tests.
+- **One error envelope.** Define `app/errors.py` with a base `AppError` (message, category from §3's existing `network|authentication|dependency|filesystem|invalid_source|unknown` taxonomy, optional detail dict); make `MoodleApiError`, `MoodleWebError`, `ResourceError`, `AnkiError`, `NotionError`, `LLMError` inherit from it. One FastAPI exception handler renders all of them the same JSON shape, so the frontend needs one error-rendering path instead of six.
+- **Surface the existing `/api/collections` hook.** §2 already speced `GET /api/collections?course=&lecture=` (all assets linked to a lecture/week) but the Study/Library/Export panels don't use it - wire the frontend to render a lecture's transcript + glossary terms + flashcards + citations + quiz questions + exports as one linked view instead of six separately-navigated panels.
+- **Cross-link derived content.** Where `studyguide.py` already pulls from `glossary.py`/`keywords.py`, surface that in the UI: a study guide links back to the glossary entries it drew from; flashcards generated from a lecture link to that lecture's transcript; citations are reachable from the same lecture card. This is presentation work over data that mostly already exists.
+- **Consistent panel shape.** Every feature panel (Study cards, Export targets, Integration syncs) currently has its own bespoke markup/JS wiring. Define one small "feature card" pattern (data-in → render → action → status) in `app.js` and rebuild the six Study cards and the Export target list on it, so adding a 7th study feature doesn't mean inventing a 7th layout.
+
+**API/Schema:** no new endpoints beyond what §2 already speced (`/api/collections`); this phase is reorganization plus one new shared exception hierarchy.
+**Done-when:** `app/main.py` shrinks to app setup + router mounts (target well under 300 lines); every integration error renders through the one envelope (asserted by a test that triggers each and checks the JSON shape); `/api/collections` is called from at least the Study and Library panels; the Study panel visibly cross-links glossary ↔ study guide ↔ flashcards ↔ citations for the same lecture; the existing `pytest -q` suite passes unmodified (route paths don't change).
+
+---
+
 ## Long-term flow (end state)
 
 ```
@@ -460,4 +586,4 @@ Course material → Import → Transcription/Conversion → Persistent Knowledge
   → Notion / Anki / Calendar sync → Long-term learning archive
 ```
 
-**End state:** multi-course · persistent · offline-first · optional AI · integrated study planning + revision · direct sync with learning tools · deployable by non-technical students · capable of managing an entire degree from first lecture to final exam.
+**End state:** multi-course · persistent · offline-first · optional AI · integrated study planning + revision · direct sync with learning tools · deployable by non-technical students · capable of managing an entire degree from first lecture to final exam - presented as one distinctive, accessible, intentionally-designed workspace (§14-§17), not a list of features wearing a shared sidebar.

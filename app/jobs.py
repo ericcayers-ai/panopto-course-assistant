@@ -33,6 +33,7 @@ from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from .core import now_iso
 from .database import Database
+from .errors import AppError
 
 
 class JobCancelled(Exception):
@@ -43,8 +44,12 @@ class JobCancelled(Exception):
 def classify_failure(exc: BaseException) -> str:
     """Bucket an exception into a §3 failure category (drives UI hints + retry).
 
-    Heuristic: exception *type* first, then keywords in the message - good enough
-    to tell a flaky network apart from a missing dependency or a bad input."""
+    An ``AppError`` (§17) already carries its own category - trust it. Otherwise
+    fall back to a heuristic: exception *type* first, then keywords in the
+    message - good enough to tell a flaky network apart from a missing
+    dependency or a bad input."""
+    if isinstance(exc, AppError):
+        return exc.category
     name = type(exc).__name__
     msg = str(exc).lower()
     if isinstance(exc, (ImportError, ModuleNotFoundError)) or "not installed" in msg \

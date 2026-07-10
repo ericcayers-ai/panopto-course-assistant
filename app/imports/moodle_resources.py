@@ -18,6 +18,7 @@ from typing import Any, Callable, Dict, List, Optional, Tuple
 from urllib.parse import unquote, urljoin
 
 from .. import core
+from ..errors import AppError
 
 # fetch(url, cookie_header) -> (content_bytes, filename, content_type)
 ResourceFetcher = Callable[[str, str], Tuple[bytes, str, str]]
@@ -30,8 +31,11 @@ _PLUGINFILE_RE = re.compile(r'href="([^"]*pluginfile\.php/[^"]+)"', re.I)
 _CD_FILENAME_RE = re.compile(r'filename\*?=(?:UTF-8\'\')?"?([^";]+)"?', re.I)
 
 
-class ResourceError(Exception):
-    pass
+class ResourceError(AppError):
+    """A course resource file could not be downloaded."""
+
+    category = "network"
+    status_code = 502
 
 
 def _default_fetcher(url: str, cookie_header: str) -> Tuple[bytes, str, str]:
