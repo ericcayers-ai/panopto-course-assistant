@@ -12,12 +12,43 @@ const State = {
 
 // ---- tiny DOM + fetch helpers ---------------------------------------------
 
+// Every integration failure arrives in one envelope (see app/errors.py):
+//   {"detail": "...", "error": {"message", "category", "detail": {}}}
+// so there is a single error path here rather than one per integration.
+class ApiError extends Error {
+  constructor(message, category = "unknown", detail = {}) {
+    super(message);
+    this.name = "ApiError";
+    this.category = category;
+    this.detail = detail;
+  }
+}
+
+// What a user should try next, per §3 failure category.
+const CATEGORY_HINT = {
+  network: "Check your connection and try again.",
+  authentication: "Sign in again, then retry.",
+  dependency: "A required component is not installed.",
+  filesystem: "Check the path and available disk space.",
+  invalid_source: "That source could not be read.",
+};
+
 async function api(path, opts) {
   const res = await fetch(path, opts);
   let data = null;
   try { data = await res.json(); } catch (_) { /* non-JSON */ }
-  if (!res.ok) throw new Error((data && data.detail) ? data.detail : res.statusText);
-  return data;
+  if (res.ok) return data;
+  const env = data && data.error;
+  if (env) throw new ApiError(env.message, env.category, env.detail);
+  throw new ApiError((data && data.detail) ? data.detail : res.statusText);
+}
+
+// One place that turns any thrown error into user-facing prose (§16). Never
+// prefix "Error:" by hand at a call site.
+function errorText(e) {
+  const msg = (e && e.message) || String(e);
+  const hint = e instanceof ApiError ? CATEGORY_HINT[e.category] : null;
+  return hint ? `${msg} ${hint}` : msg;
 }
 
 // POST/PUT a JSON body; returns the parsed response.
@@ -48,29 +79,96 @@ function el(tag, attrs = {}, children = []) {
 const $ = (id) => document.getElementById(id);
 function clear(node) { while (node.firstChild) node.removeChild(node.firstChild); }
 
-// ---- lightweight modal prompt (replaces window.prompt/alert) ---------------
+// ---- icons (§14) -----------------------------------------------------------
+// Builds <svg class="ico"><use href="#i-name"/></svg> against the sprite in
+// index.html. Decorative by default: pass a label only when the icon is the
+// control's *only* content, otherwise it is announced twice.
+const SVG_NS = "http://www.w3.org/2000/svg";
+function icon(name, { cls = "", label = "" } = {}) {
+  const svg = document.createElementNS(SVG_NS, "svg");
+  svg.setAttribute("class", ("ico " + cls).trim());
+  const use = document.createElementNS(SVG_NS, "use");
+  use.setAttribute("href", "#i-" + name);
+  svg.appendChild(use);
+  if (label) svg.setAttribute("aria-label", label);
+  else svg.setAttribute("aria-hidden", "true");
+  svg.setAttribute("focusable", "false");
+  return svg;
+}
+// An icon plus its own text, for status lines where colour alone must not
+// carry the meaning (§15).
+function iconText(name, text, cls = "") {
+  return el("span", { class: "icon-text" }, [icon(name, { cls }), " " + text]);
+}
+
+// ---- modal dialogs (replaces window.prompt/alert) --------------------------
+// One primitive behind every dialog (§15): it is announced as a dialog, traps
+// Tab inside itself, closes on Escape or a backdrop click, and hands focus back
+// to whatever opened it. Anything that appends a bare .modal-overlay is a bug.
+
+const FOCUSABLE = 'a[href], button:not([disabled]), input:not([disabled]), ' +
+  'select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
+
+function openModal(buildBox, { onDismiss = () => {}, boxClass = "" } = {}) {
+  const opener = document.activeElement;
+  const overlay = el("div", { class: "modal-overlay" });
+  const box = el("div", {
+    class: ("modal-box " + boxClass).trim(),
+    role: "dialog", "aria-modal": "true",
+  });
+  let closed = false;
+  const close = () => {
+    if (closed) return;
+    closed = true;
+    document.removeEventListener("keydown", onKey, true);
+    overlay.remove();
+    if (opener && typeof opener.focus === "function") opener.focus();
+  };
+  const dismiss = () => { if (!closed) { close(); onDismiss(); } };
+
+  function onKey(e) {
+    if (e.key === "Escape") { e.preventDefault(); dismiss(); return; }
+    if (e.key !== "Tab") return;
+    const items = [...box.querySelectorAll(FOCUSABLE)].filter((n) => n.offsetParent !== null);
+    if (!items.length) return;
+    const first = items[0], last = items[items.length - 1];
+    if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
+    else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
+  }
+
+  overlay.addEventListener("click", (e) => { if (e.target === overlay) dismiss(); });
+  document.addEventListener("keydown", onKey, true);
+
+  buildBox(box, close);
+  overlay.appendChild(box);
+  document.body.appendChild(overlay);
+
+  // Label the dialog by its own heading, so screen readers announce its purpose.
+  const heading = box.querySelector(".modal-label");
+  if (heading) {
+    if (!heading.id) heading.id = "modal-label-" + Math.random().toString(36).slice(2, 8);
+    box.setAttribute("aria-labelledby", heading.id);
+  }
+  const target = box.querySelector(FOCUSABLE);
+  if (target) target.focus();
+  return close;
+}
 
 function promptModal(label, placeholder = "") {
   return new Promise((resolve) => {
-    const overlay = el("div", { class: "modal-overlay", onclick: (e) => { if (e.target === overlay) { overlay.remove(); resolve(""); } } });
-    const inp = el("input", { type: "text", placeholder, class: "modal-input", autocomplete: "off" });
-    const commit = () => { overlay.remove(); resolve(inp.value.trim()); };
-    const cancel = () => { overlay.remove(); resolve(""); };
-    const box = el("div", { class: "modal-box" }, [
-      el("p", { class: "modal-label", text: label }),
-      inp,
-      el("div", { class: "modal-actions" }, [
-        el("button", { text: "Create", onclick: commit }),
-        el("button", { class: "ghost", text: "Cancel", onclick: cancel }),
-      ]),
-    ]);
-    overlay.appendChild(box);
-    document.body.appendChild(overlay);
-    inp.focus();
-    inp.addEventListener("keydown", (e) => {
-      if (e.key === "Enter") commit();
-      else if (e.key === "Escape") cancel();
-    });
+    openModal((box, close) => {
+      const inp = el("input", { type: "text", placeholder, class: "modal-input", autocomplete: "off" });
+      const commit = () => { close(); resolve(inp.value.trim()); };
+      inp.addEventListener("keydown", (e) => { if (e.key === "Enter") commit(); });
+      box.append(
+        el("p", { class: "modal-label", text: label }),
+        inp,
+        el("div", { class: "modal-actions" }, [
+          el("button", { text: "Create", onclick: commit }),
+          el("button", { class: "ghost", text: "Cancel", onclick: () => { close(); resolve(""); } }),
+        ]),
+      );
+    }, { onDismiss: () => resolve("") });
   });
 }
 
@@ -97,59 +195,61 @@ async function pickSaveFile(title = "Save as", defaultName = "", ext = "") {
 // Fallback for hosts with no desktop dialog (e.g. headless): a typed-path modal.
 function askPathFallback(title = "Where should this be saved?", defaultValue = "") {
   return new Promise((resolve) => {
-    const overlay = el("div", { class: "modal-overlay",
-      onclick: (e) => { if (e.target === overlay) { overlay.remove(); resolve(null); } } });
-    const inp = el("input", { type: "text", placeholder: "C:\\Users\\…\\Course exports",
-      class: "modal-input", autocomplete: "off", value: defaultValue });
-    const commit = () => { overlay.remove(); resolve(inp.value.trim() || null); };
-    const cancel = () => { overlay.remove(); resolve(null); };
-    const box = el("div", { class: "modal-box" }, [
-      el("p", { class: "modal-label", text: title }),
-      el("p", { class: "hint", text: "No file dialog is available on this host. Enter a path." }),
-      inp,
-      el("div", { class: "modal-actions" }, [
-        el("button", { text: "Save here", onclick: commit }),
-        el("button", { class: "ghost", text: "Cancel", onclick: cancel }),
-      ]),
-    ]);
-    overlay.appendChild(box);
-    document.body.appendChild(overlay);
-    inp.focus(); inp.select();
-    inp.addEventListener("keydown", (e) => {
-      if (e.key === "Enter") commit();
-      else if (e.key === "Escape") cancel();
-    });
+    openModal((box, close) => {
+      const inp = el("input", { type: "text", placeholder: "C:\\Users\\…\\Course exports",
+        class: "modal-input", autocomplete: "off", value: defaultValue });
+      const commit = () => { close(); resolve(inp.value.trim() || null); };
+      inp.addEventListener("keydown", (e) => { if (e.key === "Enter") commit(); });
+      box.append(
+        el("p", { class: "modal-label", text: title }),
+        el("p", { class: "hint", text: "No file dialog is available on this host. Enter a path." }),
+        inp,
+        el("div", { class: "modal-actions" }, [
+          el("button", { text: "Save here", onclick: commit }),
+          el("button", { class: "ghost", text: "Cancel", onclick: () => { close(); resolve(null); } }),
+        ]),
+      );
+      setTimeout(() => inp.select(), 0);
+    }, { onDismiss: () => resolve(null) });
   });
 }
 
 // A simple confirmation dialog. Resolves true (confirmed) or false (cancelled).
 function confirmModal(title, message, { confirmText = "Confirm", danger = false } = {}) {
   return new Promise((resolve) => {
-    const overlay = el("div", { class: "modal-overlay",
-      onclick: (e) => { if (e.target === overlay) { overlay.remove(); resolve(false); } } });
-    const box = el("div", { class: "modal-box" }, [
-      el("p", { class: "modal-label", text: title }),
-      el("p", { class: "hint", text: message }),
-      el("div", { class: "modal-actions" }, [
-        el("button", { class: danger ? "danger" : "", text: confirmText,
-          onclick: () => { overlay.remove(); resolve(true); } }),
-        el("button", { class: "ghost", text: "Cancel",
-          onclick: () => { overlay.remove(); resolve(false); } }),
-      ]),
-    ]);
-    overlay.appendChild(box);
-    document.body.appendChild(overlay);
+    openModal((box, close) => {
+      box.append(
+        el("p", { class: "modal-label", text: title }),
+        el("p", { class: "hint", text: message }),
+        el("div", { class: "modal-actions" }, [
+          el("button", { class: danger ? "danger" : "", text: confirmText,
+            onclick: () => { close(); resolve(true); } }),
+          el("button", { class: "ghost", text: "Cancel",
+            onclick: () => { close(); resolve(false); } }),
+        ]),
+      );
+    }, { onDismiss: () => resolve(false) });
   });
 }
 
+// ---- toast -----------------------------------------------------------------
+// The element carries aria-live, so screen-reader users get the same feedback
+// sighted users get from a transient toast (§15).
+const TOAST_ICON = { ok: "check", warn: "alert", err: "alert", info: "info" };
 let toastTimer = null;
+
 function toast(msg, kind = "info") {
   const t = $("toast");
-  t.textContent = msg;
+  clear(t);
   t.className = "toast " + kind;
+  t.setAttribute("aria-live", kind === "err" ? "assertive" : "polite");
+  t.append(icon(TOAST_ICON[kind] || "info"), el("span", { text: msg }));
   if (toastTimer) clearTimeout(toastTimer);
   toastTimer = setTimeout(() => t.classList.add("hidden"), 4000);
 }
+
+// Report a failure. The one place an error reaches the user (§16/§17).
+function toastError(e) { toastError(e); }
 
 function remember(key, val) { try { localStorage.setItem(key, val); } catch (_) {} }
 function recall(key, def = "") { try { return localStorage.getItem(key) ?? def; } catch (_) { return def; } }
@@ -157,9 +257,15 @@ function recall(key, def = "") { try { return localStorage.getItem(key) ?? def; 
 // ---- tabs -----------------------------------------------------------------
 
 function showTab(name) {
-  document.querySelectorAll(".tab").forEach((b) => b.classList.toggle("active", b.dataset.tab === name));
+  document.querySelectorAll(".tab").forEach((b) => {
+    const on = b.dataset.tab === name;
+    b.classList.toggle("active", on);
+    // aria-current marks the section you are in, for assistive tech (§15).
+    if (on) b.setAttribute("aria-current", "page"); else b.removeAttribute("aria-current");
+  });
   document.querySelectorAll(".panel").forEach((p) => p.classList.toggle("active", p.id === name));
   document.querySelector(".app").classList.remove("menu-open");  // close mobile drawer
+  $("menu-toggle")?.setAttribute("aria-expanded", "false");
   if (name === "home") loadDashboard();
   if (name === "library") loadTranscripts();
   if (name === "jobs") loadJobs();
@@ -176,7 +282,11 @@ document.querySelectorAll("[data-goto]").forEach((b) =>
 // ---- import sub-switch (lectures / documents / notion / browse) -----------
 
 function showImport(name) {
-  document.querySelectorAll(".seg").forEach((b) => b.classList.toggle("active", b.dataset.import === name));
+  document.querySelectorAll(".seg").forEach((b) => {
+    const on = b.dataset.import === name;
+    b.classList.toggle("active", on);
+    b.setAttribute("aria-selected", String(on));
+  });
   document.querySelectorAll(".import-pane").forEach((p) =>
     p.classList.toggle("active", p.id === "import-" + name));
 }
@@ -189,8 +299,13 @@ document.querySelectorAll(".seg").forEach((btn) =>
 function applyTheme(theme) {
   document.documentElement.setAttribute("data-theme", theme);
   remember("theme", theme);
-  const btn = $("theme-toggle");
-  if (btn) btn.textContent = theme === "dark" ? "☀️ Theme" : "🌙 Theme";
+  // The button offers the theme you would switch *to*, and says so out loud.
+  const next = theme === "dark" ? "light" : "dark";
+  const use = $("theme-icon")?.querySelector("use");
+  if (use) use.setAttribute("href", theme === "dark" ? "#i-sun" : "#i-moon");
+  const label = $("theme-label");
+  if (label) label.textContent = next === "dark" ? "Dark theme" : "Light theme";
+  $("theme-toggle")?.setAttribute("aria-label", `Switch to the ${next} theme`);
 }
 // Apply the saved theme immediately (before the async init chain) so it sticks
 // on refresh with no flash, even if later startup code errors out.
@@ -198,8 +313,10 @@ applyTheme(recall("theme") ||
   (window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light"));
 $("theme-toggle")?.addEventListener("click", () =>
   applyTheme(document.documentElement.getAttribute("data-theme") === "dark" ? "light" : "dark"));
-$("menu-toggle").addEventListener("click", () =>
-  document.querySelector(".app").classList.toggle("menu-open"));
+$("menu-toggle").addEventListener("click", (e) => {
+  const open = document.querySelector(".app").classList.toggle("menu-open");
+  e.currentTarget.setAttribute("aria-expanded", String(open));
+});
 
 // ---- dashboard ------------------------------------------------------------
 
@@ -209,8 +326,10 @@ async function loadDashboard() {
   const s = State.status;
   if (s && env) {
     clear(env);
+    // State is carried by an icon and by the label text, never by colour alone (§15).
+    const STATE_ICON = { on: "check", off: "x", warn: "alert" };
     const pill = (label, state) => el("span", { class: "env-pill" }, [
-      el("span", { class: "dot " + state }), label]);
+      icon(STATE_ICON[state] || "info", { cls: "state-ico " + state }), label]);
     const engines = Object.entries(s.engines).filter(([, v]) => v).map(([k]) => k);
     env.appendChild(pill(engines.length ? `Transcription: ${engines.join(", ")}` : "Transcription: not installed",
       engines.length ? "on" : "off"));
@@ -242,7 +361,7 @@ async function loadStatus() {
     State.status = s;
     const engines = Object.entries(s.engines).filter(([, v]) => v).map(([k]) => k);
     const parts = [
-      engines.length ? `engines: ${engines.join(", ")}` : "⚠ no transcription engine installed",
+      engines.length ? `engines: ${engines.join(", ")}` : "no transcription engine installed",
       s.cuda ? "GPU: CUDA" : "GPU: none (CPU)",
       s.markitdown ? "PDF→MD: ready" : "PDF→MD: install markitdown",
       `output → ${s.output_dir}`,
@@ -388,7 +507,7 @@ async function activateCourse(id) {
     toast("Switched to “" + c.name + "”.", "ok");
     if (document.querySelector("#library.active")) loadTranscripts();
     if (document.querySelector("#home.active")) loadDashboard();
-  } catch (e) { toast(e.message, "err"); }
+  } catch (e) { toastError(e); }
 }
 
 async function createCourse() {
@@ -398,7 +517,7 @@ async function createCourse() {
     const c = await postJSON("/api/courses", { name });
     await loadCourses();
     await activateCourse(c.id);
-  } catch (e) { toast(e.message, "err"); }
+  } catch (e) { toastError(e); }
 }
 
 if ($("course-switcher")) {
@@ -441,7 +560,7 @@ function renderLectures() {
   ["lectures-heading", "lectures-toolbar"].forEach((id) =>
     $(id)?.classList.toggle("hidden", !has));
   $("settings")?.classList.toggle("hidden", !has);
-  if (!has) { list.appendChild(el("p", { class: "empty", text: "No lectures loaded yet." })); return; }
+  if (!has) { list.appendChild(el("p", { class: "empty", text: "No lectures loaded yet. Paste a Panopto podcast link to load recordings." })); return; }
 
   const noEngine = !State.status || !State.status.any_engine;
   let doneCount = 0;
@@ -505,7 +624,7 @@ async function transcribeLectures(indexes, allowReTranscribe = false) {
         body: JSON.stringify({ ...settings, lecture: State.lectures[i] }),
       });
       queued++;
-    } catch (e) { toast(`Failed to queue "${State.lectures[i].title}": ${e.message}`, "warn"); }
+    } catch (e) { toast(`Could not queue "${State.lectures[i].title}": ${errorText(e)}`, "err"); }
   }
   if (queued) {
     toast(`Queued ${queued} lecture(s). Transcription takes a few minutes each; track it in Jobs.`, "ok");
@@ -541,7 +660,7 @@ $("feed-load")?.addEventListener("click", async () => {
     State.lectures = data.lectures;
     renderLectures();
     toast(`Loaded ${data.count} lecture(s).`, "ok");
-  } catch (e) { toast("Error: " + e.message, "warn"); }
+  } catch (e) { toastError(e); }
   finally { btn.disabled = false; btn.textContent = "Load feed"; }
 });
 
@@ -557,7 +676,7 @@ $("feed-file")?.addEventListener("change", async (ev) => {
     State.lectures = data.lectures;
     renderLectures();
     toast(`Parsed ${data.count} lecture(s) from ${file.name}.`, "ok");
-  } catch (e) { toast("Error: " + e.message, "warn"); }
+  } catch (e) { toastError(e); }
 });
 
 $("sel-all")?.addEventListener("click", () => document.querySelectorAll(".lec-check").forEach((c) => (c.checked = true)));
@@ -595,7 +714,7 @@ async function loadTranscripts() {  // loads the whole Library
     State.transcribedStems = new Set(cats.transcripts.map((i) => i.stem));
     clear(list);
     if (!data.counts.total) {
-      list.appendChild(el("p", { class: "empty", text: "Nothing imported yet. Add lectures, documents or a Notion export in step 2." }));
+      list.appendChild(el("p", { class: "empty", text: "Nothing imported yet. Add documents or a Notion export from Import, or import a Moodle course." }));
       return;
     }
 
@@ -632,7 +751,7 @@ async function loadTranscripts() {  // loads the whole Library
     cats.others.forEach((f) => list.appendChild(fileRow(f)));
     librarySection(list, "Generated exports", cats.exports.length);
     cats.exports.forEach((f) => list.appendChild(fileRow(f)));
-  } catch (e) { list.textContent = "Error: " + e.message; }
+  } catch (e) { list.textContent = errorText(e); }
 }
 
 async function viewTranscript(relPath) {
@@ -643,7 +762,7 @@ async function viewTranscript(relPath) {
     view.textContent = data.content;
     view.scrollTop = 0;
     openItemMeta(relPath);
-  } catch (e) { view.textContent = "Error: " + e.message; }
+  } catch (e) { view.textContent = errorText(e); }
 }
 
 // ---- notes, tags & citations for the selected library item ----------------
@@ -658,7 +777,55 @@ function openItemMeta(relPath) {
   $("note-bookmark").checked = false;
   loadItemTags(relPath);
   loadItemNotes(relPath);
+  loadCollection(relPath);
 }
+
+// Everything derived from this lecture, in one call (§17). Documents have no
+// collection, so a 404 simply hides the strip rather than shouting.
+async function loadCollection(relPath) {
+  const host = $("item-collection");
+  clear(host);
+  let data;
+  try {
+    data = await api("/api/collections?lecture=" + encodeURIComponent(relPath));
+  } catch (_) { return; }
+
+  const cells = [
+    ["glossary", "glossary terms", () => { showTab("study"); focusCard("glossary-card"); }],
+    ["keywords", "keywords", null],
+    ["related", "related lectures", null],
+    ["notes", "notes", null],
+    ["tags", "tags", null],
+    ["formats", "file formats", null],
+  ];
+  const grid = el("div", { class: "collection-grid" });
+  for (const [key, label, go] of cells) {
+    const n = (data.counts && data.counts[key]) || 0;
+    const cell = el(go && n ? "button" : "div", {
+      class: "collection-cell" + (n ? "" : " empty-cell"),
+      ...(go && n ? { onclick: go, type: "button" } : {}),
+    }, [el("span", { class: "n", text: String(n) }), el("span", { class: "k", text: label })]);
+    grid.appendChild(cell);
+  }
+  host.append(
+    el("div", { class: "collection-head" }, [
+      icon("link"),
+      el("span", { class: "muted small", text: "Derived from this lecture" }),
+    ]),
+    grid,
+  );
+}
+
+// Move the user to a card and mark it, rather than silently scrolling.
+function focusCard(id) {
+  const card = $(id);
+  if (!card) return;
+  card.scrollIntoView({ behavior: "smooth", block: "center" });
+  card.setAttribute("tabindex", "-1");
+  card.focus({ preventScroll: true });
+}
+document.querySelectorAll("[data-focus-card]").forEach((b) =>
+  b.addEventListener("click", () => focusCard(b.dataset.focusCard)));
 
 async function loadItemTags(relPath) {
   const wrap = $("item-tags");
@@ -682,7 +849,7 @@ async function addItemTag(relPath, name) {
   try {
     await postJSON("/api/tags", { path: relPath, name, course_id: null });
     loadItemTags(relPath);
-  } catch (e) { toast(e.message, "error"); }
+  } catch (e) { toastError(e); }
 }
 
 async function removeItemTag(relPath, name) {
@@ -690,7 +857,7 @@ async function removeItemTag(relPath, name) {
     await api("/api/tags?path=" + encodeURIComponent(relPath) + "&name=" + encodeURIComponent(name),
       { method: "DELETE" });
     loadItemTags(relPath);
-  } catch (e) { toast(e.message, "error"); }
+  } catch (e) { toastError(e); }
 }
 
 async function loadItemNotes(relPath) {
@@ -698,17 +865,17 @@ async function loadItemNotes(relPath) {
   clear(wrap);
   try {
     const data = await api("/api/notes?path=" + encodeURIComponent(relPath));
-    if (!data.notes.length) { wrap.appendChild(el("p", { class: "muted small", text: "No notes yet." })); return; }
+    if (!data.notes.length) { wrap.appendChild(el("p", { class: "muted small", text: "No notes yet. Add one above." })); return; }
     data.notes.forEach((n) => {
       wrap.appendChild(el("div", { class: "note-item" }, [
-        n.bookmark ? el("span", { class: "note-flag", text: "🔖" }) : null,
+        n.bookmark ? icon("bookmark", { cls: "note-flag", label: "Bookmarked" }) : null,
         n.timestamp_s != null ? el("span", { class: "note-ts", text: fmtTs(n.timestamp_s) }) : null,
         el("span", { class: "note-text", text: n.body }),
         el("button", { class: "tag-x", title: "delete note", text: "×",
           onclick: () => deleteNote(n.id, relPath) }),
       ]));
     });
-  } catch (e) { wrap.textContent = "Error: " + e.message; }
+  } catch (e) { wrap.textContent = errorText(e); }
 }
 
 function fmtTs(s) {
@@ -724,12 +891,12 @@ async function addNote(relPath) {
     await postJSON("/api/notes", { path: relPath, body, bookmark: $("note-bookmark").checked, course_id: null });
     $("note-body").value = ""; $("note-bookmark").checked = false;
     loadItemNotes(relPath);
-  } catch (e) { toast(e.message, "error"); }
+  } catch (e) { toastError(e); }
 }
 
 async function deleteNote(id, relPath) {
   try { await api("/api/notes/" + id, { method: "DELETE" }); loadItemNotes(relPath); }
-  catch (e) { toast(e.message, "error"); }
+  catch (e) { toastError(e); }
 }
 
 async function showCitations(relPath) {
@@ -749,8 +916,8 @@ async function showCitations(relPath) {
 }
 
 function copyText(text) {
-  try { navigator.clipboard.writeText(text); toast("Copied", "ok"); }
-  catch (_) { toast("Copy failed", "error"); }
+  try { navigator.clipboard.writeText(text); toast("Copied to the clipboard.", "ok"); }
+  catch (_) { toast("Could not copy to the clipboard.", "err"); }
 }
 
 $("item-tag-input").addEventListener("keydown", (e) => {
@@ -774,7 +941,9 @@ async function loadStreak() {
     const s = await api("/api/streak");
     clear(box);
     box.appendChild(el("div", { class: "streak-num" }, [
-      el("span", { class: "streak-flame", text: s.current_streak > 0 ? "🔥" : "·" }),
+      s.current_streak > 0
+        ? el("span", { class: "streak-flame" }, [icon("flame", { label: "On a streak" })])
+        : el("span", { class: "streak-flame muted", text: "·" }),
       el("strong", { text: String(s.current_streak) }),
       el("span", { class: "muted", text: ` day${s.current_streak === 1 ? "" : "s"}` }),
     ]));
@@ -783,8 +952,8 @@ async function loadStreak() {
     const pct = Math.min(100, s.goal_pct);
     box.appendChild(el("div", { class: "progress" }, [el("div", { class: "bar", style: `width:${pct}%` })]));
     box.appendChild(el("div", { class: "hint", text:
-      `Today: ${s.today_minutes} / ${s.goal_minutes} min` + (s.goal_met ? " ✓ goal met" : "") }));
-  } catch (e) { box.textContent = "Error: " + e.message; }
+      `Today: ${s.today_minutes} / ${s.goal_minutes} min` + (s.goal_met ? " - goal met" : "") }));
+  } catch (e) { box.textContent = errorText(e); }
 }
 
 async function loadNextUp() {
@@ -803,7 +972,7 @@ async function loadNextUp() {
       ]);
       box.appendChild(row);
     });
-  } catch (e) { box.textContent = "Error: " + e.message; }
+  } catch (e) { box.textContent = errorText(e); }
 }
 
 async function loadWorkload() {
@@ -811,7 +980,7 @@ async function loadWorkload() {
   try {
     const w = await api("/api/workload");
     clear(box);
-    if (!w.lectures) { box.appendChild(el("p", { class: "muted small", text: "No transcripts yet." })); return; }
+    if (!w.lectures) { box.appendChild(el("p", { class: "muted small", text: "No transcripts yet. Transcribe some lecture recordings to see a workload estimate." })); return; }
     box.appendChild(el("div", { class: "hint", text:
       `${w.lectures} lectures · ${w.total_words.toLocaleString()} words · ` +
       `read ~${hm(w.total_read_min)}, review ~${hm(w.total_review_min)}` }));
@@ -824,7 +993,7 @@ async function loadWorkload() {
       ])),
     ]);
     box.appendChild(table);
-  } catch (e) { box.textContent = "Error: " + e.message; }
+  } catch (e) { box.textContent = errorText(e); }
 }
 
 function hm(min) {
@@ -846,7 +1015,7 @@ async function startPractice() {
     State.practiceQuiz = quiz;
     State.practiceAnswers = new Array(quiz.questions.length).fill(null);
     renderPractice();
-  } catch (e) { box.textContent = "Error: " + e.message; }
+  } catch (e) { box.textContent = errorText(e); }
 }
 
 function renderPractice() {
@@ -878,11 +1047,12 @@ async function submitPractice() {
       text: `Score: ${res.score} / ${res.total} (${res.pct}%)` }));
     res.detail.forEach((d, i) => {
       out.appendChild(el("div", { class: "quiz-result " + (d.correct ? "ok" : "bad") }, [
-        el("span", { text: (d.correct ? "✓ " : "✗ ") + d.question }),
+        icon(d.correct ? "check" : "x", { label: d.correct ? "Correct" : "Incorrect" }),
+        el("span", { text: d.question }),
         d.correct ? null : el("span", { class: "muted small", text: " — answer: " + d.answer }),
       ]));
     });
-  } catch (e) { toast(e.message, "error"); }
+  } catch (e) { toastError(e); }
 }
 
 // -- glossary & study guide -------------------------------------------------
@@ -900,7 +1070,7 @@ async function showGlossary() {
         el("strong", { text: t.term }), el("span", { text: " — " + t.definition }),
       ]));
     });
-  } catch (e) { box.textContent = "Error: " + e.message; }
+  } catch (e) { box.textContent = errorText(e); }
 }
 
 async function exportGlossary() {
@@ -908,8 +1078,8 @@ async function exportGlossary() {
   if (dest === null) return;
   try {
     const r = await postJSON("/api/export/glossary", { course: currentCourse(), output_dir: dest });
-    toast(`Glossary exported (${r.count} terms)`, "ok");
-  } catch (e) { toast(e.message, "error"); }
+    toast(`Glossary exported: ${r.count} terms.`, "ok");
+  } catch (e) { toastError(e); }
 }
 
 async function exportGuide() {
@@ -920,8 +1090,8 @@ async function exportGuide() {
   try {
     const r = await postJSON("/api/export/study-guide", { course: currentCourse(), output_dir: dest });
     box.textContent = "";
-    toast(`Study guide built (${r.lectures} lectures, ${r.glossary_terms} terms)`, "ok");
-  } catch (e) { box.textContent = ""; toast(e.message, "error"); }
+    toast(`Study guide built: ${r.lectures} lectures, ${r.glossary_terms} terms.`, "ok");
+  } catch (e) { box.textContent = ""; toastError(e); }
 }
 
 $("study-refresh").addEventListener("click", loadStudy);
@@ -940,43 +1110,53 @@ const PALETTE_ACTIONS = [
   { label: "Go to Study", run: () => showTab("study") },
   { label: "Go to Export", run: () => showTab("export") },
   { label: "Go to Jobs", run: () => showTab("jobs") },
+  { label: "Go to Text to speech", run: () => showTab("tts") },
   { label: "Search the library", run: () => { showTab("library"); const q = $("search-q"); if (q) q.focus(); } },
   { label: "Start a practice quiz", run: () => { showTab("study"); startPractice(); } },
   { label: "Show glossary", run: () => { showTab("study"); showGlossary(); } },
   { label: "Toggle theme", run: () => $("theme-toggle").click() },
 ];
 
+let paletteOpen = false;
 function openPalette() {
-  if ($("palette-overlay")) return;
-  const input = el("input", { type: "text", class: "palette-input", placeholder: "Type a command…", autocomplete: "off" });
-  const list = el("div", { class: "palette-list" });
-  const overlay = el("div", { id: "palette-overlay", class: "modal-overlay",
-    onclick: (e) => { if (e.target === overlay) overlay.remove(); } });
+  if (paletteOpen) return;
+  paletteOpen = true;
+  const input = el("input", { type: "text", class: "palette-input", placeholder: "Type a command…",
+    autocomplete: "off", role: "combobox", "aria-expanded": "true",
+    "aria-controls": "palette-list", "aria-autocomplete": "list" });
+  const list = el("div", { id: "palette-list", class: "palette-list", role: "listbox",
+    "aria-label": "Commands" });
   let filtered = PALETTE_ACTIONS.slice();
   let active = 0;
-  function render() {
-    clear(list);
-    filtered.forEach((a, i) => list.appendChild(el("div", {
-      class: "palette-item" + (i === active ? " active" : ""),
-      onclick: () => { overlay.remove(); a.run(); },
-    }, [a.label])));
-  }
-  input.addEventListener("input", () => {
-    const q = input.value.toLowerCase();
-    filtered = PALETTE_ACTIONS.filter((a) => a.label.toLowerCase().includes(q));
-    active = 0; render();
-  });
-  input.addEventListener("keydown", (e) => {
-    if (e.key === "ArrowDown") { active = Math.min(active + 1, filtered.length - 1); render(); e.preventDefault(); }
-    else if (e.key === "ArrowUp") { active = Math.max(active - 1, 0); render(); e.preventDefault(); }
-    else if (e.key === "Enter") { const a = filtered[active]; overlay.remove(); if (a) a.run(); }
-    else if (e.key === "Escape") overlay.remove();
-  });
-  const box = el("div", { class: "modal-box palette-box" }, [input, list]);
-  overlay.appendChild(box);
-  document.body.appendChild(overlay);
-  render();
-  input.focus();
+
+  openModal((box, close) => {
+    const dismiss = () => { paletteOpen = false; close(); };
+    function render() {
+      clear(list);
+      filtered.forEach((a, i) => {
+        const id = "palette-opt-" + i;
+        list.appendChild(el("div", {
+          id, role: "option", "aria-selected": i === active ? "true" : "false",
+          class: "palette-item" + (i === active ? " active" : ""),
+          onclick: () => { dismiss(); a.run(); },
+        }, [a.label]));
+      });
+      input.setAttribute("aria-activedescendant", filtered.length ? "palette-opt-" + active : "");
+    }
+    input.addEventListener("input", () => {
+      const q = input.value.toLowerCase();
+      filtered = PALETTE_ACTIONS.filter((a) => a.label.toLowerCase().includes(q));
+      active = 0; render();
+    });
+    input.addEventListener("keydown", (e) => {
+      if (e.key === "ArrowDown") { active = Math.min(active + 1, filtered.length - 1); render(); e.preventDefault(); }
+      else if (e.key === "ArrowUp") { active = Math.max(active - 1, 0); render(); e.preventDefault(); }
+      else if (e.key === "Enter") { const a = filtered[active]; dismiss(); if (a) a.run(); }
+      // Escape is handled by openModal, which also restores focus.
+    });
+    box.append(input, list);
+    render();
+  }, { boxClass: "palette-box", onDismiss: () => { paletteOpen = false; } });
 }
 
 document.addEventListener("keydown", (e) => {
@@ -1012,7 +1192,7 @@ async function applyLibraryFilters() {
         ]),
       ]));
     });
-  } catch (e) { list.textContent = "Error: " + e.message; }
+  } catch (e) { list.textContent = errorText(e); }
 }
 $("lib-apply").addEventListener("click", applyLibraryFilters);
 $("lib-tag").addEventListener("keydown", (e) => { if (e.key === "Enter") applyLibraryFilters(); });
@@ -1041,7 +1221,7 @@ $("export-all").addEventListener("click", async () => {
     ]));
     out.appendChild(el("p", { class: "hint", text: `Files saved to ${data.output_dir || data.dest}` }));
     toast(`Exported ${data.count} source(s).`, "ok");
-  } catch (e) { out.textContent = "Error: " + e.message; toast(e.message, "warn"); }
+  } catch (e) { out.textContent = errorText(e); toastError(e); }
   finally { btn.disabled = false; }
 });
 
@@ -1067,7 +1247,7 @@ $("nlm-export").addEventListener("click", async () => {
       el("button", { class: "tag", text: "View", onclick: () => viewTranscript(f) }),
     ])));
     toast(`Exported ${data.count} NotebookLM file(s).`, "ok");
-  } catch (e) { out.textContent = "Error: " + e.message; toast(e.message, "warn"); }
+  } catch (e) { out.textContent = errorText(e); toastError(e); }
   finally { btn.disabled = false; }
 });
 
@@ -1097,7 +1277,7 @@ $("studycsv-go").addEventListener("click", async () => {
       out.appendChild(el("p", { class: "hint", text: "Columns: " + (data.columns || []).join(", ") }));
       toast(`Exported ${data.count} rows to a CSV.`, "ok");
     }
-  } catch (e) { out.textContent = "Error: " + e.message; toast(e.message, "warn"); }
+  } catch (e) { out.textContent = errorText(e); toastError(e); }
   finally { btn.disabled = false; }
 });
 
@@ -1131,7 +1311,7 @@ $("srt-export").addEventListener("click", async () => {
     out.appendChild(el("p", { class: "hint",
       text: "The .srt files share each video's name, so players load them automatically when both are in this folder." }));
     toast(`Exported ${data.count} SRT file(s).`, "ok");
-  } catch (e) { out.textContent = "Error: " + e.message; toast(e.message, "warn"); }
+  } catch (e) { out.textContent = errorText(e); toastError(e); }
   finally { btn.disabled = false; }
 });
 
@@ -1147,7 +1327,7 @@ $("org-go").addEventListener("click", async () => {
     out.textContent = `Moved ${data.moved} file(s) (by ${data.by}).`;
     toast(`Reorganized ${data.moved} file(s).`, "ok");
     loadTranscripts();
-  } catch (e) { out.textContent = "Error: " + e.message; }
+  } catch (e) { out.textContent = errorText(e); }
 });
 
 // ---- search ---------------------------------------------------------------
@@ -1160,7 +1340,7 @@ async function doSearch() {
   try {
     const data = await api("/api/search?q=" + encodeURIComponent(q));
     clear(out);
-    if (!data.results.length) { out.appendChild(el("p", { class: "empty", text: "No matches." })); return; }
+    if (!data.results.length) { out.appendChild(el("p", { class: "empty", text: "No matches. Try a shorter phrase, or clear the filters." })); return; }
     out.appendChild(el("p", { class: "muted", text: `${data.results.length} lecture(s) match.` }));
     data.results.forEach((r) => {
       const label = (r.folder ? r.folder + "/" : "") + r.lecture;
@@ -1174,7 +1354,7 @@ async function doSearch() {
       r.snippets.forEach((s) => card.appendChild(el("div", { class: "snippet", text: s })));
       out.appendChild(card);
     });
-  } catch (e) { out.textContent = "Error: " + e.message; }
+  } catch (e) { out.textContent = errorText(e); }
 }
 $("search-go").addEventListener("click", doSearch);
 $("search-q").addEventListener("keydown", (e) => { if (e.key === "Enter") doSearch(); });
@@ -1224,7 +1404,7 @@ $("fc-generate").addEventListener("click", async () => {
       renderDeckResult(out, data, "generated");
       toast(`Generated ${data.count} flashcard(s).`, "ok");
     }
-  } catch (e) { out.textContent = "Error: " + e.message; toast(e.message, "warn"); }
+  } catch (e) { out.textContent = errorText(e); toastError(e); }
   finally { btn.disabled = false; }
 });
 
@@ -1233,7 +1413,7 @@ $("fc-categorize").addEventListener("click", async () => {
   const btn = $("fc-categorize");
   const text = $("fc-cat-text").value.trim();
   const path = $("fc-cat-path").value.trim();
-  if (!text && !path) { toast("Provide a deck, either pasted or as a file path.", "warn"); return; }
+  if (!text && !path) { toast("Paste a deck, or give the path to one.", "warn"); return; }
   btn.disabled = true; out.textContent = "Queuing categorization job…";
   try {
     const data = await api("/api/flashcards/categorize", {
@@ -1254,7 +1434,7 @@ $("fc-categorize").addEventListener("click", async () => {
       renderDeckResult(out, data, "tagged");
       toast(`Categorized ${data.count} card(s).`, "ok");
     }
-  } catch (e) { out.textContent = "Error: " + e.message; toast(e.message, "warn"); }
+  } catch (e) { out.textContent = errorText(e); toastError(e); }
   finally { btn.disabled = false; }
 });
 
@@ -1280,7 +1460,7 @@ $("cheatsheet-go")?.addEventListener("click", async () => {
       toast("Cheat sheet generation started.", "ok");
       startJobsPolling();
     }
-  } catch (e) { out.textContent = "Error: " + e.message; toast(e.message, "warn"); }
+  } catch (e) { out.textContent = errorText(e); toastError(e); }
   finally { btn.disabled = false; }
 });
 
@@ -1305,7 +1485,7 @@ function renderOllamaStatus(s) {
     const installed = new Set(s.models || []);
     curated.forEach((m) => {
       const ready = installed.has(m.tag) || [...installed].some((im) => im.startsWith(m.tag.split(":")[0] + ":"));
-      const label = m.label + (m.recommended ? " ★" : "") + (ready ? " ✓" : "");
+      const label = m.label + (m.recommended ? " (recommended)" : "") + (ready ? " - installed" : "");
       sel.appendChild(el("option", { value: m.tag, text: label }));
     });
     // Pre-select: previous choice → recommended → first
@@ -1338,7 +1518,7 @@ $("ollama-pull")?.addEventListener("click", async () => {
       toast("Model download started.", "ok");
       showTab("jobs"); startJobsPolling();
     }
-  } catch (e) { out.textContent = "Error: " + e.message; toast(e.message, "warn"); }
+  } catch (e) { out.textContent = errorText(e); toastError(e); }
 });
 
 // "Initialize model" — one-click: install Ollama if needed, start server, pull model, activate.
@@ -1360,11 +1540,11 @@ $("ollama-init")?.addEventListener("click", async () => {
       try {
         inst = await postJSON("/api/ollama/install", {});
       } catch (ie) {
-        out.innerHTML = `Install failed: ${ie.message}. <a href="https://ollama.com/download" target="_blank" rel="noopener">Install manually ↗</a>`;
+        out.innerHTML = `Install failed: ${ie.message}. <a href="https://ollama.com/download" target="_blank" rel="noopener">Install manually <svg class="ico" aria-hidden="true"><use href="#i-external"/></svg></a>`;
         toast("Ollama install failed.", "warn"); btn.disabled = false; return;
       }
       if (!inst.ok) {
-        out.innerHTML = `Install did not complete. <a href="https://ollama.com/download" target="_blank" rel="noopener">Install manually ↗</a>`;
+        out.innerHTML = `Install did not complete. <a href="https://ollama.com/download" target="_blank" rel="noopener">Install manually <svg class="ico" aria-hidden="true"><use href="#i-external"/></svg></a>`;
         toast("Ollama install failed.", "warn"); btn.disabled = false; return;
       }
       out.textContent = "Ollama installed — pulling model now…";
@@ -1376,8 +1556,8 @@ $("ollama-init")?.addEventListener("click", async () => {
     toast("Local AI model ready.", "ok");
     loadStatus();  // enable flashcard / cheat-sheet buttons
   } catch (e) {
-    out.textContent = "Error: " + e.message;
-    toast(e.message, "warn");
+    out.textContent = errorText(e);
+    toastError(e);
   } finally {
     btn.disabled = false;
   }
@@ -1417,12 +1597,14 @@ $("pdf-go").addEventListener("click", async () => {
       el("button", { class: "tag", text: "view documents_pack.md", onclick: () => { viewTranscript(data.combined); showTab("library"); } }),
     ]));
     data.files.forEach((f) => {
-      const row = el("div", { class: "list-item" }, [el("span", { class: "li-label", text: f.error ? `⚠ ${f.src}: ${f.error}` : f.md })]);
+      const row = el("div", { class: "list-item" }, [f.error
+        ? el("span", { class: "li-label" }, [icon("alert", { cls: "state-ico warn" }), ` ${f.src}: ${f.error}`])
+        : el("span", { class: "li-label", text: f.md })]);
       if (!f.error && target === "ai") row.appendChild(el("button", { class: "tag", text: "view", onclick: () => { viewTranscript(f.md); showTab("library"); } }));
       out.appendChild(row);
     });
     toast(`Converted ${data.count} document(s).`, "ok");
-  } catch (e) { out.textContent = "Error: " + e.message; toast(e.message, "warn"); }
+  } catch (e) { out.textContent = errorText(e); toastError(e); }
   finally { btn.disabled = false; }
 });
 
@@ -1460,7 +1642,7 @@ async function loadJobs() {
     badge.textContent = active;
     badge.classList.toggle("hidden", active === 0);
 
-    if (!data.jobs.length) { out.appendChild(el("p", { class: "empty", text: "No jobs yet." })); stopJobsPolling(); return; }
+    if (!data.jobs.length) { out.appendChild(el("p", { class: "empty", text: "No jobs yet. Transcription and export jobs appear here while they run." })); stopJobsPolling(); return; }
     // A calm heads-up while transcriptions run: they are slow and that is normal.
     const transcribing = data.jobs.some((j) =>
       j.type === "transcribe" && (j.status === "queued" || j.status === "running"));
@@ -1527,7 +1709,7 @@ async function loadJobs() {
       out.appendChild(card);
     });
     if (active) startJobsPolling(); else { stopJobsPolling(); refreshTranscribedSet().then(renderLectures); }
-  } catch (e) { out.textContent = "Error: " + e.message; }
+  } catch (e) { out.textContent = errorText(e); }
 }
 function startJobsPolling() { if (!State.jobsTimer) State.jobsTimer = setInterval(loadJobs, 2000); }
 function stopJobsPolling() { if (State.jobsTimer) { clearInterval(State.jobsTimer); State.jobsTimer = null; } }
@@ -1539,7 +1721,7 @@ async function jobAction(id, action) {
     toast(action === "retry" ? "Retrying job…" : "Job canceled.", "ok");
     if (action === "retry") startJobsPolling();
     loadJobs();
-  } catch (e) { toast(e.message, "err"); }
+  } catch (e) { toastError(e); }
 }
 
 async function showJobLogs(id, btn) {
@@ -1555,7 +1737,7 @@ async function showJobLogs(id, btn) {
     const pre = el("pre", { class: "job-logs", text: data.logs || "(no logs yet)" });
     if (card) card.appendChild(pre);
     if (btn) btn.textContent = "Hide logs";
-  } catch (e) { toast(e.message, "err"); }
+  } catch (e) { toastError(e); }
 }
 
 // ---- materials ------------------------------------------------------------
@@ -1573,13 +1755,13 @@ async function browse(path) {
     if (!data.entries.length) { out.appendChild(el("p", { class: "empty", text: "(empty folder)" })); return; }
     data.entries.forEach((e) => {
       const row = el("div", { class: "list-item" + (e.is_dir ? " clickable" : "") }, [
-        el("span", { class: "li-label", text: (e.is_dir ? "📁 " : "📄 ") + e.name }),
+        el("span", { class: "li-label" }, [icon(e.is_dir ? "folder" : "file"), " " + e.name]),
         el("span", { class: "muted", text: e.size_human }),
       ]);
       if (e.is_dir) row.addEventListener("click", () => browse(e.path));
       out.appendChild(row);
     });
-  } catch (e) { out.textContent = "Error: " + e.message; }
+  } catch (e) { out.textContent = errorText(e); }
 }
 // Moodle course parser
 $("moodle-go").addEventListener("click", async () => {
@@ -1623,7 +1805,7 @@ $("moodle-go").addEventListener("click", async () => {
         el("span", { class: "badge", text: a.kind_label }),
       ])));
     }
-  } catch (e) { out.textContent = "Error: " + e.message; toast(e.message, "warn"); }
+  } catch (e) { out.textContent = errorText(e); toastError(e); }
 });
 async function saveMoodleOutline(path) {
   try {
@@ -1632,7 +1814,7 @@ async function saveMoodleOutline(path) {
       body: JSON.stringify({ path, save_outline: true }),
     });
     toast("Saved outline → " + (d.saved_as || "output folder"), "ok");
-  } catch (e) { toast(e.message, "warn"); }
+  } catch (e) { toastError(e); }
 }
 
 // Notion export - render a conversion result into #notion-results
@@ -1662,7 +1844,7 @@ $("notion-file").addEventListener("change", async (ev) => {
     const d = await api("/api/notion/upload?combined=" + ($("notion-combined").checked ? "true" : "false"),
       { method: "POST", body: fd });
     renderNotionResult(d);
-  } catch (e) { out.textContent = "Error: " + e.message; toast(e.message, "warn"); }
+  } catch (e) { out.textContent = errorText(e); toastError(e); }
   finally { ev.target.value = ""; }
 });
 
@@ -1680,7 +1862,7 @@ $("notion-go").addEventListener("click", async () => {
       body: JSON.stringify({ path, combined: $("notion-combined").checked }),
     });
     renderNotionResult(d);
-  } catch (e) { out.textContent = "Error: " + e.message; toast(e.message, "warn"); }
+  } catch (e) { out.textContent = errorText(e); toastError(e); }
   finally { btn.disabled = false; }
 });
 
@@ -1820,7 +2002,7 @@ $("mq-launch-sso")?.addEventListener("click", () => {
 
 async function _moodleConnect(url, token) {
   if (!url) { toast("Enter your Moodle site link first.", "warn"); return; }
-  if (!token) { toast("No token received - try signing in again.", "warn"); return; }
+  if (!token) { toast("No token received. Try signing in again.", "warn"); return; }
   setConnectStatus("warn", "Connecting to Moodle…");
   try {
     const d = await postJSON("/api/moodle/connect", { url, token });
@@ -1903,7 +2085,7 @@ $("mq-import")?.addEventListener("click", async () => {
   if (!_mqConnected) { toast("Connect to Moodle first.", "warn"); return; }
   const sel = $("mq-course-select");
   const courseId = sel && sel.value ? parseInt(sel.value, 10) : 0;
-  if (!courseId) { toast("Pick a course to import.", "warn"); return; }
+  if (!courseId) { toast("Select a course to import.", "warn"); return; }
   // "Lectures & transcripts" is one toggle: lectures are only ever pulled as part
   // of the course (with transcription), never as a standalone import.
   const grabDocs = $("mq-grab-docs")?.checked ?? true;
@@ -1911,7 +2093,7 @@ $("mq-import")?.addEventListener("click", async () => {
   const grabLectures = grabTranscripts;
   const keepImages = $("mq-images")?.checked ?? true;
   if (!grabDocs && !grabTranscripts) {
-    toast("Pick at least one thing to include - documents or lectures.", "warn"); return;
+    toast("Select at least one thing to include: documents or lectures.", "warn"); return;
   }
   const btn = $("mq-import"); btn.disabled = true; btn.textContent = "Importing…";
   const out = $("mq-import-result"); clear(out);
@@ -1966,7 +2148,7 @@ async function loadPanoptoRecordings() {
     renderMqFeeds();
     toast(`Loaded ${State.mqRecordings.length} recording(s).`, "ok");
   } catch (e) {
-    toast(e.message, "warn");
+    toastError(e);
     renderMqFeeds();
   } finally { if (btn) { btn.disabled = false; btn.textContent = "Load recordings"; } }
 }
@@ -1991,7 +2173,7 @@ async function autoTranscribeMq() {
     try {
       const d = await postJSON("/api/panopto/download", { lectures: recs, output_dir: dest });
       toast(`Downloaded ${d.downloaded} recording(s) to ${dest}.`, "ok");
-    } catch (e) { toast(e.message, "warn"); }
+    } catch (e) { toastError(e); }
     return;
   }
 
@@ -2017,7 +2199,7 @@ async function autoTranscribeMq() {
     try {
       await postJSON("/api/transcribe", { ...settings, lecture: lec });
       queued++;
-    } catch (e) { toast("Transcription error: " + e.message, "warn"); }
+    } catch (e) { toast("Transcription failed: " + errorText(e), "err"); }
   }
   if (queued) {
     toast(`Queued ${queued} recording(s). Each transcription takes a few minutes and runs in the background; track it in Jobs.`, "ok");
@@ -2062,7 +2244,7 @@ $("course-clear")?.addEventListener("click", async () => {
     toast("Course files removed.", "ok");
     loadTranscripts();
     loadDashboard();
-  } catch (e) { out.textContent = "Error: " + e.message; toast(e.message, "warn"); }
+  } catch (e) { out.textContent = errorText(e); toastError(e); }
 });
 
 // ---- VibeVoice TTS --------------------------------------------------------
@@ -2077,7 +2259,7 @@ async function initTts() {
     const voices = data.voices || [];
     voiceSel.innerHTML = "";
     const opt = (v) => el("option", { value: v.id,
-      text: v.label + (v.downloaded ? "" : " ⬇") });
+      text: v.label + (v.downloaded ? "" : " (downloads on first use)") });
     const eng = voices.filter(v => v.id.startsWith("en-"));
     const rest = voices.filter(v => !v.id.startsWith("en-"));
     if (eng.length) {
@@ -2121,7 +2303,7 @@ $("tts-pick-file")?.addEventListener("click", async () => {
     } else if (d.path) {
       $("tts-md-path").value = d.path;
     }
-  } catch (e) { toast("File picker error: " + e.message, "warn"); }
+  } catch (e) { toast("Could not open the file picker: " + errorText(e), "err"); }
 });
 
 // Generate button
@@ -2162,7 +2344,7 @@ $("tts-generate")?.addEventListener("click", async () => {
   } catch (e) {
     clear(out);
     out.appendChild(el("div", { class: "warn-box", text: "TTS error: " + e.message }));
-    toast("TTS failed: " + e.message, "warn");
+    toast("Speech generation failed: " + errorText(e), "err");
   } finally {
     btn.disabled = false;
   }

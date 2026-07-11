@@ -56,6 +56,25 @@ echo Installing dependencies ^(first run only, quick after that^)...
 "%VENV_PY%" -m pip install --quiet -r requirements.txt
 if errorlevel 1 ( echo Failed to install dependencies. & pause & exit /b 1 )
 
+REM --- first-run: offer the optional transcription + document + speech add-ons -
+REM  Marked done with a stamp file so returning users are never asked again.
+if not exist ".venv\.extras_offered" (
+  echo.
+  echo   Optional add-ons enable lecture transcription, full document
+  echo   conversion ^(PDF/PowerPoint/Word^), and text-to-speech. They are a
+  echo   larger download. You can also add them later with
+  echo   install-extras-windows.bat.
+  echo.
+  choice /c YN /t 20 /d N /m "  Install the optional add-ons now"
+  if errorlevel 2 ( echo   Skipping add-ons for now. )
+  if errorlevel 1 if not errorlevel 2 (
+    echo   Installing add-ons ^(this can take a few minutes^)...
+    "%VENV_PY%" -m pip install -r requirements-transcribe.txt
+    "%VENV_PY%" -m pip install -r requirements-tts.txt
+  )
+  echo done> ".venv\.extras_offered"
+)
+
 REM --- launch ---------------------------------------------------------------
 echo.
 echo   Starting Panopto Course Assistant...

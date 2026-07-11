@@ -30,3 +30,8 @@ _moodledl_ref/
 .idea/
 .DS_Store
 Thumbs.db
+
+# graphify knowledge-graph tooling artifacts (local only)
+graphify-out/
+.graphify_hook_installed
+.graphifyignore

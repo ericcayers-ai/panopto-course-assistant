@@ -12,6 +12,29 @@ A **Python / FastAPI** backend with a plain **HTML + JavaScript** frontend
 
 ## What's new
 
+**v3.2 - interface and codebase revamp.** A ground-up pass on how the app looks
+and how it is put together:
+
+- **A deliberate visual identity.** A paper-and-ink palette with a single teal
+  accent (not the default dashboard blue), serif headings, and a token-driven
+  stylesheet. Every emoji glyph is replaced by an inline SVG icon set that
+  inherits the theme. Light and dark both meet WCAG AA contrast, checked
+  arithmetically in the test suite.
+- **Accessibility.** Keyboard-reachable controls with a visible focus ring,
+  accessible names on every icon-only button, dialogs that trap focus and
+  return it on close, and live-region announcements for background work.
+- **One coherent suite.** `GET /api/collections` gathers everything derived from
+  a lecture - glossary terms, keywords, citations, notes, tags and sibling
+  lectures - so a lecture reads as one thing, and the Study panel cross-links
+  the guide to the glossary it was built from.
+- **A backend that is one app, not 129 loose routes.** `main.py` is now app
+  setup plus router mounts; the HTTP surface lives in `app/routers/` (one module
+  per resource group). Every integration failure renders through one shared
+  error envelope (`app/errors.py`) instead of six bespoke shapes.
+- **One-click launch that offers the add-ons.** The first run of
+  `start-windows.bat` now offers the transcription, document and speech extras,
+  so a new user is set up in a single double-click.
+
 **v2.2 - download a whole course from its link.** `POST /api/moodle/fetch-course` parses the course, **downloads every resource file** (slides, assignment briefs, PDFs) using your browser session cookies, converts them to Markdown, and reports the Panopto feeds for transcription - one call from the course URL. The Moodle "Simple" window now runs this end-to-end (import → files → auto-transcribe → export). Resource download URLs are captured from the page, Panopto's duplicated `itpc://`/`https://` feeds are de-duplicated, and there's an **"include images & diagrams" toggle (on by default)** on both the document import and the Moodle flow.
 
 **v2.1 - imagery & diagrams are no longer lost.** Converting a PDF/PPTX/DOCX used to keep only the text; now embedded **figures, diagrams and screenshots are extracted and attached** to the Markdown (`![Figure N (p.X)](…_assets/…)`) so worked examples, assignment figures and lecture-slide diagrams survive into NotebookLM/AI exports and the course archive. Office/EPUB images come out with the standard library; PDFs use PyMuPDF or pdfplumber. Images are preserved even when text extraction fails, and Notion-export images are copied across too.

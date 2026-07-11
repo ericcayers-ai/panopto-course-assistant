@@ -11,11 +11,12 @@ from typing import Any
 from typing import Dict
 from typing import List
 from typing import Optional
+from .. import collections
 from .. import core
 from .. import search
 from .. import settings_store
 from .. import context
-from ..context import _json_loads
+from ..context import _active_course_name, _json_loads
 from ..schemas import SavedViewCreate
 
 router = APIRouter()
@@ -63,6 +64,24 @@ def api_index(week: Optional[int] = None, type: str = "", tag: str = "",
 @router.get("/api/related")
 def api_related(path: str) -> Dict[str, Any]:
     return {"path": path, "related": search.related(context.OUTPUT_DIR, path)}
+
+
+@router.get("/api/collections")
+def api_collections(lecture: str, course: Optional[int] = None) -> Dict[str, Any]:
+    """Every artifact derived from one lecture: glossary terms, keywords,
+    citations, notes, tags, sibling lectures and its own file formats (§17).
+
+    The pieces all existed; this is the single call the UI needs so a lecture
+    reads as one thing instead of six separately-navigated panels.
+    """
+    course_id = course if course is not None else settings_store.get_active_course(context.db)
+    try:
+        return collections.build(
+            context.OUTPUT_DIR, lecture, db=context.db, course_id=course_id,
+            course_name=_active_course_name(),
+        )
+    except LookupError as e:
+        raise HTTPException(status_code=404, detail=str(e))
 
 
 @router.get("/api/views")
