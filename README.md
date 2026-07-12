@@ -12,6 +12,26 @@ A **Python / FastAPI** backend with a plain **HTML + JavaScript** frontend
 
 ## What's new
 
+**v3.3 - a visual identity, not a template.** The v3.2 redesign still read as a
+generic "warm paper + serif + single accent" AI-default look. This pass replaces
+it with an identity grounded in what the app actually does - turn a spoken
+recording into written knowledge:
+
+- **"Signal & Instrument" palette and type.** Cool brushed-aluminium surfaces,
+  a copper "signal" accent (a VU needle at speaking volume, not a brand blue or
+  a terracotta), a technical signage face (Bahnschrift) for headings and panel
+  labels, and every count/timecode/duration set in tabular monospace - the one
+  place numbers are meant to look "read out" rather than typeset. Verified
+  against WCAG AA arithmetically, both themes.
+- **The Home pipeline reads as a patch bay.** The four workspace stages are
+  connected by jack connectors that light up copper when either side of the
+  seam is live - a signature drawn from the subject (audio signal chains), not
+  a decorative flourish.
+- **A channel-strip sidebar.** Each nav row carries a selector edge that lights
+  when its channel is active, and progress bars render as a segmented level
+  meter rather than a smooth loading bar.
+- **The brand mark is a waveform**, not a generic graduation cap.
+
 **v3.2 - interface and codebase revamp.** A ground-up pass on how the app looks
 and how it is put together:
 

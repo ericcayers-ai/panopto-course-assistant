@@ -39,32 +39,32 @@ _DOCS_HTML = """<!DOCTYPE html>
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>Course Assistant - API</title>
 <style>
-  :root { color-scheme: light dark; --bg:#f4f7fc; --surface:#fff; --ink:#1b2230;
-    --muted:#5b6577; --border:#e3e9f3; --brand:#3b6ef5; }
-  @media (prefers-color-scheme: dark) { :root { --bg:#0e131c; --surface:#161d29;
-    --ink:#e7ecf5; --muted:#9aa6bb; --border:#27313f; --brand:#5b8bff; } }
+  :root { color-scheme: light dark; --bg:#eeefea; --surface:#fff; --ink:#16181a;
+    --muted:#53584f; --border:#cbcfc3; --brand:#a8530a; }
+  @media (prefers-color-scheme: dark) { :root { --bg:#17191a; --surface:#1f2224;
+    --ink:#eaebe6; --muted:#a2a99d; --border:#363b37; --brand:#e08a2a; } }
   * { box-sizing: border-box; }
   body { margin:0; font:15px/1.55 system-ui,"Segoe UI",Roboto,Arial,sans-serif;
     color:var(--ink); background:var(--bg); padding:28px 22px; }
   .wrap { max-width:920px; margin:0 auto; }
-  h1 { font-size:24px; margin:0 0 2px; }
+  h1 { font-family:Bahnschrift,"DIN Alternate","Arial Narrow",sans-serif; font-size:24px; margin:0 0 2px; }
   a.back { color:var(--brand); text-decoration:none; font-size:14px; }
   .sub { color:var(--muted); margin:4px 0 22px; }
   .ep { background:var(--surface); border:1px solid var(--border); border-radius:10px;
-    padding:12px 14px; margin:10px 0; box-shadow:0 1px 3px rgba(20,30,60,.06); }
+    padding:12px 14px; margin:10px 0; box-shadow:0 1px 3px rgba(20,20,16,.06); }
   .row { display:flex; gap:10px; align-items:center; flex-wrap:wrap; }
   .m { font-weight:700; font-size:12px; padding:3px 9px; border-radius:6px; color:#fff;
     letter-spacing:.04em; }
-  .m.get{background:#1f9d63;} .m.post{background:#3b6ef5;} .m.put{background:#c9820a;}
-  .m.delete{background:#d4433b;} .m.patch{background:#7c3aed;}
-  .path { font-family:ui-monospace,Menlo,Consolas,monospace; font-size:14px; }
+  .m.get{background:#3e6e2e;} .m.post{background:#a8530a;} .m.put{background:#7a5f0c;}
+  .m.delete{background:#a32f22;} .m.patch{background:#6b4a92;}
+  .path { font-family:"Cascadia Code",Consolas,ui-monospace,Menlo,monospace; font-size:14px; }
   .summary { color:var(--muted); font-size:13.5px; margin-left:auto; }
   .body { margin:8px 0 0; padding-left:2px; font-size:13px; color:var(--muted); }
   code { background:rgba(127,127,127,.14); border-radius:5px; padding:1px 5px;
     font-size:12.5px; }
   .params { margin:6px 0 0; font-size:13px; }
   .params li { margin:2px 0; }
-  .err { color:#d4433b; }
+  .err { color:#a32f22; }
 </style>
 </head>
 <body>
