@@ -207,6 +207,51 @@ _MIGRATIONS: List[tuple[int, List[str]]] = [
             "CREATE INDEX IF NOT EXISTS idx_item_tags_path ON item_tags(path)",
         ],
     ),
+    (
+        6,
+        [
+            """CREATE TABLE IF NOT EXISTS paper_outlines (
+                id           INTEGER PRIMARY KEY AUTOINCREMENT,
+                paper_code   TEXT NOT NULL,
+                title        TEXT DEFAULT '',
+                outline_json TEXT NOT NULL DEFAULT '{}',
+                fetched_at   TEXT NOT NULL,
+                UNIQUE(paper_code)
+            )""",
+            """CREATE TABLE IF NOT EXISTS class_schedules (
+                id            INTEGER PRIMARY KEY AUTOINCREMENT,
+                course_id     INTEGER REFERENCES courses(id) ON DELETE CASCADE,
+                name          TEXT NOT NULL DEFAULT '',
+                source_path   TEXT DEFAULT '',
+                schedule_json TEXT NOT NULL DEFAULT '{}',
+                created_at    TEXT NOT NULL
+            )""",
+            """CREATE TABLE IF NOT EXISTS task_schedules (
+                id                INTEGER PRIMARY KEY AUTOINCREMENT,
+                course_id         INTEGER REFERENCES courses(id) ON DELETE CASCADE,
+                name              TEXT NOT NULL DEFAULT '',
+                schedule_json     TEXT NOT NULL DEFAULT '{}',
+                paper_codes       TEXT DEFAULT '',
+                class_schedule_id INTEGER REFERENCES class_schedules(id) ON DELETE SET NULL,
+                created_at        TEXT NOT NULL,
+                updated_at        TEXT NOT NULL
+            )""",
+            """CREATE TABLE IF NOT EXISTS moodle_announcements (
+                id               INTEGER PRIMARY KEY AUTOINCREMENT,
+                course_id        INTEGER REFERENCES courses(id) ON DELETE CASCADE,
+                moodle_course_id TEXT DEFAULT '',
+                title            TEXT NOT NULL DEFAULT '',
+                body             TEXT DEFAULT '',
+                author           TEXT DEFAULT '',
+                posted_at        TEXT DEFAULT '',
+                source_url       TEXT DEFAULT '',
+                fetched_at       TEXT NOT NULL
+            )""",
+            "CREATE INDEX IF NOT EXISTS idx_class_sched_course ON class_schedules(course_id)",
+            "CREATE INDEX IF NOT EXISTS idx_task_sched_course ON task_schedules(course_id)",
+            "CREATE INDEX IF NOT EXISTS idx_moodle_ann_course ON moodle_announcements(course_id)",
+        ],
+    ),
 ]
 
 SCHEMA_VERSION = _MIGRATIONS[-1][0]
@@ -703,6 +748,97 @@ class Database:
         return self.execute(
             "DELETE FROM tags WHERE id NOT IN (SELECT DISTINCT tag_id FROM item_tags)"
         ).rowcount
+
+    # -- semester planner DAO -----------------------------------------------
+
+    def upsert_paper_outline(self, paper_code: str, outline_json: str,
+                             title: str = "") -> int:
+        ts = now_iso()
+        cur = self.execute(
+            "INSERT INTO paper_outlines(paper_code, title, outline_json, fetched_at) "
+            "VALUES(?, ?, ?, ?) "
+            "ON CONFLICT(paper_code) DO UPDATE SET "
+            "title=excluded.title, outline_json=excluded.outline_json, "
+            "fetched_at=excluded.fetched_at",
+            (paper_code, title, outline_json, ts),
+        )
+        if cur.lastrowid:
+            return int(cur.lastrowid)
+        row = self.query_one("SELECT id FROM paper_outlines WHERE paper_code=?",
+                             (paper_code,))
+        return int(row["id"]) if row else 0
+
+    def get_paper_outline(self, paper_code: str) -> Optional[sqlite3.Row]:
+        return self.query_one("SELECT * FROM paper_outlines WHERE paper_code=?",
+                              (paper_code,))
+
+    def list_paper_outlines(self) -> List[sqlite3.Row]:
+        return self.query("SELECT * FROM paper_outlines ORDER BY paper_code")
+
+    def create_class_schedule(self, course_id: int, name: str, schedule_json: str,
+                              source_path: str = "") -> int:
+        cur = self.execute(
+            "INSERT INTO class_schedules(course_id, name, source_path, schedule_json, created_at) "
+            "VALUES(?, ?, ?, ?, ?)",
+            (course_id, name, source_path, schedule_json, now_iso()),
+        )
+        return int(cur.lastrowid)
+
+    def get_class_schedule(self, schedule_id: int) -> Optional[sqlite3.Row]:
+        return self.query_one("SELECT * FROM class_schedules WHERE id=?", (schedule_id,))
+
+    def list_class_schedules(self, course_id: Optional[int] = None) -> List[sqlite3.Row]:
+        if course_id is None:
+            return self.query("SELECT * FROM class_schedules ORDER BY created_at DESC")
+        return self.query(
+            "SELECT * FROM class_schedules WHERE course_id=? ORDER BY created_at DESC",
+            (course_id,))
+
+    def create_task_schedule(self, course_id: int, name: str, schedule_json: str,
+                             paper_codes: str = "",
+                             class_schedule_id: Optional[int] = None) -> int:
+        ts = now_iso()
+        cur = self.execute(
+            "INSERT INTO task_schedules(course_id, name, schedule_json, paper_codes, "
+            "class_schedule_id, created_at, updated_at) VALUES(?, ?, ?, ?, ?, ?, ?)",
+            (course_id, name, schedule_json, paper_codes, class_schedule_id, ts, ts),
+        )
+        return int(cur.lastrowid)
+
+    def get_task_schedule(self, schedule_id: int) -> Optional[sqlite3.Row]:
+        return self.query_one("SELECT * FROM task_schedules WHERE id=?", (schedule_id,))
+
+    def list_task_schedules(self, course_id: Optional[int] = None) -> List[sqlite3.Row]:
+        if course_id is None:
+            return self.query("SELECT * FROM task_schedules ORDER BY updated_at DESC")
+        return self.query(
+            "SELECT * FROM task_schedules WHERE course_id=? ORDER BY updated_at DESC",
+            (course_id,))
+
+    def replace_moodle_announcements(self, course_id: int, moodle_course_id: str,
+                                     rows: List[Dict[str, Any]]) -> int:
+        self.execute("DELETE FROM moodle_announcements WHERE course_id=? AND moodle_course_id=?",
+                     (course_id, moodle_course_id))
+        n = 0
+        for r in rows:
+            self.execute(
+                "INSERT INTO moodle_announcements(course_id, moodle_course_id, title, body, "
+                "author, posted_at, source_url, fetched_at) VALUES(?, ?, ?, ?, ?, ?, ?, ?)",
+                (course_id, moodle_course_id, r.get("title", ""), r.get("body", ""),
+                 r.get("author", ""), r.get("posted_at", ""), r.get("source_url", ""),
+                 r.get("fetched_at", now_iso())),
+            )
+            n += 1
+        return n
+
+    def list_moodle_announcements(self, course_id: Optional[int] = None) -> List[sqlite3.Row]:
+        if course_id is None:
+            return self.query(
+                "SELECT * FROM moodle_announcements ORDER BY posted_at DESC, fetched_at DESC")
+        return self.query(
+            "SELECT * FROM moodle_announcements WHERE course_id=? "
+            "ORDER BY posted_at DESC, fetched_at DESC",
+            (course_id,))
 
 
 # ---------------------------------------------------------------------------

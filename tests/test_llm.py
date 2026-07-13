@@ -97,3 +97,53 @@ def test_chat_ai_path_includes_citations(tmp_path: Path, monkeypatch):
 def test_chat_empty_query():
     out = ai.chat(Path("."), "   ", config={"provider": "none"})
     assert out["answer"] == "" and out["citations"] == []
+
+
+def test_complete_retries_transient_errors(monkeypatch):
+  calls = {"n": 0}
+
+  def flaky(prompt, *, system="", config):
+      calls["n"] += 1
+      if calls["n"] < 2:
+          raise llm.LLMError("connection reset by peer")
+      return "recovered"
+
+  monkeypatch.setattr(llm, "_complete_once", flaky)
+  monkeypatch.setattr(llm.time, "sleep", lambda *_: None)
+  out = llm.complete("hi", config={"provider": "ollama", "model": "x", "max_retries": 2})
+  assert out == "recovered"
+  assert calls["n"] == 2
+
+
+def test_complete_does_not_retry_config_errors(monkeypatch):
+  def bad_config(prompt, *, system="", config):
+      raise llm.LLMError("no usable LLM provider configured (provider='none')")
+
+  monkeypatch.setattr(llm, "_complete_once", bad_config)
+  monkeypatch.setattr(llm.time, "sleep", lambda *_: None)
+  with pytest.raises(llm.LLMError):
+      llm.complete("hi", config={"provider": "none", "max_retries": 3})
+
+
+def test_complete_validated_retries_bad_json(monkeypatch):
+  calls = {"n": 0}
+
+  def flaky(prompt, *, system="", config):
+      calls["n"] += 1
+      return "[]" if calls["n"] < 2 else '[{"front":"Q","back":"A"}]'
+
+  def validate(raw):
+      items = ai._parse_json_array(raw)
+      if not items:
+          raise ValueError("empty")
+      return items
+
+  monkeypatch.setattr(llm, "complete", flaky)
+  monkeypatch.setattr(llm.time, "sleep", lambda *_: None)
+  cards = llm.complete_validated(
+      "make cards",
+      config={"provider": "ollama", "max_retries": 2},
+      validate=validate,
+  )
+  assert cards[0]["front"] == "Q"
+  assert calls["n"] == 2

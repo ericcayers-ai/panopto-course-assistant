@@ -209,6 +209,20 @@ def _parse_json_array(raw: str, *, key: str = "front") -> List[Dict[str, Any]]:
     return out
 
 
+def _llm_json_array(prompt: str, *, system: str, cfg: Dict[str, Any],
+                    min_items: int = 1, key: str = "front") -> List[Dict[str, Any]]:
+    """Ask the model for a JSON array and validate parseability before returning."""
+    ccfg = {**cfg, "format": "json"}
+
+    def _validate(raw: str) -> List[Dict[str, Any]]:
+        items = _parse_json_array(raw, key=key)
+        if len(items) < min_items:
+            raise ValueError(f"expected at least {min_items} items, got {len(items)}")
+        return items
+
+    return llm.complete_validated(prompt, system=system, config=ccfg, validate=_validate)
+
+
 def _llm_chunks(output_dir: Path, selection: Optional[List[str]], *,
                 size: int = 4000, max_chunks: int = 20) -> List[tuple]:
     """Clean per-lecture text split into small chunks, sampled evenly across the
@@ -263,10 +277,13 @@ def generate_flashcards(output_dir: Path, *, selection: Optional[List[str]] = No
                     f"lecture excerpt. Focus on concepts, definitions and facts; skip "
                     f"greetings and administrative chatter.\n\nLecture: {title}\n\n{chunk}")
                 try:
-                    got = _parse_json_array(
-                        llm.complete(prompt, system=_FLASH_SYSTEM, config=ccfg))
+                    got = _llm_json_array(
+                        prompt, system=_FLASH_SYSTEM, cfg=ccfg, min_items=1)
                     llm_replied = True
                 except llm.LLMError as e:
+                    if "expected at least" in str(e).lower():
+                        llm_replied = True
+                        continue
                     reason = (f"The {cfg.get('provider', 'AI')} model call failed ({e}) - "
                               "is the local server running?")
                     break
@@ -383,8 +400,8 @@ def generate_quiz(output_dir: Path, scope: str = "course", target: str = "", *,
                "max_tokens": max(int(cfg.get("max_tokens", 1024) or 1024), n * 80 + 256)}
         prompt = (f"Write {n} {difficulty} quiz questions ({kinds}) from:\n\n{text}")
         try:
-            qs = _parse_json_array(llm.complete(prompt, system=_QUIZ_SYSTEM, config=cfg),
-                                   key="question")
+            qs = _llm_json_array(prompt, system=_QUIZ_SYSTEM, cfg=cfg,
+                                 min_items=1, key="question")
             qs = [q for q in qs if q.get("question") and q.get("answer")]
             if qs:
                 return {"questions": qs[:n], "generated": "ai", "provider": cfg.get("provider")}

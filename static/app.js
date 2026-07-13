@@ -270,6 +270,7 @@ function showTab(name) {
   if (name === "library") loadTranscripts();
   if (name === "jobs") loadJobs();
   if (name === "study") loadStudy();
+  if (name === "semester") loadSemester();
 }
 document.querySelectorAll(".tab").forEach((btn) =>
   btn.addEventListener("click", () => showTab(btn.dataset.tab))
@@ -2389,3 +2390,144 @@ function _renderTtsResult(data, out) {
   }
   toast("Audio generated.", "ok");
 }
+
+// ---- semester planner -----------------------------------------------------
+
+const Semester = { planId: null, scheduleId: null, lastOutline: null };
+
+async function loadSemester() {
+  try {
+    const d = await api("/api/semester/moodle/announcements");
+    renderAnnouncements(d.announcements || []);
+  } catch (_) { /* empty state */ }
+}
+
+function renderOutlinePreview(outline) {
+  const box = $("sem-outline-preview");
+  if (!outline) { box.classList.add("hidden"); return; }
+  box.classList.remove("hidden");
+  const assess = (outline.assessments || [])
+    .map((a) => `<tr><td>${esc(a.name)}</td><td>${a.weight ?? ""}%</td><td>${esc(a.due_date || "")}</td></tr>`)
+    .join("");
+  box.innerHTML = `
+    <strong>${esc(outline.title || outline.paper_code)}</strong>
+    <p class="hint">${esc(outline.paper_code || "")}</p>
+    ${assess ? `<table><thead><tr><th>Assessment</th><th>Weight</th><th>Due</th></tr></thead><tbody>${assess}</tbody></table>` : `<p class="hint">${esc(outline.note || "No assessments parsed yet.")}</p>`}`;
+}
+
+function renderTimeline(plan) {
+  const host = $("sem-timeline");
+  clear(host);
+  for (const week of plan.timeline || []) {
+    const block = el("div", { class: "timeline-week" });
+    block.appendChild(el("h4", { text: week.week_start === "Unscheduled" ? "Unscheduled" : `Week of ${week.week_start}` }));
+    for (const t of week.tasks) {
+      const row = el("div", { class: "timeline-task" });
+      row.appendChild(el("span", { class: "due", text: t.due_date || "—" }));
+      row.appendChild(el("span", { text: `${t.subject ? t.subject + " · " : ""}${t.type}: ${t.name}` }));
+      block.appendChild(row);
+    }
+    host.appendChild(block);
+  }
+}
+
+function renderAnnouncements(rows) {
+  const host = $("sem-announcements");
+  clear(host);
+  if (!rows.length) {
+    host.appendChild(el("p", { class: "hint", text: "No announcements downloaded yet." }));
+    return;
+  }
+  for (const a of rows) {
+    const item = el("article", { class: "announcement-item" });
+    item.appendChild(el("h4", { text: a.title || "Announcement" }));
+    item.appendChild(el("p", { class: "meta", text: [a.author, a.posted_at].filter(Boolean).join(" · ") }));
+    item.appendChild(el("p", { text: (a.body || "").slice(0, 500) }));
+    host.appendChild(item);
+  }
+}
+
+function esc(s) {
+  return String(s || "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+
+$("sem-paper-search")?.addEventListener("click", async () => {
+  const q = $("sem-paper-q").value.trim();
+  const out = $("sem-paper-results");
+  clear(out);
+  if (!q) return;
+  try {
+    const d = await api(`/api/semester/papers/search?q=${encodeURIComponent(q)}`);
+    for (const r of d.results || []) {
+      const inst = (r.instances || []).map((i) => i.code).join(", ");
+      out.appendChild(el("p", { text: `${r.code} — ${r.title}${inst ? " (" + inst + ")" : ""}` }));
+    }
+    if (!d.results?.length) out.appendChild(el("p", { class: "hint", text: "No papers found." }));
+  } catch (e) { toastError(e); }
+});
+
+$("sem-paper-fetch")?.addEventListener("click", async () => {
+  const code = $("sem-paper-q").value.trim();
+  if (!code) return toast("Enter a paper code first.", "warn");
+  try {
+    const outline = await postJSON("/api/semester/papers/fetch", { paper_code: code });
+    Semester.lastOutline = outline;
+    renderOutlinePreview(outline);
+    const base = (outline.paper_code || code).split("-")[0];
+    const cur = $("sem-paper-codes").value.trim();
+    if (!cur.includes(base)) {
+      $("sem-paper-codes").value = cur ? `${cur}, ${base}` : base;
+    }
+    toast(`Loaded outline for ${outline.paper_code || code}.`, "ok");
+  } catch (e) { toastError(e); }
+});
+
+$("sem-schedule-import")?.addEventListener("click", async () => {
+  const file = $("sem-schedule-file").files?.[0];
+  if (!file) return toast("Choose a zip or CSV file.", "warn");
+  const fd = new FormData();
+  fd.append("file", file);
+  try {
+    const d = await api("/api/semester/schedule/import", { method: "POST", body: fd });
+    Semester.scheduleId = d.id;
+    const out = $("sem-schedule-status");
+    clear(out);
+    out.appendChild(el("p", { class: "ok-text", text: `Imported ${d.task_count} tasks across ${(d.subjects || []).length} papers.` }));
+    toast("Class schedule imported.", "ok");
+  } catch (e) { toastError(e); }
+});
+
+$("sem-plan-build")?.addEventListener("click", async () => {
+  const codes = $("sem-paper-codes").value.split(",").map((s) => s.trim()).filter(Boolean);
+  if (!codes.length) return toast("Add at least one paper code.", "warn");
+  try {
+    const body = { paper_codes: codes, class_schedule_id: Semester.scheduleId || null };
+    const plan = await postJSON("/api/semester/plan/build", body);
+    Semester.planId = plan.id;
+    const full = await api(`/api/semester/plans/${plan.id}`);
+    renderTimeline(full);
+    const st = $("sem-plan-status");
+    clear(st);
+    st.appendChild(el("p", { class: "ok-text", text: `${plan.task_count} tasks in ${plan.name}` }));
+    const row = $("sem-export-row");
+    row.hidden = false;
+    $("sem-export-notion").href = `/api/semester/plans/${plan.id}/export/notion.csv`;
+    $("sem-export-obsidian").href = `/api/semester/plans/${plan.id}/export/obsidian.zip`;
+    $("sem-export-calendar").href = `/api/semester/plans/${plan.id}/export/calendar.ics`;
+    const calHint = $("sem-export-calendar-hint");
+    if (calHint) calHint.hidden = false;
+    toast("Task schedule generated.", "ok");
+  } catch (e) { toastError(e); }
+});
+
+$("sem-moodle-fetch")?.addEventListener("click", async () => {
+  const url = $("sem-moodle-url").value.trim();
+  if (!url) return toast("Paste a Moodle course URL.", "warn");
+  try {
+    const d = await postJSON("/api/semester/moodle/announcements", {
+      url, cookies: $("sem-moodle-cookies").value.trim(),
+    });
+    renderAnnouncements(d.announcements || []);
+    toast(`Stored ${d.stored ?? d.announcement_count ?? 0} announcements.`, "ok");
+  } catch (e) { toastError(e); }
+});

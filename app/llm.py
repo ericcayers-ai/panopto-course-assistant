@@ -18,7 +18,8 @@ the dependency-free path.
 from __future__ import annotations
 
 import os
-from typing import Any, Dict, Optional
+import time
+from typing import Any, Callable, Dict, Optional, TypeVar
 
 from . import settings_store
 from .database import Database
@@ -54,7 +55,14 @@ _DEFAULT_CONFIG = {
     "max_tokens": 1024,
     "retrieval_depth": 5,        # chunks pulled for RAG chat
     "host": "",                  # local server base URL (ollama/llamacpp)
+    "max_retries": 2,            # transient transport failures retried with backoff
+    "retry_backoff_s": 0.5,
 }
+
+_RETRYABLE_HINTS = (
+    "timeout", "timed out", "connection", "429", "503", "502", "504",
+    "rate", "temporarily", "empty model", "unexpected response",
+)
 
 
 def _env_key(provider: str) -> str:
@@ -211,9 +219,13 @@ def _complete_anthropic(prompt: str, system: str, cfg: Dict[str, Any], api_key: 
         raise LLMError(f"unexpected response shape: {e}") from e
 
 
-def complete(prompt: str, *, system: str = "", config: Dict[str, Any]) -> str:
-    """Single-shot completion through the configured provider. Raises LLMError
-    if no provider is configured or the call fails."""
+def _retryable(exc: LLMError) -> bool:
+    msg = str(exc).lower()
+    return any(h in msg for h in _RETRYABLE_HINTS)
+
+
+def _complete_once(prompt: str, *, system: str = "", config: Dict[str, Any]) -> str:
+    """One provider call with no retry. Raises LLMError on failure or empty text."""
     provider = config.get("provider", "none")
     if not is_enabled(config):
         raise LLMError(f"no usable LLM provider configured (provider={provider!r})")
@@ -221,13 +233,69 @@ def complete(prompt: str, *, system: str = "", config: Dict[str, Any]) -> str:
     if not cfg.get("model"):
         cfg["model"] = DEFAULT_MODELS.get(provider, "")
     if provider == "ollama":
-        return _complete_ollama(prompt, system, cfg)
-    if provider == "llamacpp":
+        text = _complete_ollama(prompt, system, cfg)
+    elif provider == "llamacpp":
         base = cfg.get("host") or "http://127.0.0.1:8080/v1"
-        return _complete_openai_compatible(prompt, system, cfg, base, "")
-    if provider == "openai":
+        text = _complete_openai_compatible(prompt, system, cfg, base, "")
+    elif provider == "openai":
         base = cfg.get("host") or "https://api.openai.com/v1"
-        return _complete_openai_compatible(prompt, system, cfg, base, api_key_for("openai", cfg))
-    if provider == "anthropic":
-        return _complete_anthropic(prompt, system, cfg, api_key_for("anthropic", cfg))
-    raise LLMError(f"unknown provider {provider!r}")
+        text = _complete_openai_compatible(prompt, system, cfg, base, api_key_for("openai", cfg))
+    elif provider == "anthropic":
+        text = _complete_anthropic(prompt, system, cfg, api_key_for("anthropic", cfg))
+    else:
+        raise LLMError(f"unknown provider {provider!r}")
+    if not (text or "").strip():
+        raise LLMError("empty model response")
+    return text.strip()
+
+
+def complete(prompt: str, *, system: str = "", config: Dict[str, Any]) -> str:
+    """Completion through the configured provider with exponential backoff on
+    transient failures. Raises LLMError if all attempts fail."""
+    try:
+        max_retries = max(0, int(config.get("max_retries", _DEFAULT_CONFIG["max_retries"])))
+    except (TypeError, ValueError):
+        max_retries = _DEFAULT_CONFIG["max_retries"]
+    try:
+        backoff = float(config.get("retry_backoff_s", _DEFAULT_CONFIG["retry_backoff_s"]))
+    except (TypeError, ValueError):
+        backoff = _DEFAULT_CONFIG["retry_backoff_s"]
+
+    last: Optional[LLMError] = None
+    for attempt in range(max_retries + 1):
+        try:
+            return _complete_once(prompt, system=system, config=config)
+        except LLMError as e:
+            last = e
+            if attempt >= max_retries or not _retryable(e):
+                raise
+            time.sleep(backoff * (2 ** attempt))
+    raise last or LLMError("LLM call failed")
+
+
+T = TypeVar("T")
+
+
+def complete_validated(prompt: str, *, system: str = "", config: Dict[str, Any],
+                       validate: Callable[[str], T],
+                       min_attempts: int = 1) -> T:
+    """Call :func:`complete` and run ``validate`` on the text. Retries when the
+    model returns text that fails validation (e.g. unparseable JSON)."""
+    attempts = max(min_attempts, int(config.get("max_retries", _DEFAULT_CONFIG["max_retries"])) + 1)
+    last_err: Optional[Exception] = None
+    for attempt in range(attempts):
+        try:
+            text = complete(prompt, system=system, config=config)
+            return validate(text)
+        except (LLMError, ValueError) as e:
+            last_err = e
+            if attempt + 1 >= attempts:
+                break
+            try:
+                backoff = float(config.get("retry_backoff_s", _DEFAULT_CONFIG["retry_backoff_s"]))
+            except (TypeError, ValueError):
+                backoff = _DEFAULT_CONFIG["retry_backoff_s"]
+            time.sleep(backoff * (2 ** attempt))
+    if isinstance(last_err, LLMError):
+        raise last_err
+    raise LLMError(str(last_err or "validation failed"))

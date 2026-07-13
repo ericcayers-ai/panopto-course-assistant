@@ -71,6 +71,9 @@
         <button class="tab" data-tab="study">
           <svg class="ico" aria-hidden="true"><use href="#i-study"/></svg> Study
         </button>
+        <button class="tab" data-tab="semester" data-adv-only>
+          <svg class="ico" aria-hidden="true"><use href="#i-cap"/></svg> Semester
+        </button>
         <button class="tab" data-tab="export">
           <svg class="ico" aria-hidden="true"><use href="#i-export"/></svg> Export
         </button>
@@ -451,6 +454,76 @@
                 <button type="button" class="link-btn" data-focus-card="workload-card">lecture keywords</button>
                 on this page.
               </p>
+            </div>
+          </div>
+        </section>
+
+        <!-- SEMESTER PLANNER -->
+        <section id="semester" class="panel" aria-labelledby="semester-h" data-adv-only>
+          <div class="panel-head">
+            <svg class="ico ico-lg" aria-hidden="true"><use href="#i-cap"/></svg>
+            <h2 id="semester-h">Semester plan</h2>
+          </div>
+          <p class="panel-intro">Build a trimester timeline from Waikato paper outlines and your
+            class schedule. Export to Notion, Obsidian, or your calendar. Moodle announcements stay separate.</p>
+
+          <div class="semester-layout">
+            <div class="semester-rail" aria-hidden="true">
+              <div class="semester-rail-line"></div>
+              <span class="semester-rail-label">Tri B</span>
+            </div>
+
+            <div class="semester-main">
+              <div class="card semester-card">
+                <h3 class="section-title">Paper outlines</h3>
+                <div class="row gap">
+                  <label class="sr-only" for="sem-paper-q">Paper code</label>
+                  <input id="sem-paper-q" class="grow" type="search" placeholder="Paper code, e.g. COMPX202"
+                         autocomplete="off" aria-describedby="sem-paper-help" />
+                  <button id="sem-paper-search" class="primary" type="button">Search</button>
+                  <button id="sem-paper-fetch" class="ghost" type="button">Fetch outline</button>
+                </div>
+                <p id="sem-paper-help" class="hint">Searches waikato.ac.nz and caches parsed outlines.</p>
+                <div id="sem-paper-results" class="results compact"></div>
+                <div id="sem-outline-preview" class="outline-preview hidden"></div>
+              </div>
+
+              <div class="card semester-card">
+                <h3 class="section-title">Class schedule</h3>
+                <p class="hint">Import a Notion database export zip (CSV inside).</p>
+                <input id="sem-schedule-file" type="file" accept=".zip,.csv" />
+                <button id="sem-schedule-import" class="ghost" type="button">Import schedule</button>
+                <div id="sem-schedule-status" class="results compact"></div>
+              </div>
+
+              <div class="card semester-card">
+                <h3 class="section-title">Generate plan</h3>
+                <label for="sem-paper-codes">Paper codes (comma-separated)</label>
+                <input id="sem-paper-codes" type="text" placeholder="COMPX202, COMPX225, CSMAX275" />
+                <button id="sem-plan-build" class="primary" type="button">Generate task schedule</button>
+                <div id="sem-plan-status" class="results compact"></div>
+                <div id="sem-timeline" class="semester-timeline"></div>
+                <div class="row gap wrap" id="sem-export-row" hidden>
+                  <a id="sem-export-notion" class="tag" href="#">Download Notion CSV</a>
+                  <a id="sem-export-obsidian" class="tag" href="#">Download Obsidian vault</a>
+                  <a id="sem-export-calendar" class="tag tag-calendar" href="#">Export calendar (.ics)</a>
+                </div>
+                <p id="sem-export-calendar-hint" class="hint" hidden>
+                  Import the .ics file into Google Calendar, Apple Calendar, or Outlook.
+                  Events are tagged by paper code and type, with colours per assessment, lab, exam, and more.
+                </p>
+              </div>
+
+              <div class="card semester-card semester-announcements">
+                <h3 class="section-title">Moodle announcements</h3>
+                <p class="hint">Downloads forum and news posts only. Not added to your task schedule.</p>
+                <label for="sem-moodle-url">Moodle course URL</label>
+                <input id="sem-moodle-url" type="url" placeholder="https://elearn.waikato.ac.nz/course/view.php?id=…" />
+                <label for="sem-moodle-cookies">Session cookies</label>
+                <textarea id="sem-moodle-cookies" rows="2" placeholder="Paste browser cookies"></textarea>
+                <button id="sem-moodle-fetch" class="ghost" type="button">Download announcements</button>
+                <div id="sem-announcements" class="announcement-list"></div>
+              </div>
             </div>
           </div>
         </section>

@@ -760,6 +760,98 @@ details.sub > summary { cursor: pointer; color: var(--brand); font-size: var(--t
 .collection-cell .k { color: var(--muted); font-size: var(--text-xs); }
 .collection-cell.empty-cell { opacity: .55; font-style: normal; }
 
+/* ---- semester planner (Waikato trimester timeline) ------------------------- */
+.semester-layout {
+  display: grid;
+  grid-template-columns: 3.5rem 1fr;
+  gap: var(--space-4);
+  align-items: start;
+}
+.semester-rail {
+  position: relative;
+  min-height: 12rem;
+  padding-top: var(--space-2);
+}
+.semester-rail-line {
+  position: absolute;
+  left: 50%;
+  top: 0;
+  bottom: 0;
+  width: 3px;
+  transform: translateX(-50%);
+  background: linear-gradient(180deg, #be0403 0%, var(--brand) 45%, var(--border) 100%);
+  border-radius: var(--radius-pill);
+}
+.semester-rail-label {
+  position: sticky;
+  top: 5rem;
+  display: block;
+  writing-mode: vertical-rl;
+  transform: rotate(180deg);
+  font-family: var(--font-display);
+  font-size: var(--text-xs);
+  letter-spacing: .12em;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin: 0 auto;
+}
+.semester-main { display: grid; gap: var(--space-4); }
+.semester-card { position: relative; }
+.outline-preview {
+  margin-top: var(--space-3);
+  padding: var(--space-3);
+  background: var(--surface-2);
+  border-radius: var(--radius);
+  font-family: var(--font-serif);
+  font-size: var(--text-sm);
+}
+.outline-preview table { width: 100%; border-collapse: collapse; margin-top: var(--space-2); }
+.outline-preview th, .outline-preview td {
+  text-align: left;
+  padding: var(--space-1) var(--space-2);
+  border-bottom: 1px solid var(--border);
+}
+.semester-timeline { margin-top: var(--space-4); }
+.tag-calendar { border-color: #be0403; color: var(--brand-d); }
+.tag-calendar:hover { background: var(--brand-soft); color: var(--brand-d); }
+.timeline-week {
+  border-left: 3px solid var(--brand);
+  padding-left: var(--space-3);
+  margin-bottom: var(--space-4);
+}
+.timeline-week h4 {
+  font-family: var(--font-display);
+  font-size: var(--text-sm);
+  margin: 0 0 var(--space-2);
+  color: var(--muted);
+}
+.timeline-task {
+  display: flex;
+  gap: var(--space-2);
+  align-items: baseline;
+  padding: var(--space-1) 0;
+  font-size: var(--text-sm);
+}
+.timeline-task .due {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  color: var(--muted);
+  min-width: 6.5rem;
+}
+.announcement-list { margin-top: var(--space-3); display: grid; gap: var(--space-3); }
+.announcement-item {
+  padding: var(--space-3);
+  background: var(--surface-2);
+  border-radius: var(--radius);
+  border-left: 3px solid #be0403;
+}
+.announcement-item h4 { margin: 0 0 var(--space-1); font-size: var(--text-md); }
+.announcement-item .meta { font-size: var(--text-xs); color: var(--muted); margin-bottom: var(--space-2); }
+@media (max-width: 640px) {
+  .semester-layout { grid-template-columns: 1fr; }
+  .semester-rail { display: none; }
+}
+
 /* ---- reduced motion: honour the OS setting (§14/§15) ------------------------ */
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after {

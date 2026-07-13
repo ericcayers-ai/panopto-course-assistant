@@ -309,3 +309,23 @@ class DecodeLaunchTokenReq(BaseModel):
 
 class SsoCallbackReq(BaseModel):
     raw: str   # full courseassistant://token=… URL sent by the OS protocol handler
+
+class PaperSearchReq(BaseModel):
+    query: str
+    year: int = 2026
+
+class PaperOutlineFetchReq(BaseModel):
+    paper_code: str = ""
+    url: str = ""
+    html: str = ""
+
+class TaskScheduleBuildReq(BaseModel):
+    paper_codes: List[str]
+    class_schedule_id: Optional[int] = None
+    name: str = ""
+    course_id: Optional[int] = None
+
+class MoodleAnnouncementsReq(BaseModel):
+    url: str
+    cookies: str = ""
+    course_id: Optional[int] = None

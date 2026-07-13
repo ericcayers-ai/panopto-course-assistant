@@ -15,6 +15,7 @@ The HTTP surface lives in :mod:`app.routers`, one module per resource group::
     exports    export presets/targets, flashcards
     study      streak, glossary, keywords, study guide, notes, tags, quiz
     planner    assessments, plan, calendar, spaced repetition, progress
+    semester   paper outlines, class schedules, task plans, Moodle announcements
     moodle     web-service import, SSO, Panopto feed discovery
     ingest     feeds, folders, documents, Notion/PDF conversion
     llm        provider settings, summarize/flashcards/quiz/chat
@@ -37,8 +38,8 @@ from fastapi.staticfiles import StaticFiles
 from . import context
 from .errors import install_error_handler
 from .routers import (analytics, courses, exports, ingest, jobs, library, llm,
-                      moodle, ollama, pages, planner, security, study, sync,
-                      system, tts)
+                      moodle, ollama, pages, planner, security, semester, study,
+                      sync, system, tts)
 
 # Re-exported so `main.moodle_api` keeps resolving: the endpoint tests monkeypatch
 # its transport on the module object, which routers/moodle.py imports too.
@@ -59,7 +60,7 @@ app = FastAPI(title="Course Assistant", version=APP_VERSION,
 # one JSON envelope, so the frontend has a single error path instead of six.
 install_error_handler(app)
 
-for _router in (system, tts, ollama, courses, llm, sync, planner, study,
+for _router in (system, tts, ollama, courses, llm, sync, planner, semester, study,
                 security, analytics, library, exports, jobs, ingest, moodle,
                 pages):
     app.include_router(_router.router)
