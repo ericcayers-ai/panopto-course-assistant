@@ -218,6 +218,7 @@ FEATURE_LABELS: Dict[str, str] = {
     "import_folder": LOCAL_ONLY,
     "moodle_import_file": LOCAL_ONLY,
     "moodle_import_url": LOCAL_INTERNET,   # fetches pages from the LMS
+    "moodle_calendar_url": LOCAL_INTERNET,
     "export": LOCAL_ONLY,
     "ai_local": LOCAL_ONLY,                # ollama / llama.cpp
     "ai_cloud": CLOUD,                     # openai / anthropic

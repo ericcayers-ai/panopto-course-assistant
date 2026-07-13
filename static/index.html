@@ -6,7 +6,7 @@
   <title>Course Assistant</title>
   <link rel="stylesheet" href="/static/style.css" />
 </head>
-<body>
+<body data-level="simple">
   <a class="skip-link" href="#main">Skip to main content</a>
 
   <!-- Inline SVG sprite (§14). Stroked with currentColor at 24x24 so every icon
@@ -88,6 +88,9 @@
         </button>
       </nav>
       <div class="sidebar-foot">
+        <button id="level-toggle" class="ghost small" type="button" aria-pressed="false">
+          <span id="level-label">Advanced mode</span>
+        </button>
         <button id="theme-toggle" class="ghost small">
           <svg class="ico" aria-hidden="true" id="theme-icon"><use href="#i-moon"/></svg>
           <span id="theme-label">Dark theme</span>
@@ -121,7 +124,13 @@
           </label>
           <span id="course-help" class="sr-only">Imports and exports are stored against this course.</span>
         </div>
+        <div class="topbar-center">
+          <div id="panel-context" class="panel-context" aria-live="polite"></div>
+        </div>
         <div class="topbar-right">
+          <button id="shortcuts-help" class="ghost small icon-only" type="button" aria-label="Keyboard shortcuts">
+            <svg class="ico" aria-hidden="true"><use href="#i-info"/></svg>
+          </button>
           <div id="status-bar" class="status-bar" role="status">Checking environment…</div>
         </div>
       </header>
@@ -137,6 +146,20 @@
           </div>
 
           <div id="dash-env" class="env-strip"></div>
+
+          <div id="getting-started" class="card getting-started hidden" aria-labelledby="gs-h">
+            <div class="getting-started-head">
+              <h2 id="gs-h">Getting started</h2>
+              <button id="getting-started-dismiss" class="ghost small" type="button">Dismiss</button>
+            </div>
+            <ol class="getting-started-steps">
+              <li>Set your <strong>course name</strong> in the top bar — imports and exports are tagged to it.</li>
+              <li><button type="button" class="link-btn" id="gs-goto-moodle">Import a Moodle course</button> to pull slides, documents, and lecture recordings.</li>
+              <li>Paste the Panopto podcast link to transcribe recordings, then browse everything in <strong>Library</strong>.</li>
+              <li>Use <strong>Study</strong> and <strong>Export</strong> for quizzes, guides, NotebookLM packs, and Anki decks.</li>
+            </ol>
+            <p class="hint">Press <kbd>?</kbd> for shortcuts · <kbd>Ctrl</kbd>+<kbd>K</kbd> opens the command palette.</p>
+          </div>
 
           <h2 class="section-title">How material moves through the app</h2>
           <div class="pipeline">
@@ -240,6 +263,10 @@
               <p class="hint" id="notion-help">In Notion, choose <em>••• → Export → Markdown &amp; HTML</em>.
                 Upload the resulting <code>.zip</code> (nested <code>ExportBlock</code> archives are handled),
                 or point at a single <code>.html</code> file or an unzipped export folder.</p>
+              <div class="drop-zone" id="notion-drop">
+                <p class="drop-zone-label">Drag a Notion export here</p>
+                <p class="hint">Or choose a file below.</p>
+              </div>
               <div class="row">
                 <label class="muted" for="notion-file">Upload export:</label>
                 <input type="file" id="notion-file" accept=".zip,.html,.htm" aria-describedby="notion-help" />
@@ -464,8 +491,8 @@
             <svg class="ico ico-lg" aria-hidden="true"><use href="#i-cap"/></svg>
             <h2 id="semester-h">Semester plan</h2>
           </div>
-          <p class="panel-intro">Build a trimester timeline from Waikato paper outlines and your
-            class schedule. Export to Notion, Obsidian, or your calendar. Moodle announcements stay separate.</p>
+          <p class="panel-intro">Configure your papers and schedule, then use <strong>Update everything</strong>
+            to refresh outlines, Moodle calendar, announcements, and exports in one step.</p>
 
           <div class="semester-layout">
             <div class="semester-rail" aria-hidden="true">
@@ -474,6 +501,34 @@
             </div>
 
             <div class="semester-main">
+              <div class="card semester-card semester-hero">
+                <h3 class="section-title">Sync</h3>
+                <label for="sem-paper-codes">Paper codes (comma-separated)</label>
+                <input id="sem-paper-codes" type="text" list="sem-paper-suggestions"
+                       placeholder="COMPX202, COMPX225, CSMAX275" autocomplete="off" />
+                <datalist id="sem-paper-suggestions"></datalist>
+                <label for="sem-calendar-url">Moodle calendar URL</label>
+                <input id="sem-calendar-url" type="url" autocomplete="off"
+                       placeholder="https://elearn.waikato.ac.nz/calendar/export_execute.php?…" />
+                <p id="sem-calendar-masked" class="hint"></p>
+                <div class="row gap wrap">
+                  <button id="sem-calendar-save" class="ghost" type="button">Save calendar URL</button>
+                  <button id="sem-sync-all" class="primary" type="button">Update everything</button>
+                </div>
+                <div id="sem-sync-status" class="results compact" aria-live="polite"></div>
+                <div id="sem-timeline" class="semester-timeline"></div>
+                <div class="row gap wrap" id="sem-export-row" hidden>
+                  <a id="sem-export-notion" class="tag" href="#">Download Notion CSV</a>
+                  <a id="sem-export-obsidian" class="tag" href="#">Download Obsidian vault</a>
+                  <a id="sem-export-calendar" class="tag tag-calendar" href="#">Export calendar (.ics)</a>
+                </div>
+                <p id="sem-export-calendar-hint" class="hint" hidden>
+                  Import the .ics file into Google Calendar, Apple Calendar, or Outlook.
+                </p>
+              </div>
+
+              <details class="card semester-card">
+                <summary class="section-title">Advanced — individual steps</summary>
               <div class="card semester-card">
                 <h3 class="section-title">Paper outlines</h3>
                 <div class="row gap">
@@ -491,6 +546,9 @@
               <div class="card semester-card">
                 <h3 class="section-title">Class schedule</h3>
                 <p class="hint">Import a Notion database export zip (CSV inside).</p>
+                <div class="drop-zone" id="sem-schedule-drop">
+                  <p class="drop-zone-label">Drag a schedule .zip or .csv here</p>
+                </div>
                 <input id="sem-schedule-file" type="file" accept=".zip,.csv" />
                 <button id="sem-schedule-import" class="ghost" type="button">Import schedule</button>
                 <div id="sem-schedule-status" class="results compact"></div>
@@ -498,20 +556,8 @@
 
               <div class="card semester-card">
                 <h3 class="section-title">Generate plan</h3>
-                <label for="sem-paper-codes">Paper codes (comma-separated)</label>
-                <input id="sem-paper-codes" type="text" placeholder="COMPX202, COMPX225, CSMAX275" />
-                <button id="sem-plan-build" class="primary" type="button">Generate task schedule</button>
+                <button id="sem-plan-build" class="ghost" type="button">Generate task schedule only</button>
                 <div id="sem-plan-status" class="results compact"></div>
-                <div id="sem-timeline" class="semester-timeline"></div>
-                <div class="row gap wrap" id="sem-export-row" hidden>
-                  <a id="sem-export-notion" class="tag" href="#">Download Notion CSV</a>
-                  <a id="sem-export-obsidian" class="tag" href="#">Download Obsidian vault</a>
-                  <a id="sem-export-calendar" class="tag tag-calendar" href="#">Export calendar (.ics)</a>
-                </div>
-                <p id="sem-export-calendar-hint" class="hint" hidden>
-                  Import the .ics file into Google Calendar, Apple Calendar, or Outlook.
-                  Events are tagged by paper code and type, with colours per assessment, lab, exam, and more.
-                </p>
               </div>
 
               <div class="card semester-card semester-announcements">
@@ -524,6 +570,7 @@
                 <button id="sem-moodle-fetch" class="ghost" type="button">Download announcements</button>
                 <div id="sem-announcements" class="announcement-list"></div>
               </div>
+              </details>
             </div>
           </div>
         </section>

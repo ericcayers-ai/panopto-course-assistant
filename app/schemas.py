@@ -329,3 +329,15 @@ class MoodleAnnouncementsReq(BaseModel):
     url: str
     cookies: str = ""
     course_id: Optional[int] = None
+
+class MoodleCalendarUrlReq(BaseModel):
+    url: str = ""
+
+class SemesterSyncAllReq(BaseModel):
+    paper_codes: List[str]
+    class_schedule_id: Optional[int] = None
+    course_id: Optional[int] = None
+    name: str = ""
+    moodle_announcements_url: str = ""
+    moodle_cookies: str = ""
+    calendar_url: str = ""

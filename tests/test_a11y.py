@@ -316,5 +316,15 @@ def test_palette_meets_wcag_aa(scope):
     assert not failures, f"{scope} contrast failures: {failures}"
 
 
+def test_toast_error_reports_via_toast_not_recursion():
+    """toastError used to call itself and blow the stack on every API failure."""
+    assert "function toastError(e) { toastError(e); }" not in JS
+    assert "toast(errorText(e), \"err\")" in JS
+
+
 def test_reduced_motion_is_honoured():
     assert "prefers-reduced-motion: reduce" in CSS
+
+
+def test_simple_mode_hides_advanced_only_markup():
+    assert '[data-level="simple"] [data-adv-only]' in CSS

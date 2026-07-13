@@ -242,6 +242,7 @@ function toast(msg, kind = "info") {
   const t = $("toast");
   clear(t);
   t.className = "toast " + kind;
+  t.classList.remove("hidden");
   t.setAttribute("aria-live", kind === "err" ? "assertive" : "polite");
   t.append(icon(TOAST_ICON[kind] || "info"), el("span", { text: msg }));
   if (toastTimer) clearTimeout(toastTimer);
@@ -249,7 +250,117 @@ function toast(msg, kind = "info") {
 }
 
 // Report a failure. The one place an error reaches the user (§16/§17).
-function toastError(e) { toastError(e); }
+function toastError(e) { toast(errorText(e), "err"); }
+
+// ---- empty states with a clear next step -----------------------------------
+
+function emptyState(msg, actions = []) {
+  const wrap = el("div", { class: "empty-state" });
+  wrap.appendChild(el("p", { class: "empty", text: msg }));
+  if (actions.length) {
+    const row = el("div", { class: "empty-actions" });
+    for (const a of actions) {
+      row.appendChild(el("button", {
+        class: (a.primary ? "primary " : "ghost ") + "small",
+        text: a.label,
+        onclick: a.run,
+      }));
+    }
+    wrap.appendChild(row);
+  }
+  return wrap;
+}
+
+// ---- Simple / Advanced mode (progressive disclosure) -----------------------
+
+function applyLevel(level) {
+  const simple = level !== "advanced";
+  document.body.dataset.level = simple ? "simple" : "advanced";
+  remember("level", simple ? "simple" : "advanced");
+  const label = $("level-label");
+  const btn = $("level-toggle");
+  if (label) label.textContent = simple ? "Advanced mode" : "Simple mode";
+  if (btn) btn.setAttribute("aria-pressed", String(!simple));
+  // Semester is advanced-only — leave Simple users on a visible panel.
+  if (simple && document.querySelector("#semester.active")) showTab("home");
+}
+
+function initLevel() {
+  applyLevel(recall("level", "simple"));
+  $("level-toggle")?.addEventListener("click", () => {
+    const next = document.body.dataset.level === "simple" ? "advanced" : "simple";
+    applyLevel(next);
+    toast(next === "advanced" ? "Advanced mode on — Semester and extra options are visible." : "Simple mode on — advanced panels are hidden.", "info");
+  });
+}
+
+// ---- panel context (wayfinding) --------------------------------------------
+
+const TAB_LABELS = {
+  home: "Home",
+  "moodle-quick": "Moodle import",
+  import: "Import materials",
+  library: "Library",
+  study: "Study",
+  semester: "Semester plan",
+  export: "Export",
+  tts: "Text to speech",
+  jobs: "Jobs",
+};
+
+function updatePanelContext(name) {
+  const ctx = $("panel-context");
+  if (!ctx) return;
+  const course = currentCourse();
+  const section = TAB_LABELS[name] || name;
+  ctx.textContent = course ? `${section} · ${course}` : section;
+  document.title = course ? `${section} — ${course}` : `${section} — Course Assistant`;
+}
+
+// ---- file drop zones -------------------------------------------------------
+
+function wireDropZone(zoneEl, inputEl, { onDrop } = {}) {
+  if (!zoneEl || !inputEl) return;
+  const highlight = () => zoneEl.classList.add("drag-over");
+  const unhighlight = () => zoneEl.classList.remove("drag-over");
+  zoneEl.addEventListener("dragover", (e) => { e.preventDefault(); highlight(); });
+  zoneEl.addEventListener("dragleave", (e) => {
+    if (!zoneEl.contains(e.relatedTarget)) unhighlight();
+  });
+  zoneEl.addEventListener("drop", (e) => {
+    e.preventDefault();
+    unhighlight();
+    const file = e.dataTransfer?.files?.[0];
+    if (!file) return;
+    try {
+      const dt = new DataTransfer();
+      dt.items.add(file);
+      inputEl.files = dt.files;
+    } catch (_) { /* older browsers: onDrop still runs */ }
+    inputEl.dispatchEvent(new Event("change", { bubbles: true }));
+    if (onDrop) onDrop(file);
+    else toast(`Selected ${file.name}.`, "ok");
+  });
+}
+
+// ---- keyboard shortcuts ----------------------------------------------------
+
+function showShortcuts() {
+  openModal((box, close) => {
+    box.append(
+      el("p", { class: "modal-label", text: "Keyboard shortcuts" }),
+      el("ul", { class: "shortcut-list" }, [
+        el("li", {}, [el("kbd", { text: "/" }), " Focus library search"]),
+        el("li", {}, [el("kbd", { text: "Ctrl" }), " + ", el("kbd", { text: "K" }), " Command palette"]),
+        el("li", {}, [el("kbd", { text: "?" }), " Show this list"]),
+        el("li", {}, [el("kbd", { text: "Esc" }), " Close dialogs or the mobile menu"]),
+      ]),
+      el("div", { class: "modal-actions" }, [
+        el("button", { text: "Close", onclick: close }),
+      ]),
+    );
+  });
+}
 
 function remember(key, val) { try { localStorage.setItem(key, val); } catch (_) {} }
 function recall(key, def = "") { try { return localStorage.getItem(key) ?? def; } catch (_) { return def; } }
@@ -266,6 +377,12 @@ function showTab(name) {
   document.querySelectorAll(".panel").forEach((p) => p.classList.toggle("active", p.id === name));
   document.querySelector(".app").classList.remove("menu-open");  // close mobile drawer
   $("menu-toggle")?.setAttribute("aria-expanded", "false");
+  updatePanelContext(name);
+  const heading = $(name)?.querySelector("h1, h2");
+  if (heading) {
+    heading.setAttribute("tabindex", "-1");
+    heading.focus({ preventScroll: true });
+  }
   if (name === "home") loadDashboard();
   if (name === "library") loadTranscripts();
   if (name === "jobs") loadJobs();
@@ -349,6 +466,11 @@ async function loadDashboard() {
       stats.appendChild(tile(data.items.length, "transcripts"));
       stats.appendChild(tile(fmtCount, "output files"));
       stats.appendChild(tile(State.lectures.length, "lectures loaded"));
+      const gs = $("getting-started");
+      if (gs) {
+        const show = !recall("gs-dismissed") && data.items.length === 0;
+        gs.classList.toggle("hidden", !show);
+      }
     } catch (_) { /* leave empty */ }
   }
 }
@@ -465,6 +587,8 @@ function setCourse(name) {
   const main = $("course-name-main");
   if (main) main.value = name;
   remember("course", name);
+  const active = document.querySelector(".panel.active");
+  if (active) updatePanelContext(active.id);
 }
 
 // ---- multi-course switcher (§1) -------------------------------------------
@@ -529,7 +653,11 @@ if ($("course-switcher")) {
 if ($("course-new")) $("course-new").addEventListener("click", createCourse);
 
 // keep the top-bar field and the Course panel field in sync + persisted
-$("course-input")?.addEventListener("input", () => remember("course", $("course-input").value.trim()));
+$("course-input")?.addEventListener("input", () => {
+  remember("course", $("course-input").value.trim());
+  const active = document.querySelector(".panel.active");
+  if (active) updatePanelContext(active.id);
+});
 // Legacy "set course" button - no longer in the markup; guard so a missing
 // element can't throw and halt the rest of this script (theme, SSO, handlers).
 $("course-name-set")?.addEventListener("click", () => {
@@ -715,7 +843,10 @@ async function loadTranscripts() {  // loads the whole Library
     State.transcribedStems = new Set(cats.transcripts.map((i) => i.stem));
     clear(list);
     if (!data.counts.total) {
-      list.appendChild(el("p", { class: "empty", text: "Nothing imported yet. Add documents or a Notion export from Import, or import a Moodle course." }));
+      list.appendChild(emptyState("Nothing imported yet. Start with a Moodle course, or add documents and Notion exports.", [
+        { label: "Import Moodle course", primary: true, run: () => showTab("moodle-quick") },
+        { label: "Import documents", run: () => showTab("import") },
+      ]));
       return;
     }
 
@@ -981,7 +1112,13 @@ async function loadWorkload() {
   try {
     const w = await api("/api/workload");
     clear(box);
-    if (!w.lectures) { box.appendChild(el("p", { class: "muted small", text: "No transcripts yet. Transcribe some lecture recordings to see a workload estimate." })); return; }
+    if (!w.lectures) {
+      box.appendChild(emptyState("No transcripts yet. Import and transcribe lecture recordings to see a workload estimate.", [
+        { label: "Import Moodle course", primary: true, run: () => showTab("moodle-quick") },
+        { label: "Open library", run: () => showTab("library") },
+      ]));
+      return;
+    }
     box.appendChild(el("div", { class: "hint", text:
       `${w.lectures} lectures · ${w.total_words.toLocaleString()} words · ` +
       `read ~${hm(w.total_read_min)}, review ~${hm(w.total_review_min)}` }));
@@ -1012,7 +1149,13 @@ async function startPractice() {
   box.textContent = "Building quiz…";
   try {
     const quiz = await api(`/api/practice-quiz?count=${count}`);
-    if (!quiz.count) { box.textContent = quiz.reason || "Not enough review cards yet. Grade some reviews first."; return; }
+    if (!quiz.count) {
+      clear(box);
+      box.appendChild(emptyState(quiz.reason || "Not enough review cards yet. Grade some reviews in Study first.", [
+        { label: "Open Study", run: () => showTab("study") },
+      ]));
+      return;
+    }
     State.practiceQuiz = quiz;
     State.practiceAnswers = new Array(quiz.questions.length).fill(null);
     renderPractice();
@@ -1064,7 +1207,13 @@ async function showGlossary() {
   try {
     const g = await api("/api/glossary");
     clear(box);
-    if (!g.count) { box.textContent = "No terms found yet. Transcribe some lectures first."; return; }
+    if (!g.count) {
+      box.appendChild(emptyState("No glossary terms yet. Transcribe lectures or import course documents first.", [
+        { label: "Import Moodle course", primary: true, run: () => showTab("moodle-quick") },
+        { label: "Open library", run: () => showTab("library") },
+      ]));
+      return;
+    }
     box.appendChild(el("div", { class: "hint", text: `${g.count} terms from ${g.lectures_scanned} lectures` }));
     g.terms.slice(0, 60).forEach((t) => {
       box.appendChild(el("div", { class: "gloss-term" }, [
@@ -1112,7 +1261,9 @@ const PALETTE_ACTIONS = [
   { label: "Go to Export", run: () => showTab("export") },
   { label: "Go to Jobs", run: () => showTab("jobs") },
   { label: "Go to Text to speech", run: () => showTab("tts") },
+  { label: "Go to Semester plan", run: () => showTab("semester") },
   { label: "Search the library", run: () => { showTab("library"); const q = $("search-q"); if (q) q.focus(); } },
+  { label: "Show keyboard shortcuts", run: () => showShortcuts() },
   { label: "Start a practice quiz", run: () => { showTab("study"); startPractice(); } },
   { label: "Show glossary", run: () => { showTab("study"); showGlossary(); } },
   { label: "Toggle theme", run: () => $("theme-toggle").click() },
@@ -1161,7 +1312,24 @@ function openPalette() {
 }
 
 document.addEventListener("keydown", (e) => {
-  if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "k") { e.preventDefault(); openPalette(); }
+  if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "k") { e.preventDefault(); openPalette(); return; }
+  const typing = (() => {
+    const a = document.activeElement;
+    if (!a) return false;
+    const tag = a.tagName;
+    return tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT" || a.isContentEditable;
+  })();
+  if (e.key === "/" && !typing && !e.ctrlKey && !e.metaKey && !e.altKey) {
+    e.preventDefault();
+    showTab("library");
+    $("search-q")?.focus();
+  } else if (e.key === "?" && !typing) {
+    e.preventDefault();
+    showShortcuts();
+  } else if (e.key === "Escape" && document.querySelector(".app.menu-open")) {
+    document.querySelector(".app").classList.remove("menu-open");
+    $("menu-toggle")?.setAttribute("aria-expanded", "false");
+  }
 });
 
 $("transcripts-refresh").addEventListener("click", loadTranscripts);
@@ -1643,7 +1811,14 @@ async function loadJobs() {
     badge.textContent = active;
     badge.classList.toggle("hidden", active === 0);
 
-    if (!data.jobs.length) { out.appendChild(el("p", { class: "empty", text: "No jobs yet. Transcription and export jobs appear here while they run." })); stopJobsPolling(); return; }
+    if (!data.jobs.length) {
+      out.appendChild(emptyState("No jobs yet. Transcription and export jobs appear here while they run.", [
+        { label: "Import Moodle course", primary: true, run: () => showTab("moodle-quick") },
+        { label: "Go to Export", run: () => showTab("export") },
+      ]));
+      stopJobsPolling();
+      return;
+    }
     // A calm heads-up while transcriptions run: they are slow and that is normal.
     const transcribing = data.jobs.some((j) =>
       j.type === "transcribe" && (j.status === "queued" || j.status === "running"));
@@ -1881,12 +2056,15 @@ function restore() {
   const savedTheme = recall("theme") ||
     (window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
   applyTheme(savedTheme);
+  initLevel();
 
   if ($("feed-source")) $("feed-source").value = recall("feed");
   $("pdf-path").value = recall("pdfpath");
   $("materials-path").value = recall("matpath");
   $("moodle-path").value = recall("moodlepath");
   $("notion-path").value = recall("notionpath");
+  if ($("sem-paper-codes")) $("sem-paper-codes").value = recall("sem-paper-codes");
+  rememberPaperCodes(recall("sem-paper-codes"));
   // We no longer restore mqcookies from localStorage; it's ephemeral.
   const course = recall("course");
   if (course) { $("course-input").value = course; $("course-name-main").value = course; }
@@ -1902,9 +2080,19 @@ function restore() {
 
 loadStatus().then(() => {
   restore();                   // now the engine/model selects are populated
+  updatePanelContext("home");
   loadDashboard();
   initMoodleQuick();
   refreshOllama();             // pre-populate the local-AI panel
+  wireDropZone($("notion-drop"), $("notion-file"));
+  wireDropZone($("sem-schedule-drop"), $("sem-schedule-file"));
+  $("sem-paper-codes")?.addEventListener("change", (e) => rememberPaperCodes(e.target.value));
+  $("getting-started-dismiss")?.addEventListener("click", () => {
+    remember("gs-dismissed", "1");
+    $("getting-started")?.classList.add("hidden");
+  });
+  $("gs-goto-moodle")?.addEventListener("click", () => showTab("moodle-quick"));
+  $("shortcuts-help")?.addEventListener("click", showShortcuts);
 });
 loadCourses();
 
@@ -2395,11 +2583,66 @@ function _renderTtsResult(data, out) {
 
 const Semester = { planId: null, scheduleId: null, lastOutline: null };
 
+function renderSyncSteps(result) {
+  const host = $("sem-sync-status");
+  clear(host);
+  if (!result) return;
+  for (const s of result.steps || []) {
+    const cls = s.status === "ok" ? "ok-text" : s.status === "error" ? "err-text" : "hint";
+    host.appendChild(el("p", { class: cls, text: `${s.step}: ${s.detail}` }));
+  }
+  if (result.errors?.length) {
+    for (const e of result.errors) {
+      host.appendChild(el("p", { class: "err-text", text: e }));
+    }
+  }
+}
+
+function setExportLinks(planId) {
+  $("sem-export-row").hidden = false;
+  $("sem-export-notion").href = `/api/semester/plans/${planId}/export/notion.csv`;
+  $("sem-export-obsidian").href = `/api/semester/plans/${planId}/export/obsidian.zip`;
+  $("sem-export-calendar").href = `/api/semester/plans/${planId}/export/calendar.ics`;
+  const calHint = $("sem-export-calendar-hint");
+  if (calHint) calHint.hidden = false;
+}
+
+function rememberPaperCodes(raw) {
+  const codes = raw.split(",").map((s) => s.trim()).filter(Boolean);
+  if (!codes.length) return;
+  remember("sem-paper-codes", codes.join(", "));
+  let recent = [];
+  try { recent = JSON.parse(recall("sem-paper-recent", "[]")); } catch (_) {}
+  for (const c of codes) {
+    const base = c.split("-")[0].toUpperCase();
+    if (!recent.includes(base)) recent.unshift(base);
+  }
+  recent = recent.slice(0, 12);
+  remember("sem-paper-recent", JSON.stringify(recent));
+  const dl = $("sem-paper-suggestions");
+  if (dl) {
+    clear(dl);
+    recent.forEach((c) => dl.appendChild(el("option", { value: c })));
+  }
+}
+
 async function loadSemester() {
+  const codes = recall("sem-paper-codes");
+  if (codes && $("sem-paper-codes") && !$("sem-paper-codes").value) $("sem-paper-codes").value = codes;
+  rememberPaperCodes($("sem-paper-codes")?.value || codes || "");
   try {
     const d = await api("/api/semester/moodle/announcements");
     renderAnnouncements(d.announcements || []);
   } catch (_) { /* empty state */ }
+  try {
+    const cal = await api("/api/semester/moodle/calendar-url");
+    const masked = $("sem-calendar-masked");
+    if (masked) {
+      masked.textContent = cal.configured
+        ? `Saved: ${cal.masked_url}`
+        : "Paste your Moodle calendar export URL once — stored securely on this machine.";
+    }
+  } catch (_) { /* optional */ }
 }
 
 function renderOutlinePreview(outline) {
@@ -2418,6 +2661,10 @@ function renderOutlinePreview(outline) {
 function renderTimeline(plan) {
   const host = $("sem-timeline");
   clear(host);
+  if (!plan?.timeline?.length) {
+    host.appendChild(el("p", { class: "hint", text: "No tasks scheduled yet. Add paper codes and run Update everything." }));
+    return;
+  }
   for (const week of plan.timeline || []) {
     const block = el("div", { class: "timeline-week" });
     block.appendChild(el("h4", { text: week.week_start === "Unscheduled" ? "Unscheduled" : `Week of ${week.week_start}` }));
@@ -2509,15 +2756,65 @@ $("sem-plan-build")?.addEventListener("click", async () => {
     const st = $("sem-plan-status");
     clear(st);
     st.appendChild(el("p", { class: "ok-text", text: `${plan.task_count} tasks in ${plan.name}` }));
-    const row = $("sem-export-row");
-    row.hidden = false;
-    $("sem-export-notion").href = `/api/semester/plans/${plan.id}/export/notion.csv`;
-    $("sem-export-obsidian").href = `/api/semester/plans/${plan.id}/export/obsidian.zip`;
-    $("sem-export-calendar").href = `/api/semester/plans/${plan.id}/export/calendar.ics`;
-    const calHint = $("sem-export-calendar-hint");
-    if (calHint) calHint.hidden = false;
+    setExportLinks(plan.id);
     toast("Task schedule generated.", "ok");
   } catch (e) { toastError(e); }
+});
+
+$("sem-calendar-save")?.addEventListener("click", async () => {
+  const url = $("sem-calendar-url").value.trim();
+  try {
+    const d = await api("/api/semester/moodle/calendar-url", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ url }),
+    });
+    $("sem-calendar-masked").textContent = d.stored
+      ? `Saved: ${d.masked_url}`
+      : "Calendar URL cleared.";
+    toast(d.stored ? "Calendar URL saved securely." : "Calendar URL cleared.", "ok");
+  } catch (e) { toastError(e); }
+});
+
+$("sem-sync-all")?.addEventListener("click", async () => {
+  const codes = $("sem-paper-codes").value.split(",").map((s) => s.trim()).filter(Boolean);
+  if (!codes.length) return toast("Add at least one paper code.", "warn");
+  rememberPaperCodes($("sem-paper-codes").value);
+  const btn = $("sem-sync-all");
+  const status = $("sem-sync-status");
+  btn.disabled = true;
+  const prevLabel = btn.textContent;
+  btn.textContent = "Updating…";
+  clear(status);
+  status.appendChild(el("p", { class: "import-loading", role: "status" }, [
+    el("span", { class: "mq-sso-spinner", "aria-hidden": "true" }),
+    " Syncing outlines, schedule, calendar, and exports…",
+  ]));
+  try {
+    const body = {
+      paper_codes: codes,
+      class_schedule_id: Semester.scheduleId || null,
+      moodle_announcements_url: $("sem-moodle-url")?.value.trim() || "",
+      moodle_cookies: $("sem-moodle-cookies")?.value.trim() || "",
+      calendar_url: $("sem-calendar-url")?.value.trim() || "",
+    };
+    const file = $("sem-schedule-file")?.files?.[0];
+    let plan;
+    if (file) {
+      const fd = new FormData();
+      fd.append("file", file);
+      fd.append("payload", JSON.stringify(body));
+      plan = await api("/api/semester/sync-all", { method: "POST", body: fd });
+    } else {
+      plan = await postJSON("/api/semester/sync-all", body);
+    }
+    Semester.planId = plan.plan_id;
+    renderTimeline(plan);
+    renderSyncSteps(plan);
+    setExportLinks(plan.plan_id);
+    toast(plan.ok ? "Everything updated." : "Updated with some errors — see status.", plan.ok ? "ok" : "warn");
+  } catch (e) { toastError(e); }
+  finally { btn.disabled = false; btn.textContent = prevLabel; }
 });
 
 $("sem-moodle-fetch")?.addEventListener("click", async () => {

@@ -171,51 +171,317 @@ def export_notion_csv(tasks: List[Dict[str, Any]]) -> str:
     return buf.getvalue()
 
 
-def export_obsidian_zip(tasks: List[Dict[str, Any]], dest: Path, *,
-                        title: str = "Semester plan") -> Path:
-    """Write an Obsidian mini-vault with wikilinked task notes."""
+def _mermaid_safe(text: str) -> str:
+    """Sanitize labels for Mermaid gantt task names."""
+    text = re.sub(r"[:;#]", " -", text or "")
+    return text.strip() or "Task"
+
+
+def _gantt_status_tags(event_type: str, status: str = "") -> str:
+    tags: List[str] = []
+    if event_type == "exam":
+        tags.append("crit")
+    st = (status or "").lower().replace(" ", "_")
+    if st in ("done", "completed", "complete"):
+        tags.append("done")
+    elif st in ("in_progress", "started", "active"):
+        tags.append("active")
+    return ",".join(tags)
+
+
+def _gantt_task_id(prefix: str, idx: int) -> str:
+    base = re.sub(r"[^\w]", "", prefix)[:20] or "t"
+    return f"{base}{idx}"
+
+
+def build_mermaid_gantt(
+    tasks: List[Dict[str, Any]],
+    *,
+    outlines: Optional[List[Dict[str, Any]]] = None,
+    moodle_events: Optional[List[Dict[str, Any]]] = None,
+    title: str = "Semester plan",
+) -> str:
+    """Build an Obsidian-native Mermaid gantt chart grouped by paper code."""
+    events = calendar_events_from_plan(tasks, outlines=outlines)
+    if moodle_events:
+        seen = {e["uid"] for e in events}
+        for ev in moodle_events:
+            if ev.get("uid") not in seen:
+                events.append(ev)
+                seen.add(ev["uid"])
+    events.sort(key=lambda e: (e["start"], e.get("paper_code", ""), e["summary"]))
+
+    status_by_id: Dict[str, str] = {t.get("id", ""): t.get("status", "") for t in tasks}
+    lines = [
+        "```mermaid",
+        "gantt",
+        f"    title {_mermaid_safe(title)}",
+        "    dateFormat YYYY-MM-DD",
+        "    axisFormat %b %d",
+    ]
+
+    sections: Dict[str, List[Dict[str, Any]]] = {}
+    for ev in events:
+        section = (ev.get("paper_code") or "General").upper() or "General"
+        sections.setdefault(section, []).append(ev)
+
+    if not sections:
+        lines.append("    section Plan")
+        lines.append("    No dated events :milestone, nodate, 2026-01-01, 1d")
+    else:
+        idx = 0
+        for section in sorted(sections):
+            lines.append(f"    section {section}")
+            for ev in sections[section]:
+                idx += 1
+                start = ev["start"]
+                end = ev["end"]
+                span_days = (end - start).days
+                if span_days <= 1:
+                    end_expr = "1d"
+                else:
+                    end_expr = end.isoformat()
+                label = _mermaid_safe(ev["summary"])
+                if ev.get("paper_code") and label.upper().startswith(ev["paper_code"]):
+                    label = _mermaid_safe(label.split(":", 1)[-1].strip())
+                tid = _gantt_task_id(ev.get("uid", label), idx)
+                tags = _gantt_status_tags(ev.get("event_type", "other"),
+                                          status_by_id.get(ev.get("uid", ""), ""))
+                if tags:
+                    lines.append(f"    {label} :{tags}, {tid}, {start.isoformat()}, {end_expr}")
+                else:
+                    lines.append(f"    {label} :{tid}, {start.isoformat()}, {end_expr}")
+
+    lines.append("```")
+    return "\n".join(lines) + "\n"
+
+
+def _timetable_markdown(tasks: List[Dict[str, Any]]) -> str:
+    lines = [
+        "| # | Paper | Type | Task | Due | Weight | Status | Source |",
+        "|---|---|---|---|---|---|---|---|",
+    ]
+    for i, t in enumerate(tasks, 1):
+        w = f"{t['weight']}%" if t.get("weight") is not None else ""
+        lines.append(
+            f"| {i} | {t.get('subject', '')} | {t.get('type', '')} | "
+            f"{t.get('name', '')} | {t.get('due_date', '')} | {w} | "
+            f"{t.get('status', '')} | {t.get('source', '')} |"
+        )
+    return "\n".join(lines) + "\n"
+
+
+def _outline_note(outline: Dict[str, Any]) -> str:
+    code = outline.get("paper_code", "")
+    base = code.split("-")[0] if code else ""
+    tags = f"compx234, {base.lower()}, reference" if base else "semester, reference"
+    lines = [
+        "---",
+        f"tags: [{tags}]",
+        f"aliases: [{code} Outline]",
+        "---",
+        "",
+        f"# {outline.get('title') or code}",
+        "",
+        f"Paper code: {code}",
+        "",
+    ]
+    if outline.get("assessments"):
+        lines += ["## Assessments", ""]
+        for a in outline["assessments"]:
+            w = f" ({a['weight']}%)" if a.get("weight") is not None else ""
+            due = f" — due {a['due_date']}" if a.get("due_date") else ""
+            lines.append(f"- {a.get('name', '')}{w}{due}")
+        lines.append("")
+    if outline.get("key_dates"):
+        lines += ["## Key dates", ""]
+        for kd in outline["key_dates"]:
+            lines.append(f"- {kd.get('label', '')}")
+        lines.append("")
+    if outline.get("weekly_topics"):
+        lines += ["## Weekly topics", ""]
+        for wt in outline["weekly_topics"][:20]:
+            lines.append(f"- Week {wt.get('week', '')}: {wt.get('topic', '')}")
+        lines.append("")
+    return "\n".join(lines)
+
+
+def _announcement_note(row: Dict[str, Any]) -> str:
+    title = row.get("title", "Announcement")
+    slug = _slug(title)[:40] or "announcement"
+    lines = [
+        "---",
+        "tags: [announcement, moodle]",
+        "---",
+        "",
+        f"# {title}",
+        "",
+        f"*{row.get('author', '')} · {row.get('posted_at', '')}*",
+        "",
+        row.get("body", ""),
+    ]
+    return slug, "\n".join(lines)
+
+
+def export_obsidian_zip(
+    tasks: List[Dict[str, Any]],
+    dest: Path,
+    *,
+    title: str = "Semester plan",
+    outlines: Optional[List[Dict[str, Any]]] = None,
+    moodle_events: Optional[List[Dict[str, Any]]] = None,
+    announcements: Optional[List[Dict[str, Any]]] = None,
+) -> Path:
+    """Write an Obsidian vault zip mirroring Waikato study vault conventions."""
     dest = Path(dest)
     dest.parent.mkdir(parents=True, exist_ok=True)
     root = _slug(title) or "semester-plan"
+    outlines = outlines or []
+    gantt = build_mermaid_gantt(
+        tasks, outlines=outlines, moodle_events=moodle_events, title=title,
+    )
 
     with zipfile.ZipFile(dest, "w", zipfile.ZIP_DEFLATED) as zf:
         subjects = sorted({t.get("subject", "") for t in tasks if t.get("subject")})
-        index_lines = [f"# {title}", "", "## Timeline", ""]
-        for t in tasks:
-            due = t.get("due_date") or "no-date"
-            link = f"[[tasks/{t['id']}]]"
-            index_lines.append(f"- {due} · {link} · {t.get('type', '')} · {t.get('weight') or ''}%")
 
-        index_lines += ["", "## Papers", ""]
+        readme = [
+            f"# {title}",
+            "",
+            "Semester plan exported from Course Assistant.",
+            "",
+            "## Quick links",
+            "",
+            "- [[Study Plan]]",
+            "- [[Semester Gantt]]",
+            "- [[Study Timetable/Timetable Sheet - Markdown ver]]",
+            "",
+            "## Papers",
+            "",
+        ]
         for s in subjects:
-            index_lines.append(f"- [[papers/{_slug(s)}|{s}]]")
+            readme.append(f"- [[papers/{_slug(s)}|{s}]]")
+        if outlines:
+            readme += ["", "## Outlines", ""]
+            for o in outlines:
+                code = (o.get("paper_code") or "").split("-")[0]
+                readme.append(f"- [[Outlines/{_slug(code)}|{code}]]")
+        if announcements:
+            readme += ["", "## Announcements", ""]
+            readme.append("- [[Announcements/index|All announcements]]")
+        zf.writestr(f"{root}/README.md", "\n".join(readme) + "\n")
 
-        zf.writestr(f"{root}/index.md", "\n".join(index_lines) + "\n")
+        study_plan = [
+            "---",
+            "tags: [study-plan, semester]",
+            "---",
+            "",
+            f"# {title} — Study plan",
+            "",
+            "## Timeline",
+            "",
+        ]
+        for t in tasks:
+            due = t.get("due_date") or "TBD"
+            study_plan.append(
+                f"- {due} · [[tasks/{t['id']}|{t.get('name', '')}]] "
+                f"({t.get('type', '')}{', ' + str(t['weight']) + '%' if t.get('weight') else ''})"
+            )
+        zf.writestr(f"{root}/Study Plan.md", "\n".join(study_plan) + "\n")
+
+        gantt_body = [
+            "---",
+            "tags: [gantt, semester, reference]",
+            "aliases: [Semester Timeline]",
+            "---",
+            "",
+            f"# {title} — Gantt chart",
+            "",
+            "Visual timeline of assessments, classes, and key dates.",
+            "",
+            gantt.rstrip(),
+            "",
+        ]
+        zf.writestr(f"{root}/Semester Gantt.md", "\n".join(gantt_body) + "\n")
+
+        zf.writestr(
+            f"{root}/Study Timetable/Timetable Sheet - Markdown ver.md",
+            _timetable_markdown(tasks),
+        )
 
         for s in subjects:
             paper_tasks = [t for t in tasks if t.get("subject") == s]
-            lines = [f"# {s}", "", f"#paper/{_slug(s)}", ""]
+            lines = [
+                "---",
+                f"tags: [{s.lower()}, paper]",
+                "---",
+                "",
+                f"# {s}",
+                "",
+                f"See also: [[Semester Gantt]] · [[Study Plan]]",
+                "",
+            ]
             for t in paper_tasks:
-                lines.append(f"- [[tasks/{t['id']}|{t.get('name', '')}]] ({t.get('due_date', 'TBD')})")
+                lines.append(
+                    f"- [[tasks/{t['id']}|{t.get('name', '')}]] ({t.get('due_date', 'TBD')})"
+                )
             zf.writestr(f"{root}/papers/{_slug(s)}.md", "\n".join(lines) + "\n")
 
+            paper_events = [e for e in (moodle_events or [])
+                            if (e.get("paper_code") or "").upper() == s]
+            paper_gantt = build_mermaid_gantt(
+                [t for t in tasks if t.get("subject") == s],
+                outlines=[o for o in outlines
+                          if (o.get("paper_code") or "").startswith(s)],
+                moodle_events=paper_events,
+                title=f"{s} — {title}",
+            )
+            pg = [
+                "---",
+                f"tags: [{s.lower()}, gantt]",
+                "---",
+                "",
+                f"# {s} Gantt",
+                "",
+                paper_gantt.rstrip(),
+                "",
+            ]
+            zf.writestr(f"{root}/Guide/{s} Gantt.md", "\n".join(pg) + "\n")
+
+        for o in outlines:
+            code = (o.get("paper_code") or "outline").split("-")[0]
+            zf.writestr(f"{root}/Outlines/{_slug(code)}.md", _outline_note(o))
+
+        if announcements:
+            ann_index = ["# Moodle announcements", ""]
+            for a in announcements:
+                slug, body = _announcement_note(a)
+                ann_index.append(f"- [[Announcements/{slug}|{a.get('title', 'Post')}]]")
+                zf.writestr(f"{root}/Announcements/{slug}.md", body)
+            zf.writestr(f"{root}/Announcements/index.md", "\n".join(ann_index) + "\n")
+
         for t in tasks:
-            tags = ["#task"]
-            if t.get("subject"):
-                tags.append(f"#paper/{_slug(t['subject'])}")
-            if t.get("type"):
-                tags.append(f"#type/{_slug(t['type'])}")
+            subj = t.get("subject", "")
+            typ = t.get("type", "")
+            fm_tags = ["task"]
+            if subj:
+                fm_tags.append(subj.lower())
+            if typ:
+                fm_tags.append(_slug(typ))
             body = [
+                "---",
+                f"tags: [{', '.join(fm_tags)}]",
+                "---",
+                "",
                 f"# {t.get('name', 'Task')}",
                 "",
-                " ".join(tags),
-                "",
-                f"- Subject: [[papers/{_slug(t.get('subject', ''))}|{t.get('subject', '')}]]",
-                f"- Type: {t.get('type', '')}",
+                f"- Paper: [[papers/{_slug(subj)}|{subj}]]",
+                f"- Type: {typ}",
                 f"- Due: {t.get('due_date', '')}",
-                f"- Weight: {t.get('weight', '')}%",
+                f"- Weight: {t.get('weight', '')}%" if t.get("weight") is not None else "- Weight:",
                 f"- Status: {t.get('status', '')}",
                 f"- Source: {t.get('source', '')}",
+                "",
+                f"[[Semester Gantt]] · [[Study Plan]]",
             ]
             zf.writestr(f"{root}/tasks/{t['id']}.md", "\n".join(body) + "\n")
 
@@ -555,3 +821,188 @@ def export_google_calendar_csv(
             "False",
         ])
     return buf.getvalue()
+
+
+def write_export_artifacts(
+    plan_id: int,
+    tasks: List[Dict[str, Any]],
+    *,
+    output_dir: Path,
+    title: str,
+    outlines: Optional[List[Dict[str, Any]]] = None,
+    moodle_events: Optional[List[Dict[str, Any]]] = None,
+    announcements: Optional[List[Dict[str, Any]]] = None,
+) -> Dict[str, str]:
+    """Persist ICS and Obsidian zip export artifacts under _semester/."""
+    out_dir = Path(output_dir) / "_semester"
+    out_dir.mkdir(parents=True, exist_ok=True)
+    ics_path = out_dir / f"plan-{plan_id}.ics"
+    ics_path.write_text(
+        export_calendar_ics(tasks, outlines=outlines, title=title),
+        encoding="utf-8",
+    )
+    zip_path = out_dir / f"obsidian-plan-{plan_id}.zip"
+    export_obsidian_zip(
+        tasks, zip_path, title=title, outlines=outlines,
+        moodle_events=moodle_events, announcements=announcements,
+    )
+    return {"ics": str(ics_path), "obsidian_zip": str(zip_path)}
+
+
+def sync_semester_all(
+    db: Database,
+    course_id: int,
+    *,
+    paper_codes: List[str],
+    class_schedule_id: Optional[int] = None,
+    schedule_bytes: Optional[bytes] = None,
+    schedule_filename: str = "",
+    calendar_url: Optional[str] = None,
+    moodle_announcements_url: str = "",
+    moodle_cookies: str = "",
+    name: str = "",
+    http_get=None,
+) -> Dict[str, Any]:
+    """One-click refresh: outlines, schedule, Moodle calendar, announcements, plan, exports."""
+    from . import moodle_calendar, moodle_content, schedule_parser
+    from .paper_outlines import PaperOutlineError, fetch_outline
+
+    steps: List[Dict[str, str]] = []
+    errors: List[str] = []
+    moodle_cal_events: List[Dict[str, Any]] = []
+
+    outlines: List[Dict[str, Any]] = []
+    for code in paper_codes:
+        try:
+            try:
+                outline = fetch_outline(code)
+            except PaperOutlineError:
+                outline = _resolve_outline(db, code)
+            pc = outline.get("paper_code") or code
+            db.upsert_paper_outline(pc, json.dumps(outline), title=outline.get("title", ""))
+            outlines.append(outline)
+        except Exception as e:
+            errors.append(f"outline:{code}: {e}")
+    steps.append({"step": "outlines", "status": "ok" if outlines else "error",
+                  "detail": f"{len(outlines)} of {len(paper_codes)} refreshed"})
+
+    sched_id = class_schedule_id
+    if schedule_bytes:
+        try:
+            fname = (schedule_filename or "").lower()
+            if fname.endswith(".csv"):
+                text = schedule_bytes.decode("utf-8-sig", errors="replace")
+                tasks_parsed = schedule_parser.parse_notion_csv(text)
+                parsed = {
+                    "name": Path(fname).stem,
+                    "task_count": len(tasks_parsed),
+                    "subjects": sorted({t["subject"] for t in tasks_parsed if t["subject"]}),
+                    "tasks": tasks_parsed,
+                }
+            else:
+                parsed = schedule_parser.parse_notion_zip(schedule_bytes)
+            sched_id = db.create_class_schedule(
+                course_id, parsed.get("name", "Class schedule"),
+                json.dumps(parsed), source_path=schedule_filename,
+            )
+            steps.append({"step": "schedule", "status": "ok",
+                          "detail": f"Imported {parsed.get('task_count', 0)} tasks"})
+        except Exception as e:
+            errors.append(f"schedule: {e}")
+            steps.append({"step": "schedule", "status": "error", "detail": str(e)})
+    elif sched_id:
+        row = db.get_class_schedule(sched_id)
+        n = 0
+        if row:
+            n = json.loads(row["schedule_json"]).get("task_count", 0)
+        steps.append({"step": "schedule", "status": "ok", "detail": f"Using schedule ({n} tasks)"})
+    else:
+        steps.append({"step": "schedule", "status": "skipped", "detail": "No class schedule"})
+
+    if calendar_url:
+        try:
+            raw_events = moodle_calendar.fetch_calendar(calendar_url, http_get=http_get)
+            moodle_cal_events = moodle_calendar.events_to_calendar_rows(raw_events, paper_codes)
+            steps.append({"step": "moodle_calendar", "status": "ok",
+                          "detail": f"{len(moodle_cal_events)} events"})
+        except Exception as e:
+            errors.append(f"moodle_calendar: {e}")
+            steps.append({"step": "moodle_calendar", "status": "error", "detail": str(e)})
+    else:
+        steps.append({"step": "moodle_calendar", "status": "skipped",
+                      "detail": "No calendar URL configured"})
+
+    if moodle_announcements_url:
+        try:
+            fetched = moodle_content.fetch_announcements(moodle_announcements_url, moodle_cookies)
+            ann_count = db.replace_moodle_announcements(
+                course_id, fetched.get("moodle_course_id", ""),
+                fetched.get("announcements", []),
+            )
+            steps.append({"step": "announcements", "status": "ok", "detail": f"{ann_count} stored"})
+        except Exception as e:
+            errors.append(f"announcements: {e}")
+            steps.append({"step": "announcements", "status": "error", "detail": str(e)})
+    else:
+        steps.append({"step": "announcements", "status": "skipped", "detail": "No Moodle URL"})
+
+    schedule_tasks: List[Dict[str, Any]] = []
+    if sched_id:
+        row = db.get_class_schedule(sched_id)
+        if row:
+            schedule_tasks = json.loads(row["schedule_json"]).get("tasks", [])
+
+    outline_tasks: List[Dict[str, Any]] = []
+    outlines_used: List[str] = []
+    for o in outlines:
+        outline_tasks.extend(outline_to_tasks(o))
+        outlines_used.append(o.get("paper_code", ""))
+
+    tasks = merge_tasks(outline_tasks=outline_tasks, schedule_tasks=schedule_tasks,
+                        paper_codes=paper_codes)
+    if moodle_cal_events:
+        cal_tasks = moodle_calendar.calendar_events_to_tasks(
+            [{"summary": e["summary"], "start": e["start"], "end": e["end"],
+              "description": e.get("description", ""), "location": e.get("location", ""),
+              "uid": e["uid"]} for e in moodle_cal_events],
+            paper_codes=paper_codes,
+        )
+        tasks = moodle_calendar.merge_calendar_into_tasks(tasks, cal_tasks)
+
+    label = name or f"Semester plan ({', '.join(paper_codes[:3])})"
+    payload = {
+        "paper_codes": paper_codes,
+        "outlines_used": outlines_used,
+        "class_schedule_id": sched_id,
+        "task_count": len(tasks),
+        "tasks": tasks,
+        "generated_at": now_iso(),
+        "moodle_calendar_events": len(moodle_cal_events),
+    }
+    plan_id = db.create_task_schedule(
+        course_id, label, json.dumps(payload), ",".join(paper_codes), sched_id,
+    )
+
+    ann_rows = [
+        {"title": r["title"], "body": r["body"], "author": r["author"],
+         "posted_at": r["posted_at"]}
+        for r in db.list_moodle_announcements(course_id)
+    ]
+    from . import context
+    artifacts = write_export_artifacts(
+        plan_id, tasks, output_dir=context.OUTPUT_DIR, title=label,
+        outlines=outlines, moodle_events=moodle_cal_events or None,
+        announcements=ann_rows or None,
+    )
+    steps.append({"step": "exports", "status": "ok", "detail": "ICS + Obsidian updated"})
+
+    return {
+        "ok": not errors,
+        "plan_id": plan_id,
+        "name": label,
+        "task_count": len(tasks),
+        "steps": steps,
+        "errors": errors,
+        "artifacts": artifacts,
+        "timeline": semester_timeline(tasks),
+    }

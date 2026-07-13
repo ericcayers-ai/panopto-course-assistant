@@ -235,8 +235,14 @@ body {
   padding: var(--space-3) var(--space-5); background: var(--surface);
   border-bottom: 1px solid var(--border); position: sticky; top: 0; z-index: 5;
 }
-.topbar-left { display: flex; align-items: center; gap: var(--space-3); }
-.topbar-right { display: flex; align-items: center; gap: var(--space-3); }
+.topbar-left { display: flex; align-items: center; gap: var(--space-3); flex: 1; min-width: 0; }
+.topbar-center { flex: 1 1 auto; min-width: 0; display: flex; justify-content: center; }
+.topbar-right { display: flex; align-items: center; gap: var(--space-3); flex-shrink: 0; }
+.panel-context {
+  font-family: var(--font-display); font-size: var(--text-sm); font-weight: 600;
+  color: var(--muted); letter-spacing: .02em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  max-width: 100%;
+}
 #menu-toggle { display: none; }
 .course-name { font-weight: 600; }
 
@@ -302,7 +308,10 @@ h3 { font-family: var(--font-sans); font-size: var(--text-md); margin: 0 0 var(-
 .muted { color: var(--muted); font-size: var(--text-sm); }
 .hint { color: var(--muted); font-size: var(--text-sm); margin: 6px 0; max-width: 72ch; }
 .empty { color: var(--muted); font-style: italic; padding: var(--space-3) 0; }
+.empty-state { padding: var(--space-2) 0; }
+.empty-actions { display: flex; flex-wrap: wrap; gap: var(--space-2); margin-top: var(--space-2); }
 .ok-text { color: var(--ok); font-weight: 600; }
+.err-text { color: var(--err); font-weight: 600; }
 code {
   background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--radius-sm);
   padding: 1px 5px; font-family: var(--font-mono); font-size: var(--text-xs);
@@ -323,6 +332,26 @@ a .ico { width: 13px; height: 13px; vertical-align: -2px; }
 }
 .hero h1 { margin: 0 0 var(--space-2); }
 .lead { color: var(--muted); max-width: 62ch; margin: 0; }
+
+.getting-started { border-color: var(--brand); background: linear-gradient(135deg, var(--brand-soft), transparent 65%); }
+.getting-started-head { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); margin-bottom: var(--space-2); }
+.getting-started-head h2 { margin: 0; font-size: var(--text-md); }
+.getting-started-steps { margin: 0 0 var(--space-3); padding-left: 1.25rem; color: var(--muted); font-size: var(--text-sm); }
+.getting-started-steps li { margin: var(--space-2) 0; }
+
+.drop-zone {
+  border: 2px dashed var(--border); border-radius: var(--radius); padding: var(--space-4);
+  margin: var(--space-3) 0; text-align: center; background: var(--surface-2);
+  transition: border-color var(--dur-fast) var(--ease), background var(--dur-fast) var(--ease);
+}
+.drop-zone.drag-over { border-color: var(--brand); background: var(--brand-soft); }
+.drop-zone-label { margin: 0; font-weight: 600; font-size: var(--text-sm); }
+
+.shortcut-list { margin: 0; padding-left: 1.25rem; font-size: var(--text-sm); color: var(--muted); }
+.shortcut-list li { margin: var(--space-2) 0; }
+
+/* Simple mode hides advanced-only nav items and panels (§ progressive disclosure) */
+[data-level="simple"] [data-adv-only] { display: none !important; }
 
 /* The four workspace stages, drawn as a signal chain rather than four
    unrelated boxes - the app *is* this pipeline, and the pipeline reads like
@@ -597,8 +626,13 @@ details.adv-settings[open] > summary { margin-bottom: var(--space-2); }
   #menu-toggle { display: inline-flex; }
   main { padding: var(--space-4); }
   .topbar { flex-wrap: wrap; }
+  .topbar-center { order: 3; flex-basis: 100%; justify-content: flex-start; padding-top: var(--space-1); }
+  .panel-context { font-size: var(--text-xs); }
   .course-field input { min-width: 110px; }
   .course-label { display: none; }
+  .status-bar { display: none; }
+  .nav .tab { min-height: 44px; padding-top: 11px; padding-bottom: 11px; }
+  button, .import-switch .seg { min-height: 44px; }
 }
 
 /* ---- Moodle connect / guided import --------------------------------------- */
@@ -797,6 +831,7 @@ details.sub > summary { cursor: pointer; color: var(--brand); font-size: var(--t
 }
 .semester-main { display: grid; gap: var(--space-4); }
 .semester-card { position: relative; }
+.semester-hero { border-left: 3px solid var(--copper, #A8530A); }
 .outline-preview {
   margin-top: var(--space-3);
   padding: var(--space-3);

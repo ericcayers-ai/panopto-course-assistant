@@ -2,11 +2,12 @@
 from __future__ import annotations
 
 import json
+import zipfile
 from pathlib import Path
 
 import pytest
 
-from app import database, paper_outlines, schedule_parser, task_schedule
+from app import database, moodle_calendar, paper_outlines, schedule_parser, task_schedule
 from app.moodle_content import _extract_posts, discover_announcement_urls
 
 FIX = Path(__file__).resolve().parent / "fixtures"
@@ -105,13 +106,127 @@ def test_export_formats(tmp_path: Path):
     assert "COMPX202" in csv_text
     dest = tmp_path / "obsidian.zip"
     task_schedule.export_obsidian_zip(tasks, dest, title="Tri B plan")
-    import zipfile
     with zipfile.ZipFile(dest) as zf:
         names = zf.namelist()
-        assert any(n.endswith("index.md") for n in names)
+        assert any(n.endswith("README.md") for n in names)
+        assert any("Semester Gantt.md" in n for n in names)
+        assert any("Study Timetable/" in n for n in names)
+        assert any("Guide/COMPX202 Gantt.md" in n for n in names)
         assert any("/tasks/" in n for n in names)
-        index = zf.read([n for n in names if n.endswith("index.md")][0]).decode()
-        assert "[[tasks/compx202-assignment-one]]" in index
+        readme = zf.read([n for n in names if n.endswith("README.md")][0]).decode()
+        assert "[[Semester Gantt]]" in readme
+        assert "[[Study Plan]]" in readme
+        gantt = zf.read([n for n in names if "Semester Gantt.md" in n][0]).decode()
+        assert "```mermaid" in gantt
+        assert "gantt" in gantt
+        assert "dateFormat YYYY-MM-DD" in gantt
+        assert "section COMPX202" in gantt
+        assert "2026-08-14" in gantt
+
+
+def test_build_mermaid_gantt(tmp_path: Path):
+    outline = paper_outlines.parse_outline_html(
+        (FIX / "paper_outlines" / "compx202-26b-ham.html").read_text(encoding="utf-8"),
+        paper_code="COMPX202-26B (HAM)",
+    )
+    csv = FIX / "schedule_zip" / (
+        "2026 Class Schedule - Tri B 3804904e8e20808b85fee41fcedad6c4.csv"
+    )
+    sched = schedule_parser.parse_notion_csv(csv.read_text(encoding="utf-8-sig"))
+    tasks = task_schedule.merge_tasks(
+        outline_tasks=task_schedule.outline_to_tasks(outline),
+        schedule_tasks=sched,
+        paper_codes=["COMPX202"],
+    )
+    gantt = task_schedule.build_mermaid_gantt(tasks, outlines=[outline], title="Tri B 2026")
+    assert "gantt" in gantt
+    assert "dateFormat YYYY-MM-DD" in gantt
+    assert "axisFormat %b %d" in gantt
+    assert "section COMPX202" in gantt
+    assert "2026-08-14" in gantt
+    assert "crit" in gantt  # exam from outline key dates or written test
+
+
+def test_parse_moodle_calendar_ics():
+    raw = (FIX / "moodle_calendar.ics").read_text(encoding="utf-8")
+    events = moodle_calendar.parse_ics(raw)
+    assert len(events) == 3
+    assert events[0]["summary"].startswith("COMPX202")
+    assert events[0]["start"].isoformat() == "2026-07-14"
+    rows = moodle_calendar.events_to_calendar_rows(events, ["COMPX202", "COMPX225"])
+    papers = {r["paper_code"] for r in rows}
+    assert "COMPX202" in papers
+    assert "COMPX225" in papers
+    assert any(r["event_type"] == "exam" for r in rows)
+
+
+def test_mask_calendar_url():
+    url = "https://elearn.waikato.ac.nz/calendar/export_execute.php?userid=1&authtoken=SECRET123&preset_what=all"
+    masked = moodle_calendar.mask_calendar_url(url)
+    assert "SECRET123" not in masked
+    assert "authtoken=" in masked
+
+
+def test_sync_all_endpoint(tmp_path: Path, monkeypatch):
+    import os
+    os.environ["PANOPTO_OUTPUT"] = str(tmp_path)
+    import importlib
+    import app.main as main
+    importlib.reload(main)
+    from fastapi.testclient import TestClient
+    client = TestClient(main.app)
+    cr = client.post("/api/courses", json={"name": "Tri B", "code": "TRI-B", "semester": "B", "year": 2026})
+    cid = cr.json()["id"]
+    client.post(f"/api/courses/{cid}/activate")
+
+    html = (FIX / "paper_outlines" / "compx202-26b-ham.html").read_text(encoding="utf-8")
+    client.post("/api/semester/papers/fetch", json={"paper_code": "COMPX202-26B (HAM)", "html": html})
+
+    part = FIX / "schedule_zip" / "ExportBlock-900a42fe-ad20-4c18-bc98-60b0fd695436-Part-1.zip"
+    sched_id = None
+    if part.exists():
+        with part.open("rb") as fh:
+            r = client.post("/api/semester/schedule/import", files={"file": ("sched.zip", fh, "application/zip")})
+        sched_id = r.json()["id"]
+
+    ics = (FIX / "moodle_calendar.ics").read_text(encoding="utf-8")
+    monkeypatch.setattr(moodle_calendar, "_default_get", lambda url: ics)
+
+    r = client.post("/api/semester/sync-all", json={
+        "paper_codes": ["COMPX202"],
+        "class_schedule_id": sched_id,
+        "calendar_url": "https://elearn.waikato.ac.nz/calendar/export_execute.php?userid=1&authtoken=test",
+    })
+    assert r.status_code == 200
+    body = r.json()
+    assert body["plan_id"]
+    assert body["task_count"] >= 1
+    steps = {s["step"]: s["status"] for s in body["steps"]}
+    assert steps.get("outlines") == "ok"
+    assert steps.get("exports") == "ok"
+    assert body["artifacts"]["ics"]
+    assert Path(body["artifacts"]["ics"]).exists()
+
+
+def test_calendar_url_secret_endpoint(tmp_path: Path):
+    import os
+    os.environ["PANOPTO_OUTPUT"] = str(tmp_path)
+    import importlib
+    import app.main as main
+    importlib.reload(main)
+    from fastapi.testclient import TestClient
+    client = TestClient(main.app)
+
+    r = client.put("/api/semester/moodle/calendar-url", json={
+        "url": "https://elearn.waikato.ac.nz/calendar/export_execute.php?userid=1&authtoken=abc123",
+    })
+    assert r.status_code == 200
+    assert r.json()["stored"] is True
+    assert "abc123" not in r.json()["masked_url"]
+
+    r = client.get("/api/semester/moodle/calendar-url")
+    assert r.json()["configured"] is True
+    assert "abc123" not in r.json()["masked_url"]
 
 
 def test_export_calendar_ics(tmp_path: Path):

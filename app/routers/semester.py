@@ -5,15 +5,15 @@ import json
 from pathlib import Path
 from typing import Any, Dict, Optional
 
-from fastapi import APIRouter, File, HTTPException, UploadFile
+from fastapi import APIRouter, File, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse, Response
 
 from .. import context, paper_outlines, schedule_parser, settings_store, task_schedule
-from .. import moodle_content
+from .. import moodle_content, moodle_calendar, secrets as secret_store
 from ..context import _course_or_active
 from ..paper_outlines import PaperOutlineError
-from ..schemas import (MoodleAnnouncementsReq, PaperOutlineFetchReq, PaperSearchReq,
-                       TaskScheduleBuildReq)
+from ..schemas import (MoodleAnnouncementsReq, MoodleCalendarUrlReq, PaperOutlineFetchReq,
+                       PaperSearchReq, SemesterSyncAllReq, TaskScheduleBuildReq)
 
 router = APIRouter()
 
@@ -169,11 +169,21 @@ def api_plan_export_obsidian(plan_id: int) -> FileResponse:
     row = context.db.get_task_schedule(plan_id)
     if not row:
         raise HTTPException(status_code=404, detail="Plan not found")
-    tasks = json.loads(row["schedule_json"]).get("tasks", [])
+    payload = json.loads(row["schedule_json"])
+    tasks = payload.get("tasks", [])
+    outlines = _plan_outlines(payload)
+    ann_rows = [
+        {"title": r["title"], "body": r["body"], "author": r["author"],
+         "posted_at": r["posted_at"]}
+        for r in context.db.list_moodle_announcements(row["course_id"])
+    ]
     out_dir = context.OUTPUT_DIR / "_semester"
     out_dir.mkdir(parents=True, exist_ok=True)
     dest = out_dir / f"obsidian-plan-{plan_id}.zip"
-    task_schedule.export_obsidian_zip(tasks, dest, title=row["name"])
+    task_schedule.export_obsidian_zip(
+        tasks, dest, title=row["name"], outlines=outlines,
+        announcements=ann_rows or None,
+    )
     return FileResponse(dest, filename=dest.name, media_type="application/zip")
 
 
@@ -246,3 +256,69 @@ def api_moodle_announcements_list(course: Optional[int] = None) -> Dict[str, Any
             for r in rows
         ]
     }
+
+
+@router.get("/api/semester/moodle/calendar-url")
+def api_moodle_calendar_url_get() -> Dict[str, Any]:
+    url = secret_store.get_secret(moodle_calendar.MOODLE_CALENDAR_SECRET, root=context.OUTPUT_DIR)
+    return {
+        "configured": bool(url),
+        "masked_url": moodle_calendar.mask_calendar_url(url or ""),
+        "label": secret_store.label_for("moodle_calendar_url"),
+    }
+
+
+@router.put("/api/semester/moodle/calendar-url")
+def api_moodle_calendar_url_set(req: MoodleCalendarUrlReq) -> Dict[str, Any]:
+    url = (req.url or "").strip()
+    if not url:
+        secret_store.delete_secret(moodle_calendar.MOODLE_CALENDAR_SECRET, root=context.OUTPUT_DIR)
+        return {"stored": False, "masked_url": ""}
+    if "authtoken" not in url.lower():
+        raise HTTPException(status_code=400, detail="Calendar URL must include an authtoken parameter")
+    secret_store.set_secret(moodle_calendar.MOODLE_CALENDAR_SECRET, url, root=context.OUTPUT_DIR)
+    return {"stored": True, "masked_url": moodle_calendar.mask_calendar_url(url)}
+
+
+@router.post("/api/semester/sync-all")
+async def api_semester_sync_all(request: Request) -> Dict[str, Any]:
+    content_type = request.headers.get("content-type", "")
+    schedule_bytes: Optional[bytes] = None
+    schedule_filename = ""
+    if "multipart/form-data" in content_type:
+        form = await request.form()
+        try:
+            req = SemesterSyncAllReq(**json.loads(form.get("payload") or "{}"))
+        except Exception as e:
+            raise HTTPException(status_code=400, detail=f"Invalid sync payload: {e}")
+        upload = form.get("file")
+        if upload and hasattr(upload, "read"):
+            schedule_bytes = await upload.read()
+            schedule_filename = getattr(upload, "filename", "") or ""
+    else:
+        try:
+            req = SemesterSyncAllReq(**await request.json())
+        except Exception as e:
+            raise HTTPException(status_code=400, detail=f"Invalid sync payload: {e}")
+    if not req.paper_codes:
+        raise HTTPException(status_code=400, detail="paper_codes is required")
+    cid = _course_or_active(req.course_id)
+    calendar_url = (req.calendar_url or "").strip()
+    if not calendar_url:
+        calendar_url = secret_store.get_secret(
+            moodle_calendar.MOODLE_CALENDAR_SECRET, root=context.OUTPUT_DIR,
+        )
+    try:
+        return task_schedule.sync_semester_all(
+            context.db, cid,
+            paper_codes=req.paper_codes,
+            class_schedule_id=req.class_schedule_id,
+            schedule_bytes=schedule_bytes,
+            schedule_filename=schedule_filename,
+            calendar_url=calendar_url,
+            moodle_announcements_url=req.moodle_announcements_url,
+            moodle_cookies=req.moodle_cookies,
+            name=req.name,
+        )
+    except PaperOutlineError as e:
+        raise HTTPException(status_code=400, detail=str(e))
