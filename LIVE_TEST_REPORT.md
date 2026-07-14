@@ -106,3 +106,5 @@ Job queue listed empty; no live Panopto transcription run (smoke only).
 
 1. **Nested Notion export zip** — outer archive containing only `*-Part-1.zip` now unwraps automatically (`app/schedule_parser.py`).
 2. **Plan merge with full paper codes** — `COMPX202-26B` now matches schedule subject `COMPX202` (`app/task_schedule.py`).
+
+- Release 3.6.0: added suites and dual Moodle import support.
