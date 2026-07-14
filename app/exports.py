@@ -34,12 +34,13 @@ PRESET_TARGETS: Dict[str, List[str]] = {
     "notion": ["notion_csv"],
     "anki": ["flashcards"],
     "archive": ["archive"],
+    "suites": ["obsidian_suite", "notion_suite", "onenote_suite"],
 }
 
 # Single targets are also addressable directly.
 ALL_TARGETS = ["notebooklm", "all_sources", "flashcards", "subtitles",
-               "notion_csv", "archive"]
-
+               "notion_csv", "archive",
+               "obsidian_suite", "notion_suite", "onenote_suite"]
 
 def _selection_for_scope(output_dir: Path, scope: str, target: str = "") -> Optional[List[str]]:
     """Lecture stems (``folder/stem``) feeding the export for a scope.
@@ -105,8 +106,9 @@ def _estimate(target: str, n_lectures: int, output_dir: Path) -> int:
         return n_lectures  # ~one deck section per lecture
     if target in ("all_sources", "notion_csv", "archive"):
         return 1
+    if target in ("obsidian_suite", "notion_suite", "onenote_suite"):
+        return 1
     return 0
-
 
 def export(output_dir: Path, *, preset: str = "", target: str = "",
           scope: str = "course", scope_target: str = "", course: str = "",
@@ -134,8 +136,14 @@ def export(output_dir: Path, *, preset: str = "", target: str = "",
             results[t] = study.write_study_database(output_dir, course=course)
         elif t == "archive":
             results[t] = course_archive(output_dir, db=db, course_id=course_id, course=course)
-
-    # record in the exports table (best effort)
+        elif t in ("obsidian_suite", "notion_suite", "onenote_suite"):
+            from . import suites
+            fmt = t.replace("_suite", "")
+            dest = output_dir / "_suites" / fmt
+            results[t] = suites.build_suite_tree(
+                dest, format=fmt, title=course or "Semester plan",
+                library_dir=output_dir,
+            )
     if db is not None and course_id is not None:
         for t, r in results.items():
             path = r.get("dest") or r.get("combined") or r.get("path") or ""

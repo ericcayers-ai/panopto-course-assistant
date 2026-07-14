@@ -341,3 +341,37 @@ class SemesterSyncAllReq(BaseModel):
     moodle_announcements_url: str = ""
     moodle_cookies: str = ""
     calendar_url: str = ""
+
+class SuiteBuildReq(BaseModel):
+    format: str = "obsidian"          # obsidian | notion | onenote
+    output: str = "folder"            # folder | zip
+    plan_id: Optional[int] = None
+    title: str = ""
+    dest_dir: Optional[str] = None    # write folder here (defaults to OUTPUT/_suites)
+
+class SuiteSyncReq(BaseModel):
+    formats: Optional[List[str]] = None
+    plan_id: Optional[int] = None
+    paper_codes: Optional[List[str]] = None
+    course_id: Optional[int] = None
+    name: str = ""
+    push_live: bool = True
+    moodle_announcements_url: str = ""
+    moodle_cookies: str = ""
+    calendar_url: str = ""
+    class_schedule_id: Optional[int] = None
+    discover_panopto: bool = True
+    panopto_url: str = ""
+    use_browser: bool = False
+
+class SuiteSettingsReq(BaseModel):
+    destinations: Optional[Dict[str, str]] = None
+    enabled: Optional[List[str]] = None
+    auto_sync: Optional[bool] = None
+
+class PanoptoDiscoverReq(BaseModel):
+    moodle_html: str = ""
+    moodle_url: str = ""
+    panopto_url: str = ""
+    cookies: str = ""
+    use_playwright: bool = False

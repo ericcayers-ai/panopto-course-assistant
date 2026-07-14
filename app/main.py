@@ -39,7 +39,7 @@ from . import context
 from .errors import install_error_handler
 from .routers import (analytics, courses, exports, ingest, jobs, library, llm,
                       moodle, ollama, pages, planner, security, semester, study,
-                      sync, system, tts)
+                      suites, sync, system, tts)
 
 # Re-exported so `main.moodle_api` keeps resolving: the endpoint tests monkeypatch
 # its transport on the module object, which routers/moodle.py imports too.
@@ -61,7 +61,7 @@ app = FastAPI(title="Course Assistant", version=APP_VERSION,
 install_error_handler(app)
 
 for _router in (system, tts, ollama, courses, llm, sync, planner, semester, study,
-                security, analytics, library, exports, jobs, ingest, moodle,
+                security, analytics, library, exports, suites, jobs, ingest, moodle,
                 pages):
     app.include_router(_router.router)
 

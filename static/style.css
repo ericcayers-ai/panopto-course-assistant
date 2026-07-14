@@ -912,6 +912,22 @@ details.sub > summary { cursor: pointer; color: var(--brand); font-size: var(--t
 }
 .announcement-item h4 { margin: 0 0 var(--space-1); font-size: var(--text-md); }
 .announcement-item .meta { font-size: var(--text-xs); color: var(--muted); margin-bottom: var(--space-2); }
+
+.mq-capability-matrix { margin-top: var(--space-3); overflow-x: auto; }
+.mq-cap-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--text-sm);
+}
+.mq-cap-table th, .mq-cap-table td {
+  text-align: left;
+  padding: var(--space-2);
+  border-bottom: 1px solid var(--border, #ddd);
+  vertical-align: top;
+}
+.mq-cap-table th { color: var(--muted); font-weight: 600; }
+.suite-dest-grid { margin-top: var(--space-3); gap: var(--space-3); }
+
 @media (max-width: 640px) {
   .semester-layout { grid-template-columns: 1fr; }
   .semester-rail { display: none; }

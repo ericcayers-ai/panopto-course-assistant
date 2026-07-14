@@ -33,7 +33,7 @@ from .jobs import manager
 from .schemas import AnkiSyncReq, NotionSyncReq
 
 BASE_DIR = Path(__file__).resolve().parent.parent
-APP_VERSION = "3.5.0"
+APP_VERSION = "3.6.0"
 
 # Rebound by init(); routers must reference these as ``context.<name>``.
 STATIC_DIR: Path = BASE_DIR / "static"

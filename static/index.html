@@ -583,8 +583,55 @@
             <svg class="ico ico-lg" aria-hidden="true"><use href="#i-export"/></svg>
             <h2 id="export-h">Export</h2>
           </div>
-          <p class="panel-intro">Turn the library into study material. Choose a ready-made bundle or an
-            individual format; exports stay in the library unless a destination chooser opens.</p>
+          <p class="panel-intro">Turn the library into study material. Build study suites into Obsidian, Notion,
+            or OneNote, sync destinations in one click, or create AI packs and flashcards.</p>
+
+          <div class="card feature-card" id="suite-exports-card">
+            <h3>Study suites</h3>
+            <p class="hint">One vault tree for Obsidian, Notion, or OneNote — including calendar, gantt, papers,
+              tasks, announcements, and library material. Set destination folders once, then Sync.</p>
+            <div class="export-bundle-grid" role="group" aria-label="Suite format">
+              <button type="button" class="export-bundle active" data-suite-format="obsidian"
+                      aria-pressed="true"><strong>Obsidian</strong><span>Markdown + wikilinks</span></button>
+              <button type="button" class="export-bundle" data-suite-format="notion"
+                      aria-pressed="false"><strong>Notion</strong><span>Tree + import CSVs</span></button>
+              <button type="button" class="export-bundle" data-suite-format="onenote"
+                      aria-pressed="false"><strong>OneNote</strong><span>HTML section pack</span></button>
+            </div>
+            <div class="grid suite-dest-grid">
+              <label for="suite-dest-obsidian">Obsidian folder
+                <div class="row">
+                  <input id="suite-dest-obsidian" type="text" placeholder="C:\Users\…\ObsidianVault" />
+                  <button type="button" class="ghost suite-pick-dest" data-suite="obsidian">Browse…</button>
+                </div>
+              </label>
+              <label for="suite-dest-notion">Notion folder
+                <div class="row">
+                  <input id="suite-dest-notion" type="text" placeholder="Optional local mirror" />
+                  <button type="button" class="ghost suite-pick-dest" data-suite="notion">Browse…</button>
+                </div>
+              </label>
+              <label for="suite-dest-onenote">OneNote folder
+                <div class="row">
+                  <input id="suite-dest-onenote" type="text" placeholder="Optional HTML pack folder" />
+                  <button type="button" class="ghost suite-pick-dest" data-suite="onenote">Browse…</button>
+                </div>
+              </label>
+            </div>
+            <div class="row" style="margin-top:10px">
+              <label class="toggle"><input type="checkbox" id="suite-enable-obsidian" checked /> Obsidian</label>
+              <label class="toggle"><input type="checkbox" id="suite-enable-notion" /> Notion</label>
+              <label class="toggle"><input type="checkbox" id="suite-enable-onenote" /> OneNote</label>
+              <label class="toggle"><input type="checkbox" id="suite-auto-sync" /> Auto-sync after semester refresh</label>
+            </div>
+            <div class="row">
+              <button id="suite-preview" type="button" class="ghost">Preview</button>
+              <button id="suite-build" type="button" class="ghost">Build</button>
+              <button id="suite-sync" type="button" class="primary">Sync suites</button>
+              <a class="tag ghost" href="#semester" id="suite-open-semester">Semester status</a>
+            </div>
+            <div id="suite-results" class="results" role="status" aria-live="polite"></div>
+          </div>
 
           <div class="card feature-card" id="export-bundles-card">
             <h3>Quick export bundles</h3>
@@ -606,52 +653,38 @@
           </div>
 
           <div class="card" id="calendar-exports-card">
-            <h3>Calendar, Obsidian, and planner exports</h3>
-            <p class="hint">The assessment calendar is always available. Semester exports appear automatically
-              after a semester plan has been generated.</p>
+            <h3>Assessment calendar</h3>
+            <p class="hint">Download the course assessment calendar. Full semester vaults live under
+              <strong>Study suites</strong> above — use Sync suites after generating a plan.</p>
             <div class="row export-links">
               <a class="tag tag-calendar" href="/api/calendar.ics" download="course-assessments.ics">Assessment calendar (.ics)</a>
               <button id="export-open-semester" type="button" class="tag ghost">Set up semester plan</button>
             </div>
-            <div class="row export-links" id="export-semester-links" hidden>
-              <a id="export-sem-calendar" class="tag tag-calendar" href="#" download>Semester calendar (.ics)</a>
-              <a id="export-google-calendar" class="tag tag-calendar" href="#" download>Google Calendar CSV</a>
-              <a id="export-obsidian" class="tag" href="#" download>Obsidian vault (.zip)</a>
-              <a id="export-sem-notion" class="tag" href="#" download>Semester tasks for Notion</a>
-            </div>
             <div id="calendar-export-status" class="results compact" role="status" aria-live="polite"></div>
           </div>
 
-          <div class="card feature-card">
-            <h3>Export everything for AI <span class="pill">all sources</span></h3>
-            <p class="hint">Consolidates every imported source — lecture transcripts, converted documents, and
-              Notion pages — into clean Markdown, plus one combined <code>everything_pack.md</code> for
-              NotebookLM or any other AI tool.</p>
-            <div class="row">
-              <label class="toggle"><input type="checkbox" id="all-combined" checked /> Combined <code>everything_pack.md</code></label>
-              <button id="export-all">Export everything…</button>
+          <details class="card feature-card">
+            <summary><strong>AI packs</strong> — everything for AI + optional NotebookLM</summary>
+            <div style="margin-top:12px">
+              <p class="hint">Consolidates lecture transcripts, converted documents, and Notion pages into clean
+                Markdown for NotebookLM or any other AI tool.</p>
+              <div class="row">
+                <label class="toggle"><input type="checkbox" id="all-combined" checked /> Combined <code>everything_pack.md</code></label>
+                <button id="export-all">Export everything…</button>
+                <label class="toggle"><input type="checkbox" id="nlm-combined" /> NotebookLM combined pack</label>
+                <button id="nlm-export" class="ghost">NotebookLM…</button>
+              </div>
+              <div id="export-all-results" class="results" role="status" aria-live="polite"></div>
+              <div id="nlm-results" class="results" role="status" aria-live="polite"></div>
             </div>
-            <div id="export-all-results" class="results" role="status" aria-live="polite"></div>
-          </div>
+          </details>
 
           <details class="card" id="export-formats-details">
-            <summary><strong>Export individual formats</strong></summary>
+            <summary><strong>AI model tools & individual formats</strong></summary>
             <div class="export-grid" style="margin-top:12px">
               <div class="card">
-                <h3>NotebookLM sources</h3>
-                <p class="hint">Clean, de-timestamped Markdown, one file per lecture.</p>
-                <div class="row">
-                  <label class="toggle"><input type="checkbox" id="nlm-combined" /> Combined <code>course_pack.md</code></label>
-                  <button id="nlm-export">Export…</button>
-                </div>
-                <div id="nlm-results" class="results" role="status" aria-live="polite"></div>
-              </div>
-
-              <div class="card">
                 <h3>Notion study database (CSV)</h3>
-                <p class="hint">One row per lecture: Name, Week, Date, Topic, Tags, Status, Summary. In Notion,
-                  choose <em>Import → CSV</em>, then set Tags to <em>Multi-select</em>. With an AI model
-                  configured, the model writes the Summary column. Runs as a background job.</p>
+                <p class="hint">One row per lecture for Notion Import → CSV. Prefer the Notion suite above for a full vault.</p>
                 <div class="row">
                   <button id="studycsv-go">Export CSV…</button>
                 </div>
@@ -845,8 +878,19 @@
             <svg class="ico ico-lg" aria-hidden="true"><use href="#i-book"/></svg>
             <h2 id="mq-h">Import a Moodle course</h2>
           </div>
-          <p class="panel-intro">Connect to your Moodle site and pick a course. It is read through the official
-            Moodle mobile web-service API — exact titles, file types, and lecture feeds, with no page scraping.</p>
+          <p class="panel-intro">Connect to your Moodle site and pick a course. Choose <strong>API</strong>
+            (recommended) for exact web-service data, or <strong>Browser scrape</strong> when you need forums,
+            announcements, and Panopto pages the API cannot reach.</p>
+
+          <div class="card mq-mode-card">
+            <div class="row" role="group" aria-label="Moodle import mode">
+              <button type="button" class="export-bundle active" id="mq-mode-api" data-mq-mode="api"
+                      aria-pressed="true"><strong>API</strong><span>Recommended</span></button>
+              <button type="button" class="export-bundle" id="mq-mode-browser" data-mq-mode="browser"
+                      aria-pressed="false"><strong>Browser scrape</strong><span>Complete coverage</span></button>
+            </div>
+            <div id="mq-capability-matrix" class="mq-capability-matrix" role="region" aria-label="Capability matrix"></div>
+          </div>
 
           <!-- STEP 1 - CONNECT -->
           <div class="card mq-step">
@@ -948,19 +992,19 @@
 
           <!-- STEP 3 - EXPORT -->
           <div class="card mq-step hidden" id="mq-step-export">
-            <div class="mq-step-head"><span class="mq-num" aria-hidden="true">3</span><h3>Export</h3></div>
-            <p class="hint">Choose a destination for this course. To include more material first, add documents or
-              a Notion export from <em>Import materials</em>; the combined pack below bundles every source.</p>
+            <div class="mq-step-head"><span class="mq-num" aria-hidden="true">3</span><h3>Build / Sync suites</h3></div>
+            <p class="hint">Write Obsidian, Notion, or OneNote study suites (or Sync destinations) from Export.
+              Paper codes detected from this Moodle course are saved for semester sync automatically.</p>
             <div class="export-choice">
-              <button id="mq-export-nblm" class="tile">
-                <svg class="ico tile-ico" aria-hidden="true"><use href="#i-notebook"/></svg>
-                <span class="tile-title">For NotebookLM</span>
-                <span class="tile-desc">Clean per-lecture Markdown sources.</span>
+              <button id="mq-export-suites" class="tile">
+                <svg class="ico tile-ico" aria-hidden="true"><use href="#i-export"/></svg>
+                <span class="tile-title">Open Study suites</span>
+                <span class="tile-desc">Build or Sync Obsidian / Notion / OneNote vaults.</span>
               </button>
               <button id="mq-export-ai" class="tile">
                 <svg class="ico tile-ico" aria-hidden="true"><use href="#i-model"/></svg>
-                <span class="tile-title">For a general AI assistant</span>
-                <span class="tile-desc">A single combined pack for ChatGPT, Claude, and others.</span>
+                <span class="tile-title">AI pack (optional)</span>
+                <span class="tile-desc">Combined Markdown for ChatGPT, Claude, NotebookLM.</span>
               </button>
             </div>
             <div id="mq-export-result" class="results"></div>

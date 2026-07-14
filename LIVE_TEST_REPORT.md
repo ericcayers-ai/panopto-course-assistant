@@ -1,4 +1,16 @@
-﻿# Live test report — v3.5.0 (2026-07-14)
+﻿# Live test report — v3.6.0 (2026-07-14)
+
+v3.6.0 adds **study suites** (Obsidian / Notion / OneNote), **suite Sync**, dual Moodle import (API vs Browser + capability matrix), Panopto RSS discovery, Playwright fallback (`requirements-browser.txt`), and a release ZIP with root `install.bat` + `CourseAssistant/`.
+
+## Automated suite (v3.6.0)
+
+| Run | Result |
+|-----|--------|
+| `.venv/Scripts/python.exe -m pytest -q` | **528 passed**, 1 skipped |
+
+---
+
+# Live test report — v3.5.0 (2026-07-14)
 
 Server: `.venv/Scripts/python.exe -m uvicorn app.main:app --port 8123` with isolated `PANOPTO_OUTPUT` (`%TEMP%\panopto_live_release_v35`).
 

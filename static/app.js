@@ -1447,14 +1447,11 @@ $("bundle-run")?.addEventListener("click", async () => {
 });
 
 function updateExportPlanLinks(planId) {
-  const row = $("export-semester-links");
-  if (!row) return;
-  row.hidden = !planId;
-  if (!planId) return;
-  $("export-sem-calendar").href = `/api/semester/plans/${planId}/export/calendar.ics`;
-  $("export-google-calendar").href = `/api/semester/plans/${planId}/export/google-calendar.csv`;
-  $("export-obsidian").href = `/api/semester/plans/${planId}/export/obsidian.zip`;
-  $("export-sem-notion").href = `/api/semester/plans/${planId}/export/notion.csv`;
+  // Semester download rows were demoted; suites are the primary path.
+  const status = $("calendar-export-status");
+  if (status && planId) {
+    status.dataset.planId = String(planId);
+  }
 }
 
 async function loadExportHub() {
@@ -1467,15 +1464,134 @@ async function loadExportHub() {
     const latest = plans[0];
     updateExportPlanLinks(latest?.id);
     status.textContent = latest
-      ? `Using latest semester plan: ${latest.name} (${latest.task_count} tasks).`
+      ? `Latest plan: ${latest.name} (${latest.task_count} tasks). Use Study suites → Sync above.`
       : "No semester plan yet. The assessment calendar above is still available.";
   } catch (e) {
     updateExportPlanLinks(null);
-    status.textContent = "Semester exports are temporarily unavailable.";
+    status.textContent = "Semester plan status is temporarily unavailable.";
   }
+  loadSuiteSettings();
 }
 
 $("export-open-semester")?.addEventListener("click", () => showTab("semester"));
+$("suite-open-semester")?.addEventListener("click", (e) => { e.preventDefault(); showTab("semester"); });
+
+// ---- Study suites ---------------------------------------------------------
+let selectedSuiteFormat = "obsidian";
+
+document.querySelectorAll("[data-suite-format]").forEach((btn) => {
+  btn.addEventListener("click", () => {
+    document.querySelectorAll("[data-suite-format]").forEach((b) => {
+      b.classList.toggle("active", b === btn);
+      b.setAttribute("aria-pressed", b === btn ? "true" : "false");
+    });
+    selectedSuiteFormat = btn.dataset.suiteFormat;
+  });
+});
+
+async function loadSuiteSettings() {
+  try {
+    const data = await api("/api/suites/settings");
+    const dest = data.destinations || {};
+    if ($("suite-dest-obsidian")) $("suite-dest-obsidian").value = dest.obsidian || "";
+    if ($("suite-dest-notion")) $("suite-dest-notion").value = dest.notion || "";
+    if ($("suite-dest-onenote")) $("suite-dest-onenote").value = dest.onenote || "";
+    const enabled = new Set(data.enabled || ["obsidian"]);
+    if ($("suite-enable-obsidian")) $("suite-enable-obsidian").checked = enabled.has("obsidian");
+    if ($("suite-enable-notion")) $("suite-enable-notion").checked = enabled.has("notion");
+    if ($("suite-enable-onenote")) $("suite-enable-onenote").checked = enabled.has("onenote");
+    if ($("suite-auto-sync")) $("suite-auto-sync").checked = !!data.auto_sync;
+  } catch (_) { /* ignore */ }
+}
+
+async function saveSuiteSettings() {
+  const destinations = {
+    obsidian: ($("suite-dest-obsidian")?.value || "").trim(),
+    notion: ($("suite-dest-notion")?.value || "").trim(),
+    onenote: ($("suite-dest-onenote")?.value || "").trim(),
+  };
+  const enabled = [];
+  if ($("suite-enable-obsidian")?.checked) enabled.push("obsidian");
+  if ($("suite-enable-notion")?.checked) enabled.push("notion");
+  if ($("suite-enable-onenote")?.checked) enabled.push("onenote");
+  await api("/api/suites/settings", {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      destinations,
+      enabled,
+      auto_sync: !!$("suite-auto-sync")?.checked,
+    }),
+  });
+}
+
+document.querySelectorAll(".suite-pick-dest").forEach((btn) => {
+  btn.addEventListener("click", async () => {
+    const key = btn.dataset.suite;
+    const dest = await pickFolder(`Choose destination folder for ${key}`);
+    if (dest === null) return;
+    const input = $(`suite-dest-${key}`);
+    if (input) input.value = dest;
+    await saveSuiteSettings();
+    toast(`${key} destination saved.`, "ok");
+  });
+});
+
+["suite-enable-obsidian", "suite-enable-notion", "suite-enable-onenote", "suite-auto-sync"]
+  .forEach((id) => $(id)?.addEventListener("change", () => { saveSuiteSettings().catch(() => {}); }));
+
+$("suite-preview")?.addEventListener("click", async () => {
+  const out = $("suite-results");
+  out.textContent = "Previewing…";
+  try {
+    await saveSuiteSettings();
+    const data = await postJSON("/api/suites/preview", { format: selectedSuiteFormat });
+    clear(out);
+    out.appendChild(el("p", { class: "ok-text",
+      text: `${data.format} suite ≈ ${data.estimated_files} files · ${data.subjects.length} paper(s) · ${data.task_count} tasks` }));
+  } catch (e) { out.textContent = errorText(e); toastError(e); }
+});
+
+$("suite-build")?.addEventListener("click", async () => {
+  const out = $("suite-results");
+  const btn = $("suite-build");
+  btn.disabled = true; out.textContent = "Building suite…";
+  try {
+    await saveSuiteSettings();
+    const data = await postJSON("/api/suites/build", {
+      format: selectedSuiteFormat, output: "folder",
+    });
+    clear(out);
+    out.appendChild(el("p", { class: "ok-text",
+      text: `Built ${data.format} suite (${data.file_count} files) at ${data.root}` }));
+    if (data.destination) {
+      out.appendChild(el("p", { class: "hint", text: `Also mirrored to ${data.destination}` }));
+    }
+    toast("Suite built.", "ok");
+  } catch (e) { out.textContent = errorText(e); toastError(e); }
+  finally { btn.disabled = false; }
+});
+
+$("suite-sync")?.addEventListener("click", async () => {
+  const out = $("suite-results");
+  const btn = $("suite-sync");
+  btn.disabled = true; out.textContent = "Syncing suites…";
+  try {
+    await saveSuiteSettings();
+    const paperCodes = ($("sem-papers")?.value || "")
+      .split(/[,\s]+/).map((s) => s.trim()).filter(Boolean);
+    const job = await postJSON("/api/suites/sync", {
+      push_live: true,
+      paper_codes: paperCodes.length ? paperCodes : undefined,
+      discover_panopto: true,
+    });
+    clear(out);
+    out.appendChild(el("p", { class: "ok-text", text: `Suite sync job #${job.id} started.` }));
+    toast("Suite sync started — see Jobs.", "ok");
+    showTab("jobs"); startJobsPolling();
+  } catch (e) { out.textContent = errorText(e); toastError(e); }
+  finally { btn.disabled = false; }
+});
 
 // Export everything (transcripts + documents + Notion) for NotebookLM / any AI
 $("export-all").addEventListener("click", async () => {
@@ -2339,6 +2455,7 @@ async function _moodleConnect(url, token) {
     }
     _mqConnected = true;
     _mqBaseUrl = d.base_url || url;
+    applyDetectedPaperCodes(d.paper_codes || []);
     toast("Connected to Moodle.", "ok");
   } catch (e) {
     const msg = e.message || "";
@@ -2397,6 +2514,22 @@ function renderMqImport(data, { grabLectures = true, grabTranscripts = true, gra
   if (feeds.length && $("mq-panopto-url") && !$("mq-panopto-url").value.trim())
     $("mq-panopto-url").value = feeds[0];
   $("mq-step-export").classList.remove("hidden");
+  applyDetectedPaperCodes(data.paper_codes || []);
+  // Browser mode: try auto Panopto discovery beyond Moodle-linked feeds
+  if (mqImportMode === "browser" && !feeds.length) {
+    postJSON("/api/panopto/discover", {
+      moodle_url: _mqBaseUrl || ($("mq-url")?.value || ""),
+      cookies: "",
+      use_playwright: true,
+    }).then((d) => {
+      if ((d.feeds || []).length && $("mq-panopto-url")) {
+        $("mq-panopto-url").value = d.feeds[0];
+        State.mqFeeds = d.feeds;
+        renderMqFeeds();
+        toast(`Discovered ${d.feeds.length} Panopto feed(s).`, "ok");
+      }
+    }).catch(() => {});
+  }
   toast("Course imported.", "ok");
 }
 
@@ -2527,7 +2660,10 @@ async function autoTranscribeMq() {
 }
 $("mq-autotranscribe")?.addEventListener("click", autoTranscribeMq);
 
-$("mq-export-nblm")?.addEventListener("click", () => mqExport("notebooklm"));
+$("mq-export-suites")?.addEventListener("click", () => {
+  showTab("export");
+  $("suite-exports-card")?.scrollIntoView({ behavior: "smooth", block: "start" });
+});
 $("mq-export-ai")?.addEventListener("click", () => mqExport("all"));
 async function mqExport(kind) {
   const out = $("mq-export-result");
@@ -2543,6 +2679,65 @@ async function mqExport(kind) {
       `Exported for <strong>${kind === "notebooklm" ? "NotebookLM" : "a general AI assistant"}</strong> to <code>${exportDest}</code>.` }));
     toast("Export complete.", "ok");
   } catch (e) { out.appendChild(el("div", { class: "warn-box", text: "Export failed: " + e.message })); }
+}
+
+// ---- Moodle import mode + capability matrix ------------------------------
+let mqImportMode = "api";
+
+async function renderMqCapabilityMatrix(mode) {
+  const host = $("mq-capability-matrix");
+  if (!host) return;
+  try {
+    const data = await api(`/api/moodle/capabilities?mode=${encodeURIComponent(mode)}`);
+    clear(host);
+    const table = el("table", { class: "mq-cap-table" });
+    table.appendChild(el("thead", {}, [
+      el("tr", {}, [
+        el("th", { text: "Capability" }),
+        el("th", { text: "API" }),
+        el("th", { text: "Browser" }),
+      ]),
+    ]));
+    const tbody = el("tbody");
+    for (const row of (data.matrix || [])) {
+      tbody.appendChild(el("tr", {}, [
+        el("td", { text: row.capability }),
+        el("td", { text: String(row.api === true ? "Yes" : row.api) }),
+        el("td", { text: String(row.browser === true ? "Yes" : row.browser) }),
+      ]));
+    }
+    table.appendChild(tbody);
+    host.appendChild(table);
+    if (data.playwright_available === false && mode === "browser") {
+      host.appendChild(el("p", { class: "hint",
+        text: "Playwright is not installed yet. Run: pip install -r requirements-browser.txt" }));
+    }
+  } catch (e) {
+    host.textContent = "Could not load capability matrix.";
+  }
+}
+
+function setMqImportMode(mode) {
+  mqImportMode = mode === "browser" ? "browser" : "api";
+  document.querySelectorAll("[data-mq-mode]").forEach((btn) => {
+    const active = btn.dataset.mqMode === mqImportMode;
+    btn.classList.toggle("active", active);
+    btn.setAttribute("aria-pressed", active ? "true" : "false");
+  });
+  renderMqCapabilityMatrix(mqImportMode);
+}
+
+$("mq-mode-api")?.addEventListener("click", () => setMqImportMode("api"));
+$("mq-mode-browser")?.addEventListener("click", () => setMqImportMode("browser"));
+setMqImportMode("api");
+
+function applyDetectedPaperCodes(codes) {
+  if (!Array.isArray(codes) || !codes.length) return;
+  const input = $("sem-papers");
+  if (!input) return;
+  const existing = (input.value || "").split(/[,\s]+/).map((s) => s.trim()).filter(Boolean);
+  const merged = [...new Set([...existing, ...codes.map((c) => String(c).split("-")[0])])];
+  input.value = merged.join(", ");
 }
 
 // ---- remove course files (with confirmation) ------------------------------
