@@ -445,8 +445,8 @@
 
           <div class="card" id="practice-card">
             <h3>Practice quiz</h3>
-            <p class="hint">Multiple-choice questions built from your spaced-repetition cards. Grade a few
-              reviews to add cards; a quiz appears once there are enough.</p>
+            <p class="hint">Multiple-choice questions built from your spaced-repetition cards. Generate
+              flashcards under Export to seed the deck, or grade reviews to add more.</p>
             <div class="row">
               <label for="practice-count">Questions
                 <input type="number" id="practice-count" value="10" min="1" max="50" style="max-width:90px" />
@@ -657,7 +657,7 @@
               <button type="button" class="export-bundle active" data-export-preset="revision"
                       aria-pressed="true"><strong>Revision kit</strong><span>NotebookLM + Anki cards</span></button>
               <button type="button" class="export-bundle" data-export-preset="exam"
-                      aria-pressed="false"><strong>Exam kit</strong><span>Revision kit + SRT and VTT</span></button>
+                      aria-pressed="false"><strong>Exam kit</strong><span>Revision kit + SRT and VTT (not exam PDF)</span></button>
               <button type="button" class="export-bundle" data-export-preset="archive"
                       aria-pressed="false"><strong>Course archive</strong><span>Portable ZIP backup</span></button>
             </div>
@@ -801,17 +801,76 @@
 
           <div class="card" id="cheatsheet-section">
             <h3>Exam cheat sheet (PDF)</h3>
-            <p class="hint">Condenses the course into a dense cheat sheet laid out across a fixed number of A4
-              pages. The page limit is always respected; lower-value material is dropped to fit. Needs a
-              configured AI model.</p>
+            <p class="hint">Condenses the active course into a dense cheat sheet (numbered topic blocks,
+              two-column A4). Uses AI when configured; otherwise builds an extractive sheet from your
+              transcripts. Lower-value material is dropped to fit the page limit.</p>
             <div id="cheatsheet-llm-missing" class="banner warn hidden">
-              An AI model is required. Start Ollama above, or configure a provider.
+              No AI model configured — the sheet will use extractive summaries from your library.
             </div>
             <div class="grid">
               <label for="cheatsheet-pages">Maximum A4 pages <input type="number" id="cheatsheet-pages" value="2" min="1" max="10" /></label>
             </div>
             <div class="row"><button id="cheatsheet-go">Create cheat sheet PDF…</button></div>
-            <div id="cheatsheet-results" class="results"></div>
+            <div id="cheatsheet-results" class="results" role="status" aria-live="polite"></div>
+          </div>
+
+          <div class="card" id="practice-exam-section">
+            <h3>Practice exam (PDF)</h3>
+            <p class="hint">Builds a parted question pack (MCQ, short, long) with an answer key at the end —
+              similar to a 100-question practice paper. Uses AI when available; falls back to extractive
+              questions from your library.</p>
+            <div class="grid">
+              <label for="pe-count">Questions <input type="number" id="pe-count" value="100" min="10" max="150" /></label>
+              <label for="pe-difficulty">Difficulty
+                <select id="pe-difficulty">
+                  <option value="mixed">Mixed</option>
+                  <option value="easy">Easy</option>
+                  <option value="medium" selected>Medium</option>
+                  <option value="hard">Hard</option>
+                </select>
+              </label>
+            </div>
+            <fieldset class="chk-row" aria-label="Question types">
+              <legend class="sr-only">Question types</legend>
+              <label class="chk"><input type="checkbox" id="pe-type-mcq" checked /> MCQ</label>
+              <label class="chk"><input type="checkbox" id="pe-type-short" checked /> Short</label>
+              <label class="chk"><input type="checkbox" id="pe-type-long" checked /> Long</label>
+              <label class="chk"><input type="checkbox" id="pe-type-cloze" /> Cloze</label>
+              <label class="chk"><input type="checkbox" id="pe-type-tf" /> True/false</label>
+            </fieldset>
+            <label for="pe-weights">Topic weights (optional)
+              <input type="text" id="pe-weights" placeholder="networking:75, systems:25" />
+            </label>
+            <details class="adv-settings">
+              <summary>Exam builder (advanced)</summary>
+              <div class="grid" style="margin-top:8px">
+                <label for="pe-scope">Scope
+                  <select id="pe-scope">
+                    <option value="course" selected>Whole course</option>
+                    <option value="week">Week</option>
+                    <option value="topic">Topic</option>
+                    <option value="lecture">Lecture</option>
+                  </select>
+                </label>
+                <label for="pe-target">Scope target
+                  <input type="text" id="pe-target" placeholder="week #, topic, or lecture path" />
+                </label>
+                <label for="pe-seed">Seed (reproducible)
+                  <input type="text" id="pe-seed" placeholder="optional" />
+                </label>
+                <label for="pe-time">Time (minutes)
+                  <input type="number" id="pe-time" min="0" placeholder="optional" />
+                </label>
+                <label for="pe-marks">Total marks
+                  <input type="number" id="pe-marks" min="0" placeholder="optional" />
+                </label>
+                <label class="chk"><input type="checkbox" id="pe-answer-key" checked /> Include answer key</label>
+                <label class="chk"><input type="checkbox" id="pe-kind-exam" /> Exam title (vs practice pack)</label>
+                <label class="chk"><input type="checkbox" id="pe-format-md" /> Also write Markdown</label>
+              </div>
+            </details>
+            <div class="row"><button id="practice-exam-go">Create practice exam PDF…</button></div>
+            <div id="practice-exam-results" class="results" role="status" aria-live="polite"></div>
           </div>
 
             </div>
@@ -891,7 +950,7 @@
           </div>
           <p class="panel-intro">Progress of transcription, export, and model jobs. Jobs survive a restart and
             can be cancelled or retried.</p>
-          <div id="jobs-list" class="results"></div>
+          <div id="jobs-list" class="results" role="status" aria-live="polite"></div>
         </section>
 
         <!-- MOODLE -->

@@ -6,7 +6,9 @@ all-sources AI pack, subtitle/format generation), :mod:`app.flashcards` (Anki)
 and :mod:`app.study` (Notion CSV). It adds three things the roadmap asks for:
 
 * **Presets** - ``revision | ai | exam | notion | anki | archive`` bundle a set of
-  targets so a student picks an intent, not a format.
+  targets so a student picks an intent, not a format. Note: the ``exam`` preset is
+  an *exam kit* (NotebookLM + Anki cards + SRT/VTT), not the practice-exam PDF —
+  use ``POST /api/export/practice-exam`` for that.
 * **Scope** - ``lecture | week | topic | course | all`` selects which lectures feed
   the export (computed from the §2 index).
 * **Preview** - list exactly what *would* be written, writing nothing, so the user
@@ -132,6 +134,13 @@ def export(output_dir: Path, *, preset: str = "", target: str = "",
             cards = flashcards.generate_from_library(output_dir, selection=selection,
                                                     course=course)
             results[t] = flashcards.write_deck(output_dir, cards, deck="export")
+            if db is not None and course_id is not None and cards:
+                try:
+                    from . import study_planner
+                    results[t]["review_seeded"] = study_planner.add_review_items(
+                        db, course_id, cards, ref="export:flashcards")
+                except Exception:
+                    results[t]["review_seeded"] = 0
         elif t == "notion_csv":
             results[t] = study.write_study_database(output_dir, course=course)
         elif t == "archive":

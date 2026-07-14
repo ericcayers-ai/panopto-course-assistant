@@ -523,7 +523,7 @@ async function loadStatus() {
       }
     }
 
-    // LLM availability - show/hide flashcard sections
+    // LLM availability - flashcards still require a model; cheat sheet / practice exam work extractively
     const llmReady = s.llm_ready === true;
     const fcMissing = $("fc-llm-missing");
     const fcCatMissing = $("fc-cat-llm-missing");
@@ -536,7 +536,7 @@ async function loadStatus() {
     if (csMissing) csMissing.classList.toggle("hidden", llmReady);
     if (fcBtn) fcBtn.disabled = !llmReady;
     if (fcCatBtn) fcCatBtn.disabled = !llmReady;
-    if (csBtn) csBtn.disabled = !llmReady;
+    if (csBtn) csBtn.disabled = false;
   } catch (e) {
     bar.textContent = "could not reach backend: " + e.message;
     bar.className = "status-bar warn";
@@ -1158,7 +1158,8 @@ async function startPractice() {
     const quiz = await api(`/api/practice-quiz?count=${count}`);
     if (!quiz.count) {
       clear(box);
-      box.appendChild(emptyState(quiz.reason || "Not enough review cards yet. Grade some reviews in Study first.", [
+      box.appendChild(emptyState(quiz.reason || "Not enough review cards yet. Generate flashcards under Export to seed the deck.", [
+        { label: "Generate flashcards", primary: true, run: () => { showTab("export"); $("export-more-tools")?.setAttribute("open", ""); } },
         { label: "Open Study", run: () => showTab("study") },
       ]));
       return;
@@ -1939,6 +1940,95 @@ $("cheatsheet-go")?.addEventListener("click", async () => {
   finally { btn.disabled = false; }
 });
 
+function parseTopicWeights(raw) {
+  const text = (raw || "").trim();
+  if (!text) return null;
+  const out = {};
+  text.split(/[,;]+/).forEach((part) => {
+    const m = part.trim().match(/^([^:]+):?\s*([\d.]+)\s*%?$/);
+    if (m) out[m[1].trim()] = parseFloat(m[2]);
+  });
+  return Object.keys(out).length ? out : null;
+}
+
+function selectedPracticeTypes() {
+  const types = [];
+  if ($("pe-type-mcq")?.checked) types.push("mcq");
+  if ($("pe-type-short")?.checked) types.push("short");
+  if ($("pe-type-long")?.checked) types.push("long");
+  if ($("pe-type-cloze")?.checked) types.push("cloze");
+  if ($("pe-type-tf")?.checked) types.push("truefalse");
+  return types.length ? types : ["mcq", "short", "long"];
+}
+
+function renderPdfJobHint(container, result) {
+  if (!result) return;
+  const path = result.path || result.pdf_path || result.md_path;
+  if (path) {
+    container.appendChild(el("p", { class: "hint", text: "Saved: " + path }));
+  }
+  if (result.truncated) {
+    container.appendChild(el("p", { class: "banner warn",
+      text: "Page budget full — lower-priority points were dropped." }));
+  }
+  if (result.note) {
+    container.appendChild(el("p", { class: "hint", text: result.note }));
+  }
+  if (result.rel) {
+    container.appendChild(el("button", {
+      class: "tag", text: "Open in library",
+      onclick: () => { viewTranscript(result.rel); showTab("library"); },
+    }));
+  }
+}
+
+$("practice-exam-go")?.addEventListener("click", async () => {
+  const out = $("practice-exam-results");
+  const btn = $("practice-exam-go");
+  const course = currentCourse();
+  const n = Math.max(10, Math.min(parseInt($("pe-count").value, 10) || 100, 150));
+  const kind = $("pe-kind-exam")?.checked ? "exam" : "practice";
+  const stem = (course || "course").replace(/[^\w.-]+/g, "_")
+    + (kind === "exam" ? "_exam" : "_practice") + `_${n}q.pdf`;
+  const save = await pickSaveFile(
+    kind === "exam" ? "Save the exam paper" : "Save the practice exam", stem, ".pdf");
+  if (save === null) return;
+  const formats = ["pdf"];
+  if ($("pe-format-md")?.checked) formats.push("md");
+  btn.disabled = true; out.textContent = "Queuing practice exam job…";
+  try {
+    const payload = {
+      course,
+      n,
+      types: selectedPracticeTypes(),
+      difficulty: $("pe-difficulty")?.value || "medium",
+      scope: $("pe-scope")?.value || "course",
+      target: $("pe-target")?.value.trim() || "",
+      weights: parseTopicWeights($("pe-weights")?.value),
+      seed: $("pe-seed")?.value.trim() || null,
+      include_answer_key: $("pe-answer-key")?.checked !== false,
+      time_minutes: parseInt($("pe-time")?.value, 10) || null,
+      total_marks: parseInt($("pe-marks")?.value, 10) || null,
+      kind,
+      formats,
+      save_path: save,
+    };
+    const data = await api("/api/export/practice-exam", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    clear(out);
+    if (data.id) {
+      out.appendChild(el("p", { class: "ok-text",
+        text: `${kind === "exam" ? "Exam" : "Practice exam"} job queued (${n} questions). See Jobs for progress.` }));
+      out.appendChild(el("button", { class: "tag", text: "Go to Jobs", onclick: () => showTab("jobs") }));
+      toast("Practice exam generation started.", "ok");
+      startJobsPolling();
+    }
+  } catch (e) { out.textContent = errorText(e); toastError(e); }
+  finally { btn.disabled = false; }
+});
+
 // ---- local Ollama management ----------------------------------------------
 
 function renderOllamaStatus(s) {
@@ -2161,6 +2251,11 @@ async function loadJobs() {
             || "the AI model was unavailable or its reply couldn't be parsed";
           card.appendChild(el("div", { class: "banner warn",
             text: "Built with offline heuristics - " + why }));
+        }
+        if (j.type === "cheatsheet" || j.type === "practice_exam") {
+          const resBox = el("div", { class: "results compact" });
+          renderPdfJobHint(resBox, j.result);
+          if (resBox.childNodes.length) card.appendChild(resBox);
         }
       }
       if (j.status === "error") {

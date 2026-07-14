@@ -107,14 +107,14 @@ def test_ollama_status_shape(client):
 
 
 # ---------------------------------------------------------------------------
-# Cheat sheet - requires an AI model; without one it returns a clear 503
+# Cheat sheet - works without LLM (extractive fallback); LLM preferred when configured
 # ---------------------------------------------------------------------------
 
-def test_cheatsheet_requires_llm(client):
+def test_cheatsheet_works_without_llm(client):
     c, _ = client
     r = c.post("/api/export/cheatsheet", json={"course": "X", "max_pages": 2})
-    assert r.status_code == 503
-    assert "AI model" in r.json()["detail"]
+    assert r.status_code == 200
+    assert r.json().get("id")
 
 
 def test_cheatsheet_render_respects_page_cap(tmp_path: Path):
@@ -151,7 +151,7 @@ def test_cheatsheet_condense_is_per_lecture(tmp_path: Path, monkeypatch):
     monkeypatch.setattr(llm, "complete", fake_complete)
     md = cheatsheet.condense(tmp_path, "X", 2, {"provider": "ollama", "model": "m"})
     assert calls["n"] >= 1
-    assert "## Week1 Networking" in md
+    assert "## 1 · Week1 Networking" in md
     assert "Transport layer gives reliable delivery" in md
 
 
@@ -167,3 +167,68 @@ def test_cheatsheet_extractive_fallback_when_model_empty(tmp_path: Path, monkeyp
                            config={"provider": "ollama", "model": "m"})
     assert res["generated"] == "extractive"
     assert _P(res["path"]).exists() and _P(res["path"]).stat().st_size > 0
+
+
+def test_practice_exam_api_validation(client):
+    c, _ = client
+    r = c.post("/api/export/practice-exam", json={
+        "course": "COMPX999", "n": 20, "difficulty": "bogus",
+    })
+    assert r.status_code == 400
+
+
+def test_practice_exam_api_queues_job(client):
+    c, tmp = client
+    from app import practice_exam
+    text = "TCP is reliable. UDP is fast. " * 40
+    from app import core
+    it = core.LectureItem(title="Lecture 1", url="u", duration=600)
+    core.write_outputs(
+        it, [{"start": 0, "end": 6, "text": text}], text,
+        core.output_dir_for(tmp, it, "week01"), ["txt", "json"], 30,
+        {"course": "COMPX999"},
+    )
+    r = c.post("/api/export/practice-exam", json={
+        "course": "COMPX999", "n": 10, "types": ["mcq", "short"],
+        "formats": ["md"],
+    })
+    assert r.status_code == 200
+    assert r.json().get("id")
+
+
+def test_flashcards_seed_review_items(client, monkeypatch):
+    """Flashcard job should seed review_items for Study practice quiz."""
+    import time
+    from app import ai, llm, settings_store, study_planner
+    c, tmp = client
+    text = "TCP provides reliable delivery between hosts. " * 10
+    from app import core
+    it = core.LectureItem(title="Week1", url="u", duration=600)
+    core.write_outputs(
+        it, [{"start": 0, "end": 6, "text": text}], text,
+        core.output_dir_for(tmp, it, "week01"), ["txt", "json"], 30,
+        {"course": "COMPX999"},
+    )
+    import app.main as main
+    db = main.context.db
+    cid = db.create_course("Test", code="COMPX999")
+    settings_store.set_active_course(db, cid)
+    cards = [{"front": "What is TCP?", "back": "Transport protocol", "tags": []}]
+    monkeypatch.setattr(llm, "is_enabled", lambda cfg: True)
+    monkeypatch.setattr(ai, "generate_flashcards", lambda *a, **k: {
+        "cards": cards, "generated": "extractive",
+    })
+    r = c.post("/api/flashcards/generate", json={
+        "course": "COMPX999", "deck": "testdeck", "max_cards": 5,
+    })
+    assert r.status_code == 200
+    job_id = r.json()["id"]
+    for _ in range(50):
+        j = c.get(f"/api/jobs/{job_id}").json()
+        if j["status"] in ("done", "failed", "error"):
+            break
+        time.sleep(0.05)
+    j = c.get(f"/api/jobs/{job_id}").json()
+    assert j["status"] == "done"
+    seeded = study_planner.due_reviews(db, course_id=cid)
+    assert any("TCP" in row["front"] for row in seeded)

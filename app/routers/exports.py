@@ -13,12 +13,14 @@ from .. import core
 from .. import exports as export_engine
 from .. import flashcards
 from .. import llm
+from .. import practice_exam as practice_exam_mod
 from .. import settings_store
 from .. import study
+from .. import study_planner
 from ..jobs import manager
 from .. import context
 from ..context import _audit, _copy_export_files, _export_recordings, _study_summarizer
-from ..schemas import CheatsheetRequest, ExportAllRequest, ExportReq, FlashcardCatRequest, FlashcardGenRequest, FormatsRequest, NotebookLMRequest, SrtExportRequest, StudyCsvRequest
+from ..schemas import CheatsheetRequest, ExportAllRequest, ExportReq, FlashcardCatRequest, FlashcardGenRequest, FormatsRequest, NotebookLMRequest, PracticeExamRequest, SrtExportRequest, StudyCsvRequest
 
 router = APIRouter()
 
@@ -221,6 +223,13 @@ def api_flashcards_generate(req: FlashcardGenRequest) -> Dict[str, Any]:
         result["generated"] = out.get("generated")
         result["provider"] = out.get("provider")
         result["reason"] = out.get("reason", "")
+        # Seed Study practice quiz deck from the same cards
+        if cid and cards:
+            try:
+                result["review_seeded"] = study_planner.add_review_items(
+                    context.db, cid, cards, ref=f"flashcards:{deck}")
+            except Exception:
+                result["review_seeded"] = 0
         if out_dir_str:
             dest = Path(out_dir_str).expanduser()
             _copy_export_files([result.get("anki_tsv", ""), result.get("csv", "")],
@@ -281,30 +290,90 @@ def api_flashcards_categorize(req: FlashcardCatRequest) -> Dict[str, Any]:
 
 @router.post("/api/export/cheatsheet")
 def api_export_cheatsheet(req: CheatsheetRequest) -> Dict[str, Any]:
-    """Build a dense exam cheat sheet PDF from the course material, condensed by the
-    LLM and bounded to a maximum number of A4 pages. Runs as a background job."""
+    """Build a dense exam cheat sheet PDF from the course material.
+
+    Prefers an LLM when configured; otherwise falls back to extractive
+    summarisation so the button is never a hard dead end.
+    """
     cid = settings_store.get_active_course(context.db)
     cfg = llm.get_config(context.db, cid)
-    if not llm.is_enabled(cfg):
-        raise HTTPException(
-            status_code=503,
-            detail="An AI model is required to build a cheat sheet. Start Ollama (Export "
-            "tab) or configure a provider, then try again.")
     course = req.course
     max_pages = max(1, min(req.max_pages, 10))
     save_path = req.save_path
     captured_cfg = dict(cfg)
+    llm_on = llm.is_enabled(cfg)
 
     def work(_progress):
-        _progress("Condensing course material...", 0.2)
+        _progress("Condensing course material..." if llm_on else
+                  "Building extractive cheat sheet (no AI model)…", 0.2)
         result = cheatsheet_mod.build(context.OUTPUT_DIR, course=course, max_pages=max_pages,
                                       config=captured_cfg, save_path=save_path)
         _progress("done", 1.0)
-        if captured_cfg.get("provider") in llm.CLOUD_PROVIDERS:
+        if captured_cfg.get("provider") in llm.CLOUD_PROVIDERS and result.get("generated") == "ai":
             _audit("ai.cheatsheet", target=captured_cfg.get("provider", ""),
                    detail="exam cheat sheet", feature="ai_cloud")
         return result
 
-    job = manager.submit(f"Exam cheat sheet ({max_pages} page{'s' if max_pages != 1 else ''})",
-                         work, type="cheatsheet", payload=req.model_dump(), course_id=cid)
+    label = f"Exam cheat sheet ({max_pages} page{'s' if max_pages != 1 else ''})"
+    if not llm_on:
+        label += " — extractive"
+    job = manager.submit(label, work, type="cheatsheet", payload=req.model_dump(), course_id=cid)
+    return job.to_dict()
+
+
+@router.post("/api/export/practice-exam")
+def api_export_practice_exam(req: PracticeExamRequest) -> Dict[str, Any]:
+    """Build a parted practice/exam PDF (and Markdown) from the library.
+
+    Defaults target a 100-question practice pack; set ``kind='exam'`` and a
+    smaller ``n`` for an exam builder pass. Runs as a background job.
+    """
+    cid = settings_store.get_active_course(context.db)
+    cfg = llm.get_config(context.db, cid)
+    try:
+        n = int(req.n or 100)
+    except (TypeError, ValueError):
+        raise HTTPException(status_code=400, detail="n must be an integer")
+    if n < 10 or n > 150:
+        raise HTTPException(status_code=400, detail="n must be between 10 and 150")
+    kind = (req.kind or "practice").lower()
+    if kind not in ("practice", "exam"):
+        kind = "practice"
+    types = req.types or (["mcq", "short", "long"] if kind == "practice" else ["mcq", "short", "long"])
+    formats = req.formats or ["pdf", "md"]
+    difficulty = (req.difficulty or "medium").lower()
+    if difficulty not in ("easy", "medium", "hard", "mixed"):
+        raise HTTPException(status_code=400, detail="difficulty must be easy|medium|hard|mixed")
+    scope = (req.scope or "course").lower()
+    if scope not in ("lecture", "week", "topic", "course"):
+        raise HTTPException(status_code=400, detail="scope must be lecture|week|topic|course")
+    course = req.course or ""
+    captured_cfg = dict(cfg)
+
+    def work(_progress):
+        def prog(msg, frac=None):
+            if frac is None:
+                _progress(msg)
+            else:
+                _progress(msg, frac)
+        result = practice_exam_mod.build(
+            context.OUTPUT_DIR,
+            course=course, n=n, types=types, difficulty=difficulty,
+            scope=scope, target=req.target or "",
+            weights=req.weights, seed=req.seed,
+            include_answer_key=bool(req.include_answer_key),
+            time_minutes=req.time_minutes, total_marks=req.total_marks,
+            kind=kind, formats=formats, save_path=req.save_path,
+            config=captured_cfg, db=context.db, course_id=cid,
+            progress=prog,
+        )
+        _progress("done", 1.0)
+        if captured_cfg.get("provider") in llm.CLOUD_PROVIDERS and result.get("generated") == "ai":
+            _audit("ai.practice_exam", target=captured_cfg.get("provider", ""),
+                   detail=f"{kind} pack n={n}", feature="ai_cloud")
+        return result
+
+    label = ("Practice exam" if kind == "practice" else "Exam paper") + f" ({n}Q)"
+    job = manager.submit(label, work, type="practice_exam",
+                         payload=req.model_dump(), course_id=cid)
     return job.to_dict()

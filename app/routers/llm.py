@@ -47,9 +47,51 @@ def api_llm_flashcards(req: FlashcardsAIReq) -> Dict[str, Any]:
 
 @router.post("/api/llm/quiz")
 def api_llm_quiz(req: QuizReq) -> Dict[str, Any]:
-    return ai.generate_quiz(context.OUTPUT_DIR, req.scope, req.target, types=req.types,
+    """Return quiz JSON, or queue a PDF/Markdown exam job when ``formats``/``save_path`` set."""
+    cid = settings_store.get_active_course(context.db)
+    target = req.target
+    if req.scope == "course" and req.course and not target:
+        target = req.course
+    wants_export = bool(req.save_path) or (
+        req.formats and any(f.lower() in ("pdf", "md") for f in req.formats))
+    if wants_export or req.kind in ("practice", "exam"):
+        from .. import practice_exam as practice_exam_mod
+        from ..jobs import manager
+        cfg = llm.get_config(context.db, cid)
+        try:
+            n = int(req.n or 40)
+        except (TypeError, ValueError):
+            raise HTTPException(status_code=400, detail="n must be an integer")
+        if n < 10 or n > 150:
+            raise HTTPException(status_code=400, detail="n must be between 10 and 150")
+        kind = "exam" if req.kind == "exam" else "practice"
+        formats = req.formats or ["pdf", "md"]
+        captured_cfg = dict(cfg)
+
+        def work(_progress):
+            def prog(msg, frac=None):
+                if frac is None:
+                    _progress(msg)
+                else:
+                    _progress(msg, frac)
+            return practice_exam_mod.build(
+                context.OUTPUT_DIR,
+                course=req.course or "", n=n, types=req.types,
+                difficulty=req.difficulty, scope=req.scope, target=target,
+                weights=req.weights, seed=req.seed,
+                include_answer_key=bool(req.include_answer_key),
+                time_minutes=req.time_minutes, total_marks=req.total_marks,
+                kind=kind, formats=formats, save_path=req.save_path,
+                config=captured_cfg, db=context.db, course_id=cid, progress=prog,
+            )
+
+        label = f"{'Exam' if kind == 'exam' else 'Practice'} ({n}Q)"
+        job = manager.submit(label, work, type="practice_exam",
+                             payload=req.model_dump(), course_id=cid)
+        return job.to_dict()
+    return ai.generate_quiz(context.OUTPUT_DIR, req.scope, target, types=req.types,
                            difficulty=req.difficulty, n=req.n, db=context.db,
-                           course_id=settings_store.get_active_course(context.db))
+                           course_id=cid)
 
 
 @router.post("/api/llm/chat")

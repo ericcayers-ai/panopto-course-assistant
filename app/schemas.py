@@ -130,6 +130,26 @@ class CheatsheetRequest(BaseModel):
     max_pages: int = 1                     # A4 page budget for the cheat sheet
     save_path: Optional[str] = None        # exact PDF path chosen via Save As
 
+class PracticeExamRequest(BaseModel):
+    """Practice pack (default n=100) or configurable exam builder.
+
+    ``n`` must be 10–150 (enforced by the practice-exam API route).
+    """
+    course: str = ""
+    n: int = 100
+    types: Optional[List[str]] = None      # mcq, short, long, cloze, truefalse
+    difficulty: str = "medium"             # easy | medium | hard | mixed
+    scope: str = "course"                  # lecture | week | topic | course
+    target: str = ""                       # path / week# / topic string
+    weights: Optional[Dict[str, float]] = None  # topic -> percent
+    seed: Optional[str] = None
+    include_answer_key: bool = True
+    time_minutes: Optional[int] = None
+    total_marks: Optional[int] = None
+    kind: str = "practice"                 # practice | exam
+    formats: Optional[List[str]] = None    # pdf, md
+    save_path: Optional[str] = None
+
 class CourseCreate(BaseModel):
     name: str
     code: str = ""
@@ -171,6 +191,15 @@ class QuizReq(BaseModel):
     types: Optional[List[str]] = None
     difficulty: str = "medium"
     n: int = 8
+    course: str = ""
+    weights: Optional[Dict[str, float]] = None
+    seed: Optional[str] = None
+    include_answer_key: bool = True
+    time_minutes: Optional[int] = None
+    total_marks: Optional[int] = None
+    kind: str = "quiz"                     # quiz | practice | exam
+    formats: Optional[List[str]] = None
+    save_path: Optional[str] = None
 
 class ChatReq(BaseModel):
     query: str

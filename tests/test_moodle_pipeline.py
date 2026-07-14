@@ -18,6 +18,28 @@ PIL = pytest.importorskip("PIL")
 from PIL import Image
 
 
+def _pdf_backend_ready() -> bool:
+    """True when PDF text and/or image extraction can run on this machine."""
+    from app import imageextract
+    if imageextract.capability().get("pdf"):
+        return True
+    import importlib.util
+    # markitdown[pdf] typically installs pymupdf (fitz) or pdfminer
+    for mod in ("fitz", "pdfplumber", "pdfminer", "pypdf", "PyPDF2"):
+        try:
+            if importlib.util.find_spec(mod) is not None:
+                return True
+        except ModuleNotFoundError:
+            continue
+    return False
+
+
+pytestmark = pytest.mark.skipif(
+    not _pdf_backend_ready(),
+    reason="Optional PDF deps missing (pip install pymupdf / markitdown[pdf])",
+)
+
+
 def _pdf_with_image() -> bytes:
     buf = io.BytesIO()
     Image.new("RGB", (60, 40), (40, 120, 200)).save(buf, "PDF")

@@ -1,14 +1,9 @@
 """
 cheatsheet.py - generate a dense exam cheat sheet PDF from the course library.
 
-The model condenses the course material into the most exam-relevant facts,
-formulas and definitions, and the result is laid out in a compact two-column A4
-PDF bounded to a caller-specified page limit. Content that does not fit within
-the limit is dropped (most-important-first), so the page budget is always
-respected.
-
-Requires the optional ``fpdf2`` dependency for PDF output; without it the
-condensed notes are written as Markdown instead, and the caller is told.
+Style target: numbered topic blocks ("1 · TITLE"), telegraphic fragments, dense
+two-column A4 packing (COMPX234 sample voice). Content that does not fit the
+page budget is truncated in document order (later sections/points are dropped).
 """
 from __future__ import annotations
 
@@ -21,12 +16,14 @@ from . import ai, core, llm
 EXPORTS_DIRNAME = "_exports"
 
 _SYSTEM = (
-    "You are an expert tutor compiling a single-sheet exam cheat sheet. From the "
-    "provided course material, extract ONLY the highest-value, exam-relevant "
-    "content: key definitions, formulas, rules, classifications, and the kind of "
-    "facts most likely to be tested. Be extremely concise - telegraphic phrasing, "
-    "no filler, no full sentences where a fragment will do. Organise under short "
-    "topic headings using Markdown: '## Heading' for topics and '- ' for points. "
+    "You compile a dense exam cheat sheet in the style of a printed revision "
+    "card. Extract ONLY the highest-value exam content: definitions, formulas, "
+    "rules, classifications, state transitions, and testable facts. "
+    "Use TELEGRAPHIC fragments - no filler sentences. "
+    "Organise as Markdown numbered sections exactly like:\n"
+    "## 1 · TOPIC NAME\n"
+    "- telegraphic point\n"
+    "- formula or rule\n"
     "Do not invent content; ground everything in the material."
 )
 
@@ -37,43 +34,76 @@ def _have_fpdf() -> bool:
 
 
 def _latin1(s: str) -> str:
-    """fpdf2 core fonts are Latin-1; map common Unicode punctuation to ASCII and
-    drop anything else so rendering never errors."""
+    """fpdf2 core fonts are Latin-1; map common Unicode punctuation to ASCII."""
     repl = {
         "—": "-", "–": "-", "−": "-",
         "‘": "'", "’": "'", "“": '"', "”": '"',
         "…": "...", "•": "-", " ": " ",
         "→": "->", "⇒": "=>", "≤": "<=", "≥": ">=",
         "×": "x", "≈": "~", "≠": "!=",
+        "▼": "v", "▲": "^", "◄": "<", "►": ">",
     }
     for k, v in repl.items():
         s = s.replace(k, v)
     return s.encode("latin-1", "replace").decode("latin-1")
 
 
+def _course_selection(output_dir: Path, course: str) -> Optional[List[str]]:
+    """Restrict chunks to lectures whose metadata mentions the active course."""
+    course = (course or "").strip()
+    if not course:
+        return None
+    from . import lectures
+    needle = course.lower()
+    base = course.split("-")[0].lower() if "-" in course else needle
+    picked: List[str] = []
+    for lec in lectures.iter_lectures(output_dir, with_text=False):
+        blob = " ".join([
+            str(lec.get("course") or ""),
+            str(lec.get("title") or ""),
+            str(lec.get("folder") or ""),
+            str(lec.get("stem") or ""),
+            str(lec.get("path") or ""),
+        ]).lower()
+        if needle in blob or (base and base in blob):
+            picked.append(f"{lec['folder']}/{lec['stem']}".strip("/") if lec.get("folder") else lec["stem"])
+    return picked or None
+
+
 def _bullets_from(text: str) -> List[str]:
-    """Extract clean bullet points from a model reply, dropping headings, preamble
-    and echoed paragraphs (anything implausibly long for a cheat-sheet point)."""
+    """Extract terse bullets; drop headings and echoed paragraphs."""
     out: List[str] = []
     for ln in (text or "").splitlines():
         s = ln.strip()
         if not s or s.startswith("#"):
             continue
-        s = re.sub(r"^(?:[-*•]|\d+[.)])\s*", "", s).strip()
-        if 3 <= len(s) <= 240:
+        s = re.sub(r"^(?:[-*•]|\d+[.)]|N\s*·)\s*", "", s).strip()
+        if 3 <= len(s) <= 220:
             out.append(s)
     return out
 
 
-def condense(output_dir: Path, course: str, max_pages: int,
-             config: Dict[str, Any]) -> str:
-    """Map-reduce the course into cheat-sheet Markdown.
+def _renumber_sections(md: str) -> str:
+    """Force '## N · Title' numbering for sample-matching section headers."""
+    parts: List[str] = []
+    n = 0
+    for raw in (md or "").splitlines():
+        m = re.match(r"^#{1,6}\s+(?:\d+\s*[·.\-:]+\s*)?(.*)$", raw.strip())
+        if m:
+            n += 1
+            title = m.group(1).strip() or f"Topic {n}"
+            parts.append(f"## {n} · {title}")
+        else:
+            parts.append(raw)
+    return "\n".join(parts)
 
-    A small local model echoes a whole-course prompt back instead of condensing it,
-    so we summarise CLEAN text per lecture in small chunks (asking for terse
-    bullets) and assemble the results under per-lecture headings. The renderer caps
-    the final sheet to ``max_pages``."""
-    chunks = ai._llm_chunks(output_dir, None, size=4500, max_chunks=16)
+
+def condense(output_dir: Path, course: str, max_pages: int,
+             config: Dict[str, Any],
+             selection: Optional[List[str]] = None) -> str:
+    """Map-reduce course material into numbered telegraphic cheat-sheet Markdown."""
+    sel = selection if selection is not None else _course_selection(output_dir, course)
+    chunks = ai._llm_chunks(output_dir, sel, size=4500, max_chunks=16)
     if not chunks:
         return ""
     budget_words = max(250, int(max_pages) * 700)
@@ -84,8 +114,8 @@ def condense(output_dir: Path, course: str, max_pages: int,
     for title, chunk in chunks:
         prompt = (
             f"From this excerpt of '{title}', list up to {per} of the most "
-            f"exam-relevant points (definitions, formulas, rules, key facts) as "
-            f"terse '- ' bullets. No preamble, no headings.\n\n{chunk}")
+            f"exam-relevant points as terse '- ' bullets "
+            f"(definitions, formulas, rules, key facts). No preamble.\n\n{chunk}")
         try:
             out = llm.complete(prompt, system=_SYSTEM, config=config)
         except llm.LLMError:
@@ -99,7 +129,7 @@ def condense(output_dir: Path, course: str, max_pages: int,
         sections[title].extend(bullets)
 
     parts: List[str] = []
-    for title in order:
+    for i, title in enumerate(order, 1):
         seen: set = set()
         body: List[str] = []
         for b in sections[title]:
@@ -108,21 +138,29 @@ def condense(output_dir: Path, course: str, max_pages: int,
                 seen.add(k)
                 body.append(f"- {b}")
         if body:
-            parts.append(f"## {title}")
+            parts.append(f"## {i} · {title}")
             parts.extend(body)
     return "\n".join(parts).strip()
 
 
-def _extractive_cheatsheet(output_dir: Path, course: str) -> str:
-    """Dependency-free cheat sheet so the feature never yields an empty PDF when the
-    model fails: top extractive sentences + key phrases per lecture."""
+def _extractive_cheatsheet(output_dir: Path, course: str,
+                           selection: Optional[List[str]] = None) -> str:
+    """Dependency-free sheet so empty model replies never yield a blank PDF."""
     from . import keywords, lectures
+    sel = selection if selection is not None else _course_selection(output_dir, course)
+    wanted = set(sel or [])
     parts: List[str] = []
+    idx = 0
     for lec in lectures.iter_lectures(output_dir):
+        if wanted:
+            key = f"{lec['folder']}/{lec['stem']}".strip("/") if lec.get("folder") else lec["stem"]
+            if lec["stem"] not in wanted and key not in wanted and lec.get("path") not in wanted:
+                continue
         text = (lec.get("text") or "").strip()
         if not text:
             continue
-        parts.append(f"## {lec['title']}")
+        idx += 1
+        parts.append(f"## {idx} · {lec['title']}")
         for s in core.summarize_text(text, max_sentences=6):
             parts.append(f"- {s}")
         phr = keywords.key_phrases(text, limit=6)
@@ -130,10 +168,6 @@ def _extractive_cheatsheet(output_dir: Path, course: str) -> str:
             parts.append("- Key terms: " + ", ".join(p["phrase"] for p in phr))
     return "\n".join(parts).strip()
 
-
-# ---------------------------------------------------------------------------
-# Markdown -> blocks -> compact two-column PDF
-# ---------------------------------------------------------------------------
 
 def _parse_blocks(md: str) -> List[Tuple[str, str]]:
     blocks: List[Tuple[str, str]] = []
@@ -159,17 +193,16 @@ def _parse_blocks(md: str) -> List[Tuple[str, str]]:
 
 
 def render_pdf(md: str, save_path: Path, *, title: str = "", max_pages: int = 1) -> Dict[str, Any]:
-    """Render cheat-sheet Markdown into a compact two-column A4 PDF, capped at
-    ``max_pages``. Returns ``{path, pages, truncated}``."""
+    """Render cheat-sheet Markdown into a compact two-column A4 PDF."""
     from fpdf import FPDF
 
     pdf = FPDF(orientation="P", unit="mm", format="A4")
     pdf.set_auto_page_break(False)
-    pdf.set_margins(left=8, top=8, right=8)
+    pdf.set_margins(left=7, top=7, right=7)
 
     page_w, page_h = 210.0, 297.0
-    margin = 8.0
-    gutter = 6.0
+    margin = 7.0
+    gutter = 5.0
     usable_h = page_h - 2 * margin
     col_w = (page_w - 2 * margin - gutter) / 2.0
     col_x = [margin, margin + col_w + gutter]
@@ -187,29 +220,27 @@ def render_pdf(md: str, save_path: Path, *, title: str = "", max_pages: int = 1)
         state["content_top"] = margin
         if state["page"] == 1 and title:
             pdf.set_xy(margin, state["y"])
-            pdf.set_font("Helvetica", "B", 11)
-            pdf.multi_cell(page_w - 2 * margin, 5, _latin1(title), align="C")
-            # Both columns must start below the full-width title, not over it.
-            state["y"] = pdf.get_y() + 1.5
+            pdf.set_font("Helvetica", "B", 10)
+            pdf.multi_cell(page_w - 2 * margin, 4.5, _latin1(title), align="C")
+            state["y"] = pdf.get_y() + 1.2
             state["content_top"] = state["y"]
         return True
 
     def fits_or_advance(h: float) -> bool:
-        # Move to the next column / page when the current column is full.
         if state["y"] + h <= margin + usable_h:
             return True
         if state["col"] == 0:
             state["col"] = 1
-            state["y"] = state["content_top"]   # below the title on page 1
+            state["y"] = state["content_top"]
             return state["y"] + h <= margin + usable_h
         return new_page()
 
     styles = {
-        "h1": ("Helvetica", "B", 8.5, 4.0),
-        "h2": ("Helvetica", "B", 7.5, 3.6),
-        "h3": ("Helvetica", "BI", 7.0, 3.4),
-        "bullet": ("Helvetica", "", 6.5, 3.1),
-        "para": ("Helvetica", "", 6.5, 3.1),
+        "h1": ("Helvetica", "B", 8.0, 3.6),
+        "h2": ("Helvetica", "B", 7.2, 3.3),
+        "h3": ("Helvetica", "BI", 6.8, 3.1),
+        "bullet": ("Helvetica", "", 6.2, 2.9),
+        "para": ("Helvetica", "", 6.2, 2.9),
     }
 
     new_page()
@@ -217,16 +248,15 @@ def render_pdf(md: str, save_path: Path, *, title: str = "", max_pages: int = 1)
         font, style, size, lh = styles.get(kind, styles["para"])
         body = _latin1(("- " + text) if kind == "bullet" else text)
         pdf.set_font(font, style, size)
-        # Measure wrapped height in the column width.
         h = pdf.multi_cell(col_w, lh, body, dry_run=True, output="HEIGHT")
         if kind in ("h1", "h2", "h3"):
-            h += 0.8
+            h += 0.6
         if not fits_or_advance(h):
             break
         pdf.set_xy(col_x[state["col"]], state["y"])
         pdf.set_font(font, style, size)
         pdf.multi_cell(col_w, lh, body, align="L")
-        state["y"] = pdf.get_y() + (0.8 if kind.startswith("h") else 0.3)
+        state["y"] = pdf.get_y() + (0.6 if kind.startswith("h") else 0.2)
 
     save_path = Path(save_path)
     save_path.parent.mkdir(parents=True, exist_ok=True)
@@ -235,20 +265,23 @@ def render_pdf(md: str, save_path: Path, *, title: str = "", max_pages: int = 1)
 
 
 def build(output_dir: Path, *, course: str, max_pages: int,
-          config: Dict[str, Any], save_path: Optional[str] = None) -> Dict[str, Any]:
-    """End-to-end: condense the course, render the capped PDF (or Markdown
-    fallback). Returns a result dict with the written path and metadata."""
+          config: Dict[str, Any], save_path: Optional[str] = None,
+          selection: Optional[List[str]] = None) -> Dict[str, Any]:
+    """End-to-end: condense, render capped PDF (or Markdown fallback)."""
     max_pages = max(1, min(int(max_pages or 1), 10))
-    md = condense(output_dir, course, max_pages, config)
-    generated = "ai"
+    sel = selection if selection is not None else _course_selection(output_dir, course)
+    md = ""
+    generated = "extractive"
+    if llm.is_enabled(config):
+        md = condense(output_dir, course, max_pages, config, selection=sel)
+        generated = "ai"
     if not md.strip():
-        # Model produced nothing usable - fall back to an extractive sheet rather
-        # than an empty PDF, so the user always gets something useful.
-        md = _extractive_cheatsheet(output_dir, course)
+        md = _extractive_cheatsheet(output_dir, course, selection=sel)
         generated = "extractive"
     if not md.strip():
         raise ValueError("No course material found to build a cheat sheet from. "
                          "Import or transcribe some lectures first.")
+    md = _renumber_sections(md)
 
     stem = core.safe_name(f"{course or 'course'}_cheatsheet") or "cheatsheet"
     if _have_fpdf():
@@ -266,9 +299,9 @@ def build(output_dir: Path, *, course: str, max_pages: int,
         return {"format": "pdf", "path": info["path"], "rel": rel,
                 "pages": info["pages"], "max_pages": max_pages,
                 "truncated": info["truncated"], "generated": generated,
-                "provider": config.get("provider")}
-
-    # No PDF engine: write the condensed notes as Markdown so the work isn't lost.
+                "provider": config.get("provider"),
+                "note": ("Page budget full — remaining content was truncated in document order."
+                         if info["truncated"] else "")}
     target = Path(save_path).expanduser() if save_path else \
         core.ensure_dir(output_dir / EXPORTS_DIRNAME) / f"{stem}.md"
     if target.suffix.lower() == ".pdf":

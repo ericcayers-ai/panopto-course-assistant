@@ -40,7 +40,11 @@ def _read(output_dir: Path, rel: str) -> str:
 def collect_text(output_dir: Path, scope: str, target: str = "",
                 max_chars: int = 24000) -> str:
     """Concatenate the source text for a scope: ``lecture`` (target=path),
-    ``week`` (target=N), ``topic`` (target=topic) or ``course`` (everything)."""
+    ``week`` (target=N), ``topic`` (target=topic) or ``course`` (everything).
+
+    When ``scope`` is ``course`` and ``target`` is set, filter to lectures whose
+    title/path/course metadata contains that string (active-course isolation).
+    """
     if scope == "lecture" and target:
         return _read(output_dir, target)[:max_chars]
     items = search.build_index(output_dir)
@@ -52,8 +56,44 @@ def collect_text(output_dir: Path, scope: str, target: str = "",
         except ValueError:
             items = []
     elif scope == "topic" and target:
-        items = [it for it in items if it["topic"] == target]
-    # scope == course -> all transcripts
+        needle = target.lower()
+        matched = [it for it in items if (it.get("topic") or "") == target]
+        if not matched:
+            # Soft match: topic string appears in title/path when tags are absent
+            matched = [it for it in items
+                       if needle in " ".join([
+                           str(it.get("title") or ""),
+                           str(it.get("path") or ""),
+                           str(it.get("topic") or ""),
+                           str(it.get("course") or ""),
+                       ]).lower()]
+        items = matched
+    elif scope == "course" and target:
+        from . import lectures
+        needle = target.lower()
+        base = needle.split("-")[0].lower() if "-" in needle else needle
+        parts = []
+        total = 0
+        for lec in lectures.iter_lectures(output_dir, with_text=False):
+            blob = " ".join([
+                str(lec.get("course") or ""),
+                str(lec.get("title") or ""),
+                str(lec.get("folder") or ""),
+                str(lec.get("stem") or ""),
+                str(lec.get("path") or ""),
+            ]).lower()
+            if needle not in blob and not (base and len(base) >= 5 and base in blob):
+                continue
+            txt = _read(output_dir, lec["path"])
+            if not txt:
+                continue
+            block = f"## {lec['title']}\n{txt}"
+            parts.append(block)
+            total += len(block)
+            if total >= max_chars:
+                break
+        return "\n\n".join(parts)[:max_chars]
+    # scope == course (no target) -> all transcripts
     parts: List[str] = []
     total = 0
     for it in items:
@@ -343,7 +383,9 @@ _DEF_RE = re.compile(
     r"\b([A-Z][\w\-]{2,40}(?:\s[\w\-]{2,20}){0,3})\s+(?:is|are|refers to|means)\s+([^.]{10,160})\.")
 
 
-def _extractive_quiz(text: str, n: int = 8) -> List[Dict[str, Any]]:
+def _extractive_quiz(text: str, n: int = 8,
+                     types: Optional[List[str]] = None) -> List[Dict[str, Any]]:
+    allow = {t.lower() for t in (types or ["mcq", "cloze", "short", "long", "truefalse"])}
     questions: List[Dict[str, Any]] = []
     defs = []
     for m in _DEF_RE.finditer(text):
@@ -351,19 +393,29 @@ def _extractive_quiz(text: str, n: int = 8) -> List[Dict[str, Any]]:
         if 2 < len(term) < 45:
             defs.append((term, definition))
     # MCQ from definitions (distractors = other definitions' answers)
-    for i, (term, definition) in enumerate(defs):
-        distractors = [d for j, (_, d) in enumerate(defs) if j != i][:3]
-        if len(distractors) < 2:
-            continue
-        options = distractors + [definition]
-        questions.append({
-            "type": "mcq", "question": f"What best describes {term}?",
-            "options": options, "answer": definition,
-        })
-        if len(questions) >= n:
-            break
-    # Cloze from salient sentences for the remainder
-    for sent in core.summarize_text(text, max_sentences=n):
+    if "mcq" in allow:
+        for i, (term, definition) in enumerate(defs):
+            distractors = [d for j, (_, d) in enumerate(defs) if j != i][:3]
+            if len(distractors) < 2:
+                continue
+            options = distractors + [definition]
+            questions.append({
+                "type": "mcq", "question": f"What best describes {term}?",
+                "options": options, "answer": definition,
+            })
+            if len(questions) >= n:
+                return questions[:n]
+    if "truefalse" in allow:
+        for term, definition in defs:
+            questions.append({
+                "type": "truefalse",
+                "question": f"{term} is best described as: {definition}",
+                "options": ["True", "False"], "answer": "True",
+            })
+            if len(questions) >= n:
+                return questions[:n]
+    # Short / long / cloze from salient sentences
+    for sent in core.summarize_text(text, max_sentences=max(n, 12)):
         if len(questions) >= n:
             break
         words = [w for w in re.findall(r"[A-Za-z][A-Za-z\-]{3,}", sent)
@@ -371,34 +423,73 @@ def _extractive_quiz(text: str, n: int = 8) -> List[Dict[str, Any]]:
         if not words:
             continue
         blank = max(words, key=len)
-        questions.append({
-            "type": "cloze", "question": re.sub(rf"\b{re.escape(blank)}\b", "_____", sent, count=1),
-            "answer": blank,
-        })
+        if "cloze" in allow:
+            questions.append({
+                "type": "cloze",
+                "question": re.sub(rf"\b{re.escape(blank)}\b", "_____", sent, count=1),
+                "answer": blank,
+            })
+        elif "short" in allow:
+            questions.append({
+                "type": "short",
+                "question": f"Briefly explain: {sent}",
+                "answer": sent,
+            })
+        elif "long" in allow:
+            questions.append({
+                "type": "long",
+                "question": f"Discuss in detail, with examples: {sent}",
+                "answer": sent,
+            })
+    # Pad with short prompts from defs if still short
+    if len(questions) < n and ("short" in allow or "long" in allow):
+        for term, definition in defs:
+            if len(questions) >= n:
+                break
+            qtype = "long" if "long" in allow and "short" not in allow else (
+                "long" if "long" in allow and len(questions) % 3 == 0 else "short")
+            if qtype not in allow:
+                qtype = "short" if "short" in allow else "long"
+            questions.append({
+                "type": qtype,
+                "question": (f"Explain {term} thoroughly." if qtype == "long"
+                             else f"What is {term}?"),
+                "answer": definition,
+            })
     return questions[:n]
 
 
 _QUIZ_SYSTEM = (
     "You write quiz questions from lecture material. Return ONLY a JSON array of "
-    "{\"type\": \"mcq|cloze|short|truefalse\", \"question\": \"...\", "
-    "\"options\": [...], \"answer\": \"...\"}. Ground everything in the text.")
+    "{\"type\": \"mcq|cloze|short|long|truefalse\", \"question\": \"...\", "
+    "\"options\": [...], \"answer\": \"...\"}. For mcq include 4 options. "
+    "Ground everything in the text.")
 
 
 def generate_quiz(output_dir: Path, scope: str = "course", target: str = "", *,
                  types: Optional[List[str]] = None, difficulty: str = "medium",
                  n: int = 8, db: Optional[Database] = None,
                  course_id: Optional[int] = None,
-                 config: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+                 config: Optional[Dict[str, Any]] = None,
+                 topic_hint: str = "") -> Dict[str, Any]:
+    n = max(1, min(int(n or 8), 40))
     text = collect_text(output_dir, scope, target)
+    if not text.strip() and scope == "topic" and target:
+        # Soft fallback: use full course text when topic tags are missing
+        text = collect_text(output_dir, "course", target)
     if not text.strip():
         return {"questions": [], "generated": "extractive",
                 "note": "No source text found for that scope."}
     cfg = config or llm.get_config(db, course_id)
+    kinds_list = [t.lower() for t in (types or ["mcq", "cloze"])]
+    hint = (topic_hint or "").strip()
     if llm.is_enabled(cfg):
-        kinds = ", ".join(types or ["mcq", "cloze"])
+        kinds = ", ".join(kinds_list)
         cfg = {**cfg, "format": "json",
-               "max_tokens": max(int(cfg.get("max_tokens", 1024) or 1024), n * 80 + 256)}
-        prompt = (f"Write {n} {difficulty} quiz questions ({kinds}) from:\n\n{text}")
+               "max_tokens": max(int(cfg.get("max_tokens", 1024) or 1024), n * 100 + 256)}
+        weight_line = f"\n{hint}" if hint else ""
+        prompt = (f"Write {n} {difficulty} quiz questions ({kinds}) from:"
+                  f"{weight_line}\n\n{text}")
         try:
             qs = _llm_json_array(prompt, system=_QUIZ_SYSTEM, cfg=cfg,
                                  min_items=1, key="question")
@@ -407,7 +498,8 @@ def generate_quiz(output_dir: Path, scope: str = "course", target: str = "", *,
                 return {"questions": qs[:n], "generated": "ai", "provider": cfg.get("provider")}
         except llm.LLMError:
             pass
-    return {"questions": _extractive_quiz(text, n), "generated": "extractive"}
+    return {"questions": _extractive_quiz(text, n, types=kinds_list),
+            "generated": "extractive"}
 
 
 # ---------------------------------------------------------------------------
