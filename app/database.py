@@ -797,11 +797,23 @@ class Database:
     def create_task_schedule(self, course_id: int, name: str, schedule_json: str,
                              paper_codes: str = "",
                              class_schedule_id: Optional[int] = None) -> int:
+        if not course_id or self.get_course(int(course_id)) is None:
+            raise ValueError(
+                f"Invalid course_id {course_id!r}: create or activate a course first "
+                "(FOREIGN KEY requires a real courses row)."
+            )
+        # Stale/wrong class_schedule_id must not trip the FK — drop the link.
+        if class_schedule_id is not None:
+            row = self.get_class_schedule(int(class_schedule_id))
+            if row is None:
+                class_schedule_id = None
+            elif row["course_id"] is not None and int(row["course_id"]) != int(course_id):
+                class_schedule_id = None
         ts = now_iso()
         cur = self.execute(
             "INSERT INTO task_schedules(course_id, name, schedule_json, paper_codes, "
             "class_schedule_id, created_at, updated_at) VALUES(?, ?, ?, ?, ?, ?, ?)",
-            (course_id, name, schedule_json, paper_codes, class_schedule_id, ts, ts),
+            (int(course_id), name, schedule_json, paper_codes, class_schedule_id, ts, ts),
         )
         return int(cur.lastrowid)
 

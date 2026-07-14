@@ -151,7 +151,7 @@ def api_suite_download(path: str, format: str = "obsidian") -> FileResponse:
 @router.post("/api/suites/sync")
 def api_suite_sync(req: SuiteSyncReq) -> Dict[str, Any]:
     """Background job: refresh semester data (optional) then write/mirror suites."""
-    cid = req.course_id if req.course_id is not None else settings_store.get_active_course(context.db)
+    cid = settings_store.ensure_active_course(context.db, req.course_id)
     formats = req.formats or suites.get_enabled(context.db)
     payload_dump = req.model_dump()
 
@@ -170,10 +170,18 @@ def api_suite_sync(req: SuiteSyncReq) -> Dict[str, Any]:
                 calendar_url = secret_store.get_secret(
                     moodle_calendar.MOODLE_CALENDAR_SECRET, root=context.OUTPUT_DIR,
                 ) or ""
+            # Drop stale class_schedule_id so create_task_schedule never FK-fails.
+            sched_id = req.class_schedule_id
+            if sched_id is not None:
+                row = context.db.get_class_schedule(int(sched_id))
+                if row is None or (
+                    row["course_id"] is not None and int(row["course_id"]) != int(cid)
+                ):
+                    sched_id = None
             sync_report = task_schedule.sync_semester_all(
-                context.db, cid or 0,
+                context.db, cid,
                 paper_codes=paper_codes,
-                class_schedule_id=req.class_schedule_id,
+                class_schedule_id=sched_id,
                 calendar_url=calendar_url or None,
                 moodle_announcements_url=req.moodle_announcements_url,
                 moodle_cookies=req.moodle_cookies,
@@ -248,6 +256,7 @@ def api_suite_sync(req: SuiteSyncReq) -> Dict[str, Any]:
         return {
             "ok": True,
             "plan_id": plan_row["id"],
+            "course_id": cid,
             "semester": sync_report,
             "panopto_feeds": panopto_feeds,
             "announcements": len(anns),

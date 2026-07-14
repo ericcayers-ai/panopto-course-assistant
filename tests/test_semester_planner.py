@@ -111,13 +111,13 @@ def test_export_formats(tmp_path: Path):
     with zipfile.ZipFile(dest) as zf:
         names = zf.namelist()
         assert any(n.endswith("README.md") for n in names)
-        assert any("Semester Gantt.md" in n for n in names)
-        assert any("Study Timetable/" in n for n in names)
+        assert any("Master/Task Graphs/Semester Gantt.md" in n for n in names)
+        assert any("Master/Study Plan2.md" in n for n in names)
+        assert any("Master/Task Schedule/" in n for n in names)
+        assert any("Courses/COMPX202/" in n for n in names)
         assert any("Guide/COMPX202 Gantt.md" in n for n in names)
-        assert any("/tasks/" in n for n in names)
-        readme = zf.read([n for n in names if n.endswith("README.md")][0]).decode()
-        assert "[[Semester Gantt]]" in readme
-        assert "[[Study Plan]]" in readme
+        readme = zf.read([n for n in names if n.endswith("/README.md") and "Courses/" not in n][0]).decode()
+        assert "Master/Study Plan2" in readme
         gantt = zf.read([n for n in names if "Semester Gantt.md" in n][0]).decode()
         assert "```mermaid" in gantt
         assert "gantt" in gantt
@@ -158,33 +158,43 @@ def test_obsidian_export_preserves_complete_vault_layout(tmp_path: Path):
     with zipfile.ZipFile(dest) as zf:
         names = set(zf.namelist())
         expected_folders = {
-            f"{root}/Study Timetable/", f"{root}/Guide/", f"{root}/Outlines/",
-            f"{root}/Announcements/", f"{root}/papers/", f"{root}/tasks/",
+            f"{root}/Master/",
+            f"{root}/Master/Task Schedule/",
+            f"{root}/Master/Task Graphs/",
+            f"{root}/Master/Calendar/",
+            f"{root}/Courses/",
+            f"{root}/Courses/COMPX202/Guide/",
+            f"{root}/Courses/COMPX202/Lectures/",
+            f"{root}/Courses/JAPAN332/Guide/",
+            f"{root}/Courses/CSMAX275/Guide/",
         }
         expected_files = {
             f"{root}/README.md",
-            f"{root}/Study Plan.md",
-            f"{root}/Semester Gantt.md",
-            f"{root}/Study Timetable/Timetable Sheet - Markdown ver.md",
-            f"{root}/papers/compx202.md",
-            f"{root}/papers/japan332.md",
-            f"{root}/papers/csmax275.md",
-            f"{root}/Guide/COMPX202 Gantt.md",
-            f"{root}/Guide/JAPAN332 Gantt.md",
-            f"{root}/Guide/CSMAX275 Gantt.md",
-            f"{root}/Outlines/compx202.md",
-            f"{root}/Outlines/japan332.md",
-            f"{root}/Announcements/index.md",
-            f"{root}/Announcements/welcome.md",
-            f"{root}/tasks/compx202-assignment-one.md",
+            f"{root}/IMPORT.md",
+            f"{root}/Master/Study Plan2.md",
+            f"{root}/Master/Task Graphs/Semester Gantt.md",
+            f"{root}/Master/Task Graphs/Overview.canvas",
+            f"{root}/Master/Task Schedule/Timetable Sheet - Markdown ver.md",
+            f"{root}/Master/Calendar/semester.ics",
+            f"{root}/.obsidian/app.json",
+            f"{root}/Courses/COMPX202/README.md",
+            f"{root}/Courses/COMPX202/COMPX202_Mindmap.canvas",
+            f"{root}/Courses/JAPAN332/README.md",
+            f"{root}/Courses/CSMAX275/README.md",
+            f"{root}/Courses/COMPX202/Guide/COMPX202 Gantt.md",
+            f"{root}/Master/Task Schedule/compx202-assignment-one.md",
         }
         assert expected_folders <= names
         assert expected_files <= names
-        assert len([name for name in names if name.startswith(f"{root}/tasks/") and name.endswith(".md")]) == len(tasks)
+        assert len([
+            name for name in names
+            if "/Master/Task Schedule/" in name and name.endswith(".md")
+            and not name.endswith("Timetable Sheet - Markdown ver.md")
+        ]) >= len(tasks)
         readme = zf.read(f"{root}/README.md").decode()
-        assert "[[papers/japan332|JAPAN332]]" in readme
-        assert "[[Outlines/japan332|JAPAN332]]" in readme
-        assert "[[Announcements/index|All announcements]]" in readme
+        assert "Courses/JAPAN332" in readme
+        assert "Master/Study Plan2" in readme
+        assert "IMPORT" in readme
 
 
 def test_build_mermaid_gantt(tmp_path: Path):
@@ -435,11 +445,10 @@ def test_api_endpoints(tmp_path: Path, monkeypatch):
         with zipfile.ZipFile(io.BytesIO(r.content)) as vault:
             names = vault.namelist()
             assert any(name.endswith("/README.md") for name in names)
-            assert any("/Study Timetable/" in name for name in names)
-            assert any("/Guide/" in name for name in names)
-            assert any("/Outlines/" in name for name in names)
-            assert any("/papers/" in name for name in names)
-            assert any("/tasks/" in name for name in names)
+            assert any("/Master/Task Schedule/" in name for name in names)
+            assert any("/Courses/" in name and "/Guide/" in name for name in names)
+            assert any("Master/Study Plan2.md" in name for name in names)
+            assert any(".obsidian/app.json" in name for name in names)
 
 def test_parse_outer_notion_export_zip():
     """Notion sometimes wraps the Part-1 zip in an outer export archive."""

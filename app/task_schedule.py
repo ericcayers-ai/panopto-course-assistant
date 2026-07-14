@@ -735,6 +735,9 @@ def sync_semester_all(
     errors: List[str] = []
     moodle_cal_events: List[Dict[str, Any]] = []
 
+    from . import settings_store
+    course_id = settings_store.ensure_active_course(db, course_id)
+
     outlines: List[Dict[str, Any]] = []
     for code in paper_codes:
         try:

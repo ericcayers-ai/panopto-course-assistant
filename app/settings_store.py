@@ -72,3 +72,30 @@ def set_active_course(db: Database, course_id: Optional[int]) -> None:
         delete(db, ACTIVE_COURSE)
     else:
         set(db, ACTIVE_COURSE, int(course_id))
+
+
+def ensure_active_course(db: Database, course_id: Optional[int] = None) -> int:
+    """Return a valid ``courses.id``, creating a default row when none exist.
+
+    Prefer ``course_id`` when it points at a real course, then the stored active
+    course, then any non-archived course, otherwise create ``My course``.
+    """
+    candidates = []
+    if course_id is not None:
+        candidates.append(int(course_id))
+    active = get_active_course(db)
+    if active is not None:
+        candidates.append(int(active))
+    for cid in candidates:
+        if db.get_course(cid) is not None:
+            if get_active_course(db) != cid:
+                set_active_course(db, cid)
+            return cid
+    rows = db.list_courses(include_archived=False) or db.list_courses(include_archived=True)
+    if rows:
+        cid = int(rows[0]["id"])
+        set_active_course(db, cid)
+        return cid
+    cid = db.create_course("My course")
+    set_active_course(db, cid)
+    return cid

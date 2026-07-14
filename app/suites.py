@@ -1,24 +1,30 @@
 """
 suites.py - shared study-suite tree writer + format adapters + sync.
 
-Canonical vault layout (shared across Obsidian / Notion / OneNote)::
+Canonical vault layout (Obsidian / Notion / OneNote)::
 
     {suite-root}/
       README.md
-      Study Plan.md
-      Semester Gantt.md
-      Calendar/
-        semester.ics
-        google-calendar.csv
-      Study Timetable/
-        Timetable Sheet - Markdown ver.md
-      Guide/{PAPER} Gantt.md
-      Outlines/{paper}.md
-      Announcements/
-      papers/{paper}.md
-      tasks/{id}.md
-      Library/          # mirrored transcripts/docs when available
-      Forums/           # browser-path scrapes only
+      IMPORT.md
+      Master/
+        Study Plan2.md
+        Task Schedule/          # timetable + task notes
+        Task Graphs/            # semester gantt + overview canvas
+        Calendar/               # semester.ics + google-calendar.csv
+      Courses/
+        {PAPER}/
+          README.md
+          Guide/
+          Lectures/
+          Lecture Recordings/
+          Anki Flashcards/
+          Sample Questions/
+          Misc/
+          Source Code/
+          Textbooks/
+          Study Timetable/
+          {PAPER}_Mindmap.canvas
+      .obsidian/                # Obsidian only
 """
 from __future__ import annotations
 
@@ -28,6 +34,7 @@ import io
 import json
 import re
 import shutil
+import uuid
 import zipfile
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Sequence, Set, Tuple
@@ -36,9 +43,26 @@ from . import core, settings_store
 from .database import Database
 
 SUITE_FORMATS = ("obsidian", "notion", "onenote")
+
+COURSE_SUBFOLDERS = (
+    "Guide",
+    "Lectures",
+    "Lecture Recordings",
+    "Anki Flashcards",
+    "Sample Questions",
+    "Misc",
+    "Source Code",
+    "Textbooks",
+    "Study Timetable",
+)
+
+# Top-level / Master folders used when zipping empty placeholders.
 SUITE_FOLDERS = (
-    "Calendar", "Study Timetable", "Guide", "Outlines",
-    "Announcements", "papers", "tasks", "Library", "Forums",
+    "Master",
+    "Master/Task Schedule",
+    "Master/Task Graphs",
+    "Master/Calendar",
+    "Courses",
 )
 
 SETTING_DESTINATIONS = "suite.destinations"
@@ -51,21 +75,28 @@ def _slug(text: str) -> str:
     return re.sub(r"[^\w]+", "-", (text or "").strip()).strip("-").lower()
 
 
+def _paper_base(code: str) -> str:
+    return (code or "").upper().split("-")[0].strip()
+
+
 def collect_subjects(
     tasks: Sequence[Dict[str, Any]],
     outlines: Optional[Sequence[Dict[str, Any]]] = None,
     moodle_events: Optional[Sequence[Dict[str, Any]]] = None,
+    paper_codes: Optional[Sequence[str]] = None,
 ) -> List[str]:
-    subjects: Set[str] = {
-        (t.get("subject") or "").upper().split("-")[0]
-        for t in tasks if t.get("subject")
-    }
+    subjects: Set[str] = set()
+    for code in paper_codes or []:
+        base = _paper_base(code)
+        if base:
+            subjects.add(base)
+    subjects.update(_paper_base(t.get("subject") or "") for t in tasks if t.get("subject"))
     subjects.update(
-        (o.get("paper_code") or "").upper().split("-")[0]
+        _paper_base(o.get("paper_code") or "")
         for o in (outlines or []) if o.get("paper_code")
     )
     subjects.update(
-        (e.get("paper_code") or "").upper().split("-")[0]
+        _paper_base(e.get("paper_code") or "")
         for e in (moodle_events or []) if e.get("paper_code")
     )
     return sorted(s for s in subjects if s)
@@ -127,213 +158,410 @@ def mirror_tree(src: Path, dest: Path) -> Dict[str, Any]:
     }
 
 
-def _ensure_folders(root: Path) -> None:
-    for folder in SUITE_FOLDERS:
-        (root / folder).mkdir(parents=True, exist_ok=True)
+def _ensure_master_folders(root: Path) -> None:
+    (root / "Master" / "Task Schedule").mkdir(parents=True, exist_ok=True)
+    (root / "Master" / "Task Graphs").mkdir(parents=True, exist_ok=True)
+    (root / "Master" / "Calendar").mkdir(parents=True, exist_ok=True)
+    (root / "Courses").mkdir(parents=True, exist_ok=True)
 
 
-def _build_shared_markdown(
+def _ensure_course_folders(course_root: Path) -> None:
+    for folder in COURSE_SUBFOLDERS:
+        (course_root / folder).mkdir(parents=True, exist_ok=True)
+    # Empty placeholder so Graph/vault explorers show the folder.
+    write_file(course_root / "Untitled" / ".gitkeep", "")
+
+
+def _link(target: str, label: Optional[str] = None, *, style: str = "wikilink") -> str:
+    if style == "wikilink":
+        return f"[[{target}|{label}]]" if label else f"[[{target}]]"
+    href = target if target.endswith((".md", ".canvas", ".ics", ".csv")) else f"{target}.md"
+    return f"[{label or target}]({href})"
+
+
+def _canvas_file(nodes: List[Dict[str, Any]], edges: List[Dict[str, Any]]) -> str:
+    return json.dumps({"nodes": nodes, "edges": edges}, indent=2) + "\n"
+
+
+def _new_id() -> str:
+    return uuid.uuid4().hex[:16]
+
+
+def _write_obsidian_config(root: Path) -> List[str]:
+    written: List[str] = []
+    obsidian = root / ".obsidian"
+    obsidian.mkdir(parents=True, exist_ok=True)
+    app = {
+        "alwaysUpdateLinks": True,
+        "newFileLocation": "folder",
+        "newFileFolderPath": "Courses",
+        "attachmentFolderPath": "Master/Task Graphs",
+        "useMarkdownLinks": False,
+        "showUnsupportedFiles": True,
+    }
+    core_plugins = {
+        "file-explorer": True,
+        "global-search": True,
+        "graph": True,
+        "backlink": True,
+        "canvas": True,
+        "outgoing-link": True,
+        "tag-pane": True,
+        "page-preview": True,
+        "templates": False,
+        "daily-notes": False,
+    }
+    write_file(obsidian / "app.json", json.dumps(app, indent=2) + "\n")
+    write_file(obsidian / "core-plugins.json", json.dumps(core_plugins, indent=2) + "\n")
+    written += [".obsidian/app.json", ".obsidian/core-plugins.json"]
+    return written
+
+
+def _write_root_readme(root: Path, title: str, subjects: List[str], *, style: str) -> str:
+    lines = [
+        f"# {title}",
+        "",
+        "Course Assistant study suite — open this folder as your vault / import pack.",
+        "",
+        f"See {_link('IMPORT', 'IMPORT.md', style=style)} for format-specific steps.",
+        "",
+        "## Master",
+        "",
+        f"- {_link('Master/Study Plan2', 'Study Plan2', style=style)}",
+        f"- {_link('Master/Task Graphs/Semester Gantt', 'Semester Gantt', style=style)}",
+        f"- {_link('Master/Task Schedule/Timetable Sheet - Markdown ver', 'Timetable', style=style)}",
+        f"- {_link('Master/Calendar/semester.ics', 'Calendar (.ics)', style=style)}",
+        "",
+        "## Courses",
+        "",
+    ]
+    for s in subjects:
+        lines.append(f"- {_link(f'Courses/{s}/README', s, style=style)}")
+    lines.append("")
+    path = "README.md"
+    write_file(root / path, "\n".join(lines) + "\n")
+    return path
+
+
+def _write_import_md(root: Path, format: str) -> str:
+    if format == "obsidian":
+        body = [
+            "# Import into Obsidian",
+            "",
+            "1. Open Obsidian → **Open folder as vault** → choose this suite root.",
+            "2. Graph and Canvas use the included `.obsidian` config.",
+            "3. Start at `Master/Study Plan2.md`; follow wikilinks into `Courses/{PAPER}/`.",
+            "4. Prefer Sync from Course Assistant so destinations stay mirrored.",
+            "",
+        ]
+    elif format == "notion":
+        body = [
+            "# Import into Notion",
+            "",
+            "1. Open Notion → **Import** → **CSV**.",
+            "2. Import `Master/Task Schedule/Tasks.csv` as a database.",
+            "3. Optionally import `Courses/*/Lectures.csv` and announcement CSVs.",
+            "4. Drag Markdown folders (`Master/`, `Courses/`) onto a Notion page to convert notes.",
+            "5. If a Notion integration is configured in Course Assistant, Sync can also push live.",
+            "",
+        ]
+    else:
+        body = [
+            "# Import into OneNote",
+            "",
+            "1. Open the `_onenote/` HTML pack (and `manifest.json`).",
+            "2. Create notebooks/sections for **Master** and each `Courses/{PAPER}` section.",
+            "3. Open each HTML page and paste into the matching OneNote section,",
+            "   or use Insert → File / print-to-OneNote.",
+            "4. Keep Sync destinations pointed at this pack for refreshable updates.",
+            "",
+        ]
+    write_file(root / "IMPORT.md", "\n".join(body))
+    return "IMPORT.md"
+
+
+def _build_suite_content(
     root: Path,
     *,
+    format: str,
     title: str,
     tasks: List[Dict[str, Any]],
     outlines: List[Dict[str, Any]],
     moodle_events: Optional[List[Dict[str, Any]]],
     announcements: Optional[List[Dict[str, Any]]],
-    link_style: str = "wikilink",
+    forums: Optional[List[Dict[str, Any]]],
+    library_dir: Optional[Path],
+    paper_codes: Optional[List[str]] = None,
 ) -> List[str]:
-    """Write the shared Markdown skeleton. Returns list of relative paths written."""
     from . import task_schedule
 
+    style = "wikilink" if format == "obsidian" else "markdown"
     written: List[str] = []
-    subjects = collect_subjects(tasks, outlines, moodle_events)
+    subjects = collect_subjects(tasks, outlines, moodle_events, paper_codes)
+    _ensure_master_folders(root)
+
+    written.append(_write_root_readme(root, title, subjects, style=style))
+    written.append(_write_import_md(root, format))
+
     gantt = task_schedule.build_mermaid_gantt(
         tasks, outlines=outlines, moodle_events=moodle_events, title=title,
     )
 
-    def link(target: str, label: Optional[str] = None) -> str:
-        if link_style == "wikilink":
-            return f"[[{target}|{label}]]" if label else f"[[{target}]]"
-        # Markdown links for Notion/OneNote HTML conversion sources
-        href = target if target.endswith(".md") else f"{target}.md"
-        return f"[{label or target}]({href})"
-
-    readme = [
-        f"# {title}",
-        "",
-        "Semester plan exported from Course Assistant.",
-        "",
-        "## Quick links",
-        "",
-        f"- {link('Study Plan')}",
-        f"- {link('Semester Gantt')}",
-        f"- {link('Study Timetable/Timetable Sheet - Markdown ver')}",
-        "",
-        "## Papers",
-        "",
-    ]
-    for s in subjects:
-        readme.append(f"- {link(f'papers/{_slug(s)}', s)}")
-    if outlines:
-        readme += ["", "## Outlines", ""]
-        for o in outlines:
-            code = (o.get("paper_code") or "").split("-")[0]
-            readme.append(f"- {link(f'Outlines/{_slug(code)}', code)}")
-    if announcements:
-        readme += ["", "## Announcements", ""]
-        readme.append(f"- {link('Announcements/index', 'All announcements')}")
-    write_file(root / "README.md", "\n".join(readme) + "\n")
-    written.append("README.md")
-
-    study_plan = [
+    # --- Master study plan ---
+    plan_lines = [
         "---",
-        "tags: [study-plan, semester]",
+        "tags: [study-plan, semester, master]",
+        "aliases: [Study Plan, Study Plan2]",
         "---",
         "",
         f"# {title} — Study plan",
         "",
-        "## Timeline",
+        "## Courses",
+        "",
+    ]
+    for s in subjects:
+        plan_lines.append(f"- {_link(f'Courses/{s}/README', s, style=style)}")
+    plan_lines += [
+        "",
+        f"## Timeline · {_link('Master/Task Graphs/Semester Gantt', 'Gantt', style=style)}",
         "",
     ]
     for t in tasks:
         due = t.get("due_date") or "TBD"
-        study_plan.append(
-            f"- {due} · {link(f'tasks/{t['id']}', t.get('name', ''))} "
-            f"({t.get('type', '')}{', ' + str(t['weight']) + '%' if t.get('weight') else ''})"
+        subj = _paper_base(t.get("subject") or "")
+        task_link = _link(
+            f"Master/Task Schedule/{t['id']}", t.get("name", ""), style=style,
         )
-    write_file(root / "Study Plan.md", "\n".join(study_plan) + "\n")
-    written.append("Study Plan.md")
+        course_bit = f" · {_link(f'Courses/{subj}/README', subj, style=style)}" if subj else ""
+        plan_lines.append(f"- {due} · {task_link} ({t.get('type', '')}{course_bit})")
+    write_file(root / "Master" / "Study Plan2.md", "\n".join(plan_lines) + "\n")
+    written.append("Master/Study Plan2.md")
 
-    gantt_body = [
-        "---",
-        "tags: [gantt, semester, reference]",
-        "aliases: [Semester Timeline]",
-        "---",
-        "",
-        f"# {title} — Gantt chart",
-        "",
-        "Visual timeline of assessments, classes, and key dates.",
-        "",
-        gantt.rstrip(),
-        "",
-    ]
-    write_file(root / "Semester Gantt.md", "\n".join(gantt_body) + "\n")
-    written.append("Semester Gantt.md")
-
+    # --- Master task schedule ---
     timetable = task_schedule._timetable_markdown(tasks)
-    write_file(root / "Study Timetable" / "Timetable Sheet - Markdown ver.md", timetable)
-    written.append("Study Timetable/Timetable Sheet - Markdown ver.md")
-
-    ics = task_schedule.export_calendar_ics(
-        tasks, outlines=outlines, title=title,
+    write_file(
+        root / "Master" / "Task Schedule" / "Timetable Sheet - Markdown ver.md",
+        timetable,
     )
-    write_file(root / "Calendar" / "semester.ics", ics)
-    written.append("Calendar/semester.ics")
-    gcal = task_schedule.export_google_calendar_csv(tasks, outlines=outlines)
-    write_file(root / "Calendar" / "google-calendar.csv", gcal)
-    written.append("Calendar/google-calendar.csv")
-
-    for s in subjects:
-        paper_tasks = [t for t in tasks if t.get("subject") == s]
-        lines = [
-            "---",
-            f"tags: [{s.lower()}, paper]",
-            "---",
-            "",
-            f"# {s}",
-            "",
-            f"See also: {link('Semester Gantt')} · {link('Study Plan')}",
-            "",
-        ]
-        for t in paper_tasks:
-            lines.append(
-                f"- {link(f'tasks/{t['id']}', t.get('name', ''))} ({t.get('due_date', 'TBD')})"
-            )
-        write_file(root / "papers" / f"{_slug(s)}.md", "\n".join(lines) + "\n")
-        written.append(f"papers/{_slug(s)}.md")
-
-        paper_events = [
-            e for e in (moodle_events or [])
-            if (e.get("paper_code") or "").upper() == s
-        ]
-        paper_gantt = task_schedule.build_mermaid_gantt(
-            [t for t in tasks if t.get("subject") == s],
-            outlines=[o for o in outlines if (o.get("paper_code") or "").startswith(s)],
-            moodle_events=paper_events,
-            title=f"{s} — {title}",
-        )
-        pg = [
-            "---",
-            f"tags: [{s.lower()}, gantt]",
-            "---",
-            "",
-            f"# {s} Gantt",
-            "",
-            paper_gantt.rstrip(),
-            "",
-        ]
-        write_file(root / "Guide" / f"{s} Gantt.md", "\n".join(pg) + "\n")
-        written.append(f"Guide/{s} Gantt.md")
-
-    for o in outlines:
-        code = (o.get("paper_code") or "outline").split("-")[0]
-        write_file(root / "Outlines" / f"{_slug(code)}.md", task_schedule._outline_note(o))
-        written.append(f"Outlines/{_slug(code)}.md")
-
-    if announcements:
-        ann_index = ["# Moodle announcements", ""]
-        for a in announcements:
-            slug, body = task_schedule._announcement_note(a)
-            ann_index.append(f"- {link(f'Announcements/{slug}', a.get('title', 'Post'))}")
-            write_file(root / "Announcements" / f"{slug}.md", body)
-            written.append(f"Announcements/{slug}.md")
-        write_file(root / "Announcements" / "index.md", "\n".join(ann_index) + "\n")
-        written.append("Announcements/index.md")
-
+    written.append("Master/Task Schedule/Timetable Sheet - Markdown ver.md")
     for t in tasks:
-        subj = t.get("subject", "")
-        typ = t.get("type", "")
-        fm_tags = ["task"]
-        if subj:
-            fm_tags.append(subj.lower())
-        if typ:
-            fm_tags.append(_slug(typ))
+        subj = _paper_base(t.get("subject") or "")
         body = [
             "---",
-            f"tags: [{', '.join(fm_tags)}]",
+            f"tags: [task, {(subj or 'general').lower()}]",
             "---",
             "",
             f"# {t.get('name', 'Task')}",
             "",
-            f"- Paper: {link(f'papers/{_slug(subj)}', subj)}",
-            f"- Type: {typ}",
+            f"- Paper: {_link(f'Courses/{subj}/README', subj, style=style) if subj else '—'}",
+            f"- Type: {t.get('type', '')}",
             f"- Due: {t.get('due_date', '')}",
             f"- Weight: {t.get('weight', '')}%" if t.get("weight") is not None else "- Weight:",
             f"- Status: {t.get('status', '')}",
             f"- Source: {t.get('source', '')}",
             "",
-            f"{link('Semester Gantt')} · {link('Study Plan')}",
+            f"{_link('Master/Study Plan2', 'Study Plan2', style=style)} · "
+            f"{_link('Master/Task Graphs/Semester Gantt', 'Gantt', style=style)}",
+            "",
         ]
-        write_file(root / "tasks" / f"{t['id']}.md", "\n".join(body) + "\n")
-        written.append(f"tasks/{t['id']}.md")
+        write_file(root / "Master" / "Task Schedule" / f"{t['id']}.md", "\n".join(body) + "\n")
+        written.append(f"Master/Task Schedule/{t['id']}.md")
+
+    # --- Master graphs + calendar ---
+    gantt_body = [
+        "---",
+        "tags: [gantt, semester, master]",
+        "aliases: [Semester Timeline, Semester Gantt]",
+        "---",
+        "",
+        f"# {title} — Gantt chart",
+        "",
+        gantt.rstrip(),
+        "",
+    ]
+    write_file(root / "Master" / "Task Graphs" / "Semester Gantt.md", "\n".join(gantt_body) + "\n")
+    written.append("Master/Task Graphs/Semester Gantt.md")
+
+    overview_nodes: List[Dict[str, Any]] = []
+    overview_edges: List[Dict[str, Any]] = []
+    center = _new_id()
+    overview_nodes.append({
+        "id": center, "type": "text", "text": title,
+        "x": 0, "y": 0, "width": 260, "height": 60,
+    })
+    for i, s in enumerate(subjects):
+        nid = _new_id()
+        overview_nodes.append({
+            "id": nid, "type": "file",
+            "file": f"Courses/{s}/README.md",
+            "x": -320 + (i % 4) * 220, "y": 140 + (i // 4) * 140,
+            "width": 200, "height": 80,
+        })
+        overview_edges.append({
+            "id": _new_id(), "fromNode": center, "fromSide": "bottom",
+            "toNode": nid, "toSide": "top",
+        })
+    write_file(
+        root / "Master" / "Task Graphs" / "Overview.canvas",
+        _canvas_file(overview_nodes, overview_edges),
+    )
+    written.append("Master/Task Graphs/Overview.canvas")
+
+    ics = task_schedule.export_calendar_ics(tasks, outlines=outlines, title=title)
+    write_file(root / "Master" / "Calendar" / "semester.ics", ics)
+    written.append("Master/Calendar/semester.ics")
+    gcal = task_schedule.export_google_calendar_csv(tasks, outlines=outlines)
+    write_file(root / "Master" / "Calendar" / "google-calendar.csv", gcal)
+    written.append("Master/Calendar/google-calendar.csv")
+
+    # --- Per-course trees ---
+    for s in subjects:
+        course_root = root / "Courses" / s
+        _ensure_course_folders(course_root)
+        paper_tasks = [t for t in tasks if _paper_base(t.get("subject") or "") == s]
+        paper_outlines = [
+            o for o in outlines if _paper_base(o.get("paper_code") or "") == s
+        ]
+        paper_events = [
+            e for e in (moodle_events or [])
+            if _paper_base(e.get("paper_code") or "") == s
+        ]
+
+        readme = [
+            "---",
+            f"tags: [{s.lower()}, course]",
+            "---",
+            "",
+            f"# {s}",
+            "",
+            f"Back to {_link('Master/Study Plan2', 'Study Plan2', style=style)} · "
+            f"{_link(f'Courses/{s}/{s}_Mindmap.canvas', 'Mindmap', style=style)}",
+            "",
+            "## Folders",
+            "",
+            "- Guide · Lectures · Lecture Recordings · Anki Flashcards",
+            "- Sample Questions · Misc · Source Code · Textbooks · Study Timetable",
+            "",
+            "## Tasks",
+            "",
+        ]
+        for t in paper_tasks:
+            readme.append(
+                f"- {_link(f'Master/Task Schedule/{t['id']}', t.get('name', ''), style=style)} "
+                f"({t.get('due_date', 'TBD')})"
+            )
+        if paper_outlines:
+            readme += ["", "## Outline", ""]
+            for o in paper_outlines:
+                note = task_schedule._outline_note(o)
+                write_file(course_root / "Guide" / f"{s} Outline.md", note)
+                written.append(f"Courses/{s}/Guide/{s} Outline.md")
+                readme.append(f"- {_link(f'Courses/{s}/Guide/{s} Outline', f'{s} Outline', style=style)}")
+
+        paper_gantt = task_schedule.build_mermaid_gantt(
+            paper_tasks, outlines=paper_outlines, moodle_events=paper_events,
+            title=f"{s} — {title}",
+        )
+        write_file(
+            course_root / "Guide" / f"{s} Gantt.md",
+            "\n".join([
+                "---", f"tags: [{s.lower()}, gantt]", "---", "",
+                f"# {s} Gantt", "", paper_gantt.rstrip(), "",
+            ]) + "\n",
+        )
+        written.append(f"Courses/{s}/Guide/{s} Gantt.md")
+
+        if paper_tasks:
+            write_file(
+                course_root / "Study Timetable" / "Timetable.md",
+                task_schedule._timetable_markdown(paper_tasks),
+            )
+            written.append(f"Courses/{s}/Study Timetable/Timetable.md")
+
+        write_file(course_root / "README.md", "\n".join(readme) + "\n")
+        written.append(f"Courses/{s}/README.md")
+
+        # Mindmap canvas linking course README + guide + tasks
+        nodes: List[Dict[str, Any]] = []
+        edges: List[Dict[str, Any]] = []
+        hub = _new_id()
+        nodes.append({
+            "id": hub, "type": "file", "file": f"Courses/{s}/README.md",
+            "x": 0, "y": 0, "width": 260, "height": 100,
+        })
+        guide_id = _new_id()
+        nodes.append({
+            "id": guide_id, "type": "file",
+            "file": f"Courses/{s}/Guide/{s} Gantt.md",
+            "x": 320, "y": -40, "width": 240, "height": 80,
+        })
+        edges.append({
+            "id": _new_id(), "fromNode": hub, "fromSide": "right",
+            "toNode": guide_id, "toSide": "left",
+        })
+        for i, t in enumerate(paper_tasks[:12]):
+            tid = _new_id()
+            nodes.append({
+                "id": tid, "type": "file",
+                "file": f"Master/Task Schedule/{t['id']}.md",
+                "x": -80 + (i % 3) * 200, "y": 160 + (i // 3) * 110,
+                "width": 180, "height": 70,
+            })
+            edges.append({
+                "id": _new_id(), "fromNode": hub, "fromSide": "bottom",
+                "toNode": tid, "toSide": "top",
+            })
+        write_file(course_root / f"{s}_Mindmap.canvas", _canvas_file(nodes, edges))
+        written.append(f"Courses/{s}/{s}_Mindmap.canvas")
+
+        # Placeholders so empty dirs persist
+        for folder in COURSE_SUBFOLDERS:
+            keep = course_root / folder / ".gitkeep"
+            if not any((course_root / folder).glob("*")):
+                write_file(keep, "")
+                written.append(f"Courses/{s}/{folder}/.gitkeep")
+
+    # Announcements → first course Misc or Master Misc
+    if announcements:
+        dest = root / "Courses" / (subjects[0] if subjects else "_shared") / "Misc" / "Announcements"
+        if not subjects:
+            dest = root / "Master" / "Task Schedule" / "Announcements"
+            dest.mkdir(parents=True, exist_ok=True)
+        else:
+            dest.mkdir(parents=True, exist_ok=True)
+        ann_index = ["# Announcements", ""]
+        for a in announcements:
+            slug, body = task_schedule._announcement_note(a)
+            write_file(dest / f"{slug}.md", body)
+            rel = dest.relative_to(root).as_posix()
+            written.append(f"{rel}/{slug}.md")
+            ann_index.append(f"- {_link(f'{rel}/{slug}', a.get('title', 'Post'), style=style)}")
+        write_file(dest / "index.md", "\n".join(ann_index) + "\n")
+        written.append(f"{dest.relative_to(root).as_posix()}/index.md")
+
+    if forums:
+        written += _write_forums_into_misc(root, forums, subjects, style=style)
+
+    written += _copy_library_into_courses(root, library_dir, subjects)
+
+    if format == "obsidian":
+        written += _write_obsidian_config(root)
 
     return written
 
 
-def _copy_library_into(root: Path, library_dir: Optional[Path]) -> List[str]:
-    """Mirror transcripts/docs into Library/ when a library_dir is provided."""
-    if not library_dir or not Path(library_dir).is_dir():
-        return []
-    lib = root / "Library"
-    lib.mkdir(parents=True, exist_ok=True)
-    result = mirror_tree(Path(library_dir), lib)
-    return result["copied"] + result["updated"]
-
-
-def _write_forums(root: Path, forums: Optional[List[Dict[str, Any]]]) -> List[str]:
+def _write_forums_into_misc(
+    root: Path,
+    forums: List[Dict[str, Any]],
+    subjects: List[str],
+    *,
+    style: str,
+) -> List[str]:
     written: List[str] = []
-    if not forums:
-        return written
+    base = root / "Courses" / (subjects[0] if subjects else "GENERAL") / "Misc" / "Forums"
+    if not subjects:
+        base = root / "Master" / "Task Schedule" / "Forums"
+    base.mkdir(parents=True, exist_ok=True)
     index = ["# Forums", ""]
     for forum in forums:
         slug = _slug(forum.get("title") or forum.get("name") or "forum")[:50] or "forum"
@@ -343,27 +571,71 @@ def _write_forums(root: Path, forums: Optional[List[Dict[str, Any]]]) -> List[st
             forum.get("body") or forum.get("content") or "",
         ]
         if forum.get("posts"):
-            body.append("")
-            body.append("## Posts")
+            body += ["", "## Posts"]
             for post in forum["posts"]:
                 body.append(f"### {post.get('subject') or post.get('title') or 'Post'}")
                 body.append("")
                 body.append(post.get("message") or post.get("body") or "")
                 body.append("")
-        write_file(root / "Forums" / f"{slug}.md", "\n".join(body) + "\n")
-        written.append(f"Forums/{slug}.md")
-        index.append(f"- [[{slug}|{forum.get('title') or slug}]]")
-    write_file(root / "Forums" / "index.md", "\n".join(index) + "\n")
-    written.append("Forums/index.md")
+        write_file(base / f"{slug}.md", "\n".join(body) + "\n")
+        rel = (base / f"{slug}.md").relative_to(root).as_posix()
+        written.append(rel)
+        index.append(f"- {_link(rel[:-3] if rel.endswith('.md') else rel, forum.get('title') or slug, style=style)}")
+    write_file(base / "index.md", "\n".join(index) + "\n")
+    written.append((base / "index.md").relative_to(root).as_posix())
     return written
 
 
-def _write_notion_csvs(
+def _copy_library_into_courses(
+    root: Path,
+    library_dir: Optional[Path],
+    subjects: List[str],
+) -> List[str]:
+    """Copy transcript/md sources into Lectures/; other files into Misc/."""
+    if not library_dir or not Path(library_dir).is_dir():
+        return []
+    written: List[str] = []
+    fallback = subjects[0] if subjects else None
+    if not fallback:
+        dest = root / "Master" / "Task Schedule" / "Library"
+        result = mirror_tree(Path(library_dir), dest)
+        return [f"Master/Task Schedule/Library/{p}" for p in (result["copied"] + result["updated"])]
+
+    for path in Path(library_dir).rglob("*"):
+        if not path.is_file():
+            continue
+        if path.name.startswith(".") or "_suites" in path.parts:
+            continue
+        name_u = path.as_posix().upper()
+        matched = next((s for s in subjects if s in name_u), fallback)
+        folder = "Lectures" if path.suffix.lower() in {".md", ".txt", ".json", ".srt", ".vtt"} else "Misc"
+        if path.suffix.lower() in {".apkg", ".tsv"} or "flashcard" in path.name.lower():
+            folder = "Anki Flashcards"
+        if any(k in path.name.lower() for k in ("quiz", "sample", "practice", "exam")):
+            folder = "Sample Questions"
+        if path.suffix.lower() in {".py", ".java", ".c", ".cpp", ".js", ".ts"}:
+            folder = "Source Code"
+        if path.suffix.lower() in {".pdf", ".epub"} and "text" in path.name.lower():
+            folder = "Textbooks"
+        rel = path.relative_to(library_dir)
+        target = root / "Courses" / matched / folder / rel.name
+        target.parent.mkdir(parents=True, exist_ok=True)
+        if not target.exists():
+            try:
+                shutil.copy2(path, target)
+                written.append(target.relative_to(root).as_posix())
+            except Exception:
+                continue
+    return written
+
+
+def _write_notion_extras(
     root: Path,
     *,
     tasks: List[Dict[str, Any]],
     announcements: Optional[List[Dict[str, Any]]],
-    library_index: Optional[List[Dict[str, Any]]] = None,
+    library_index: Optional[List[Dict[str, Any]]],
+    subjects: List[str],
 ) -> List[str]:
     written: List[str] = []
     buf = io.StringIO()
@@ -375,8 +647,8 @@ def _write_notion_csvs(
             t.get("due_date", ""), t.get("weight", ""), t.get("status", ""),
             t.get("source", ""),
         ])
-    write_file(root / "Tasks.csv", buf.getvalue())
-    written.append("Tasks.csv")
+    write_file(root / "Master" / "Task Schedule" / "Tasks.csv", buf.getvalue())
+    written.append("Master/Task Schedule/Tasks.csv")
 
     buf2 = io.StringIO()
     w2 = csv.writer(buf2)
@@ -388,8 +660,9 @@ def _write_notion_csvs(
             it.get("title", ""), it.get("week", ""), it.get("topic", ""),
             it.get("course", ""), it.get("path", ""),
         ])
-    write_file(root / "Lectures.csv", buf2.getvalue())
-    written.append("Lectures.csv")
+    lectures_csv = root / "Master" / "Task Schedule" / "Lectures.csv"
+    write_file(lectures_csv, buf2.getvalue())
+    written.append("Master/Task Schedule/Lectures.csv")
 
     buf3 = io.StringIO()
     w3 = csv.writer(buf3)
@@ -399,25 +672,12 @@ def _write_notion_csvs(
             a.get("title", ""), a.get("author", ""),
             a.get("posted_at", ""), (a.get("body") or "")[:2000],
         ])
-    write_file(root / "Announcements.csv", buf3.getvalue())
-    written.append("Announcements.csv")
-
-    import_md = [
-        "# Import this suite into Notion",
-        "",
-        "1. Open Notion → **Import** → **CSV**.",
-        "2. Import `Tasks.csv`, `Lectures.csv`, and `Announcements.csv` as separate databases.",
-        "3. Optionally drag the Markdown folders into a Notion page (Notion will convert them).",
-        "4. If you configured a Notion integration token in Course Assistant, Sync will also push live.",
-        "",
-    ]
-    write_file(root / "IMPORT.md", "\n".join(import_md))
-    written.append("IMPORT.md")
+    write_file(root / "Master" / "Task Schedule" / "Announcements.csv", buf3.getvalue())
+    written.append("Master/Task Schedule/Announcements.csv")
     return written
 
 
 def _md_to_simple_html(title: str, md: str) -> str:
-    """Minimal Markdown→HTML for OneNote paste/import workflows (no external dep)."""
     lines = []
     in_code = False
     for line in md.splitlines():
@@ -430,9 +690,7 @@ def _md_to_simple_html(title: str, md: str) -> str:
                 in_code = True
             continue
         if in_code:
-            lines.append(
-                line.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
-            )
+            lines.append(line.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;"))
             continue
         if line.startswith("# "):
             lines.append(f"<h1>{_esc(line[2:])}</h1>")
@@ -458,42 +716,31 @@ def _esc(text: str) -> str:
 
 
 def _write_onenote_pack(root: Path) -> List[str]:
-    """Convert Markdown notes into an HTML section pack + manifest.json."""
     written: List[str] = []
     pages: List[Dict[str, str]] = []
-    sections = {
-        "Root": ["README.md", "Study Plan.md", "Semester Gantt.md"],
-        "Calendar": [],
-        "Study Timetable": [],
-        "Guide": [],
-        "Outlines": [],
-        "Announcements": [],
-        "papers": [],
-        "tasks": [],
-        "Forums": [],
-    }
     for md_path in root.rglob("*.md"):
         if md_path.name in ("IMPORT.md",):
             continue
+        if ".obsidian" in md_path.parts:
+            continue
         rel = md_path.relative_to(root)
-        section = rel.parts[0] if len(rel.parts) > 1 else "Root"
-        if section not in sections:
-            sections[section] = []
+        section = "/".join(rel.parts[:-1]) if len(rel.parts) > 1 else "Root"
         html_name = md_path.with_suffix(".html").name
-        section_dir = root / "_onenote" / section
+        section_dir = root / "_onenote" / section.replace("/", "__")
         html = _md_to_simple_html(md_path.stem, md_path.read_text(encoding="utf-8"))
         write_file(section_dir / html_name, html)
-        rel_html = f"_onenote/{section}/{html_name}"
+        rel_html = f"_onenote/{section_dir.name}/{html_name}"
         written.append(rel_html)
         pages.append({"section": section, "title": md_path.stem, "path": rel_html})
 
     manifest = {
         "format": "onenote_html_pack",
-        "version": 1,
+        "version": 2,
+        "layout": "Master + Courses/{PAPER}",
         "pages": pages,
         "instructions": (
-            "Open each HTML file and paste into OneNote, or use OneNote's "
-            "Insert → File attachment / print-to-OneNote workflows."
+            "Create OneNote sections for Master and each Courses/{PAPER} folder, "
+            "then paste the matching HTML pages (see IMPORT.md)."
         ),
     }
     write_file(root / "_onenote" / "manifest.json", json.dumps(manifest, indent=2) + "\n")
@@ -516,6 +763,7 @@ def build_suite_tree(
     library_dir: Optional[Path] = None,
     library_index: Optional[List[Dict[str, Any]]] = None,
     root_name: Optional[str] = None,
+    paper_codes: Optional[List[str]] = None,
 ) -> Dict[str, Any]:
     """Write a suite directory for ``format`` (obsidian|notion|onenote)."""
     format = (format or "obsidian").lower()
@@ -528,29 +776,34 @@ def build_suite_tree(
     if root.exists():
         shutil.rmtree(root)
     root.mkdir(parents=True)
-    _ensure_folders(root)
 
     tasks = list(tasks or [])
     outlines = list(outlines or [])
-    link_style = "wikilink" if format == "obsidian" else "markdown"
-    written = _build_shared_markdown(
-        root, title=title, tasks=tasks, outlines=outlines,
-        moodle_events=moodle_events, announcements=announcements,
-        link_style=link_style,
-    )
-    written += _write_forums(root, forums)
-    lib_files = _copy_library_into(root, library_dir)
-    written += [f"Library/{p}" for p in lib_files]
+    codes = list(paper_codes or [])
+    if not codes:
+        codes = collect_subjects(tasks, outlines, moodle_events)
 
-    extras: List[str] = []
+    written = _build_suite_content(
+        root,
+        format=format,
+        title=title,
+        tasks=tasks,
+        outlines=outlines,
+        moodle_events=moodle_events,
+        announcements=announcements,
+        forums=forums,
+        library_dir=library_dir,
+        paper_codes=codes,
+    )
+
+    subjects = collect_subjects(tasks, outlines, moodle_events, codes)
     if format == "notion":
-        extras = _write_notion_csvs(
+        written += _write_notion_extras(
             root, tasks=tasks, announcements=announcements,
-            library_index=library_index,
+            library_index=library_index, subjects=subjects,
         )
     elif format == "onenote":
-        extras = _write_onenote_pack(root)
-    written += extras
+        written += _write_onenote_pack(root)
 
     return {
         "format": format,
@@ -558,7 +811,7 @@ def build_suite_tree(
         "root_name": root.name,
         "files": written,
         "file_count": len(written),
-        "subjects": collect_subjects(tasks, outlines, moodle_events),
+        "subjects": subjects,
     }
 
 
@@ -569,9 +822,15 @@ def zip_suite(suite_root: Path, zip_path: Path) -> Path:
     zip_path.parent.mkdir(parents=True, exist_ok=True)
     parent = suite_root.parent
     with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zf:
-        # Explicit empty dirs so extractors show the full vault layout.
         for folder in SUITE_FOLDERS:
             zf.writestr(f"{suite_root.name}/{folder}/", "")
+        # Ensure every Courses/*/subfolder appears even if empty of .gitkeep
+        courses = suite_root / "Courses"
+        if courses.is_dir():
+            for course_dir in courses.iterdir():
+                if course_dir.is_dir():
+                    for sub in COURSE_SUBFOLDERS:
+                        zf.writestr(f"{suite_root.name}/Courses/{course_dir.name}/{sub}/", "")
         for path in suite_root.rglob("*"):
             if path.is_file():
                 zf.write(path, path.relative_to(parent).as_posix())
@@ -589,7 +848,6 @@ def set_destinations(db: Database, destinations: Dict[str, str]) -> Dict[str, st
         for k, v in (destinations or {}).items()
         if k in SUITE_FORMATS and str(v or "").strip()
     }
-    # Preserve empty clears explicitly passed as ""
     for k, v in (destinations or {}).items():
         if k in SUITE_FORMATS and not str(v or "").strip():
             cleaned.pop(k, None)
@@ -639,11 +897,10 @@ def preview_suite(
 ) -> Dict[str, Any]:
     subjects = collect_subjects(tasks or [], outlines or [])
     estimate = (
-        3  # readme + study plan + gantt
-        + 2  # calendar files
+        4  # readme + import + study plan2 + gantt
+        + 2  # calendar
         + 1  # timetable
-        + len(subjects) * 2  # paper + guide
-        + len(outlines or [])
+        + len(subjects) * (3 + len(COURSE_SUBFOLDERS))  # course tree approx
         + len(tasks or [])
         + (3 if format == "notion" else 0)
         + (1 if format == "onenote" else 0)
@@ -654,7 +911,7 @@ def preview_suite(
         "subjects": subjects,
         "task_count": len(tasks or []),
         "estimated_files": estimate,
-        "folders": list(SUITE_FOLDERS),
+        "folders": list(SUITE_FOLDERS) + [f"Courses/{{PAPER}}/{s}" for s in COURSE_SUBFOLDERS],
     }
 
 
@@ -676,6 +933,7 @@ def sync_suites_to_destinations(
     formats = list(formats or get_enabled(db))
     destinations = get_destinations(db)
     tasks = plan_payload.get("tasks") or []
+    paper_codes = plan_payload.get("paper_codes") or []
     staging = Path(staging_dir or (Path(library_dir or ".") / "_suites"))
     staging.mkdir(parents=True, exist_ok=True)
 
@@ -702,10 +960,12 @@ def sync_suites_to_destinations(
             forums=forums,
             library_dir=library_dir,
             library_index=library_index,
+            paper_codes=paper_codes,
         )
         dest = destinations.get(fmt)
         mirror_result: Dict[str, Any] = {}
         if dest:
+            # Mirror tree contents into destination (structure-preserving).
             mirror_result = mirror_tree(Path(built["root"]), Path(dest) / Path(built["root"]).name)
             new_files += mirror_result.get("new_files", 0)
             updated += mirror_result.get("updated_files", 0)
@@ -736,7 +996,6 @@ def _push_live_integrations(
     *,
     library_dir: Optional[Path] = None,
 ) -> Dict[str, Any]:
-    """Best-effort Notion API + AnkiConnect pushes when credentials exist."""
     from .integrations import state as sync_state
 
     out: Dict[str, Any] = {}

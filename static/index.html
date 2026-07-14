@@ -497,32 +497,33 @@
             <strong>Export → Study suites</strong>.</p>
 
           <div class="semester-layout">
-            <div class="semester-rail" aria-hidden="true">
-              <div class="semester-rail-line"></div>
-              <span class="semester-rail-label">Tri B</span>
-            </div>
-
             <div class="semester-main">
               <div class="card semester-card semester-hero">
-                <h3 class="section-title">Sync</h3>
-                <label for="sem-paper-codes">Paper codes (comma-separated)</label>
-                <input id="sem-paper-codes" type="text" list="sem-paper-suggestions"
-                       placeholder="COMPX202, COMPX225, CSMAX275" autocomplete="off" />
+                <h3 class="section-title">Papers &amp; sync</h3>
+                <p class="hint">Detected codes appear as chips — toggle them on/off, or add your own.</p>
+                <div id="sem-paper-chips" class="paper-chips" role="group" aria-label="Selected paper codes"></div>
+                <div class="row gap wrap paper-add-row">
+                  <label class="sr-only" for="sem-paper-add">Add paper code</label>
+                  <input id="sem-paper-add" type="text" list="sem-paper-suggestions"
+                         placeholder="Add paper code" autocomplete="off" />
+                  <button id="sem-paper-add-btn" type="button" class="ghost">Add</button>
+                </div>
+                <input id="sem-paper-codes" type="hidden" value="" />
                 <datalist id="sem-paper-suggestions"></datalist>
                 <label for="sem-calendar-url">Moodle calendar URL</label>
                 <input id="sem-calendar-url" type="url" autocomplete="off"
-                       placeholder="https://elearn.waikato.ac.nz/calendar/export_execute.php?…" />
+                       placeholder="Paste Moodle calendar export URL" />
                 <p id="sem-calendar-masked" class="hint"></p>
                 <div class="row gap wrap">
                   <button id="sem-calendar-save" class="ghost" type="button">Save calendar URL</button>
                   <button id="sem-sync-all" class="primary" type="button">Update everything</button>
+                  <button id="sem-open-suites" type="button" class="ghost">Open Study suites…</button>
                 </div>
                 <div id="sem-sync-status" class="results compact" aria-live="polite"></div>
                 <div id="sem-timeline" class="semester-timeline"></div>
                 <div class="row gap wrap" id="sem-export-row" hidden>
-                  <button id="sem-open-suites" type="button" class="primary">Sync study suites…</button>
                   <details class="sem-export-details">
-                    <summary class="hint">Direct file downloads</summary>
+                    <summary class="hint">Optional direct file downloads</summary>
                     <div class="row gap wrap" style="margin-top:8px">
                       <a id="sem-export-calendar" class="tag tag-calendar" href="#" download>Calendar (.ics)</a>
                       <a id="sem-export-google" class="tag tag-calendar" href="#" download>Google Calendar CSV</a>
@@ -532,13 +533,14 @@
                   </details>
                 </div>
                 <p id="sem-export-calendar-hint" class="hint" hidden>
-                  Prefer <strong>Sync study suites</strong> for a full vault. Direct downloads remain available above.
+                  Prefer <strong>Export → Study suites → Sync</strong> for a full Master + Courses vault.
                 </p>
               </div>
 
               <details class="card semester-card">
-                <summary class="section-title">Advanced — individual steps</summary>
-              <div class="card semester-card">
+                <summary class="section-title">Advanced — outlines, schedule, announcements</summary>
+              <div class="semester-advanced-stack">
+              <div class="semester-subcard">
                 <h3 class="section-title">Paper outlines</h3>
                 <div class="row gap">
                   <label class="sr-only" for="sem-paper-q">Paper code</label>
@@ -552,7 +554,7 @@
                 <div id="sem-outline-preview" class="outline-preview hidden"></div>
               </div>
 
-              <div class="card semester-card">
+              <div class="semester-subcard">
                 <h3 class="section-title">Class schedule</h3>
                 <p class="hint">Import a Notion database export zip (CSV inside).</p>
                 <div class="drop-zone" id="sem-schedule-drop">
@@ -563,13 +565,13 @@
                 <div id="sem-schedule-status" class="results compact"></div>
               </div>
 
-              <div class="card semester-card">
+              <div class="semester-subcard">
                 <h3 class="section-title">Generate plan</h3>
                 <button id="sem-plan-build" class="ghost" type="button">Generate task schedule only</button>
                 <div id="sem-plan-status" class="results compact"></div>
               </div>
 
-              <div class="card semester-card semester-announcements">
+              <div class="semester-subcard semester-announcements">
                 <h3 class="section-title">Moodle announcements</h3>
                 <p class="hint">Downloads forum and news posts only. Not added to your task schedule.</p>
                 <label for="sem-moodle-url">Moodle course URL</label>
@@ -578,6 +580,7 @@
                 <textarea id="sem-moodle-cookies" rows="2" placeholder="Paste browser cookies"></textarea>
                 <button id="sem-moodle-fetch" class="ghost" type="button">Download announcements</button>
                 <div id="sem-announcements" class="announcement-list"></div>
+              </div>
               </div>
               </details>
             </div>
@@ -590,18 +593,18 @@
             <svg class="ico ico-lg" aria-hidden="true"><use href="#i-export"/></svg>
             <h2 id="export-h">Export</h2>
           </div>
-          <p class="panel-intro">Turn the library into study material. Build study suites into Obsidian, Notion,
-            or OneNote, sync destinations in one click, or create AI packs and flashcards.</p>
+          <p class="panel-intro">Sync study suites into Obsidian, Notion, or OneNote destinations.
+            AI packs and flashcards live under <strong>More export tools</strong>.</p>
 
           <div class="card feature-card" id="suite-exports-card">
             <h3>Study suites</h3>
-            <p class="hint">One vault tree for Obsidian, Notion, or OneNote — including calendar, gantt, papers,
-              tasks, announcements, and library material. Set destination folders once, then Sync.</p>
+            <p class="hint">Writes a Master + Courses/{PAPER} vault (or import pack) and mirrors it into
+              your destination folders. Set destinations once, then Sync.</p>
             <div class="export-bundle-grid" role="group" aria-label="Suite format">
               <button type="button" class="export-bundle active" data-suite-format="obsidian"
-                      aria-pressed="true"><strong>Obsidian</strong><span>Markdown + wikilinks</span></button>
+                      aria-pressed="true"><strong>Obsidian</strong><span>Vault + Graph/Canvas</span></button>
               <button type="button" class="export-bundle" data-suite-format="notion"
-                      aria-pressed="false"><strong>Notion</strong><span>Tree + import CSVs</span></button>
+                      aria-pressed="false"><strong>Notion</strong><span>Tree + CSV import</span></button>
               <button type="button" class="export-bundle" data-suite-format="onenote"
                       aria-pressed="false"><strong>OneNote</strong><span>HTML section pack</span></button>
             </div>
@@ -626,22 +629,25 @@
               </label>
             </div>
             <div class="row" style="margin-top:10px">
-              <label class="toggle"><input type="checkbox" id="suite-enable-obsidian" checked /> Obsidian</label>
-              <label class="toggle"><input type="checkbox" id="suite-enable-notion" /> Notion</label>
-              <label class="toggle"><input type="checkbox" id="suite-enable-onenote" /> OneNote</label>
+              <label class="toggle"><input type="checkbox" id="suite-enable-obsidian" checked /> Sync Obsidian</label>
+              <label class="toggle"><input type="checkbox" id="suite-enable-notion" /> Sync Notion</label>
+              <label class="toggle"><input type="checkbox" id="suite-enable-onenote" /> Sync OneNote</label>
               <label class="toggle"><input type="checkbox" id="suite-auto-sync" /> Auto-sync after semester refresh</label>
             </div>
             <div class="row">
-              <button id="suite-preview" type="button" class="ghost">Preview</button>
-              <button id="suite-build" type="button" class="ghost">Build</button>
               <button id="suite-sync" type="button" class="primary">Sync suites</button>
-              <a class="tag ghost" href="#semester" id="suite-open-semester">Semester status</a>
+              <button id="suite-preview" type="button" class="ghost">Preview</button>
+              <button id="suite-build" type="button" class="ghost">Build only</button>
             </div>
             <p id="suite-last-sync" class="hint suite-last-sync" role="status" aria-live="polite">
               No suite sync yet. Set destination folders, then Sync suites.
             </p>
             <div id="suite-results" class="results" role="status" aria-live="polite"></div>
           </div>
+
+          <details class="card feature-card" id="export-more-tools">
+            <summary><strong>More export tools</strong> — AI packs, flashcards, bundles, assessment calendar</summary>
+            <div style="margin-top:12px" class="export-more-stack">
 
           <div class="card feature-card" id="export-bundles-card">
             <h3>Quick export bundles</h3>
@@ -664,11 +670,9 @@
 
           <div class="card" id="calendar-exports-card">
             <h3>Assessment calendar</h3>
-            <p class="hint">Download the course assessment calendar. Full semester vaults live under
-              <strong>Study suites</strong> above — use Sync suites after generating a plan.</p>
+            <p class="hint">Quick assessment .ics. Full calendars live under Study suites → Master/Calendar.</p>
             <div class="row export-links">
               <a class="tag tag-calendar" href="/api/calendar.ics" download="course-assessments.ics">Assessment calendar (.ics)</a>
-              <button id="export-open-semester" type="button" class="tag ghost">Set up semester plan</button>
             </div>
             <div id="calendar-export-status" class="results compact" role="status" aria-live="polite"></div>
           </div>
@@ -809,6 +813,9 @@
             <div class="row"><button id="cheatsheet-go">Create cheat sheet PDF…</button></div>
             <div id="cheatsheet-results" class="results"></div>
           </div>
+
+            </div>
+          </details>
         </section>
 
         <!-- SPEECH -->

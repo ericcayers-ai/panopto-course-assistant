@@ -1570,8 +1570,7 @@ function suiteEnabledFormats() {
 }
 
 function suitePaperCodesFromUi() {
-  const raw = ($("sem-paper-codes")?.value || recall("sem-paper-codes") || "").trim();
-  return raw.split(/[,\s]+/).map((s) => s.trim()).filter(Boolean);
+  return getSelectedPaperCodes();
 }
 
 $("suite-preview")?.addEventListener("click", async () => {
@@ -2372,6 +2371,7 @@ function restore() {
   $("notion-path").value = recall("notionpath");
   if ($("sem-paper-codes")) $("sem-paper-codes").value = recall("sem-paper-codes");
   rememberPaperCodes(recall("sem-paper-codes"));
+  renderPaperChips();
   // We no longer restore mqcookies from localStorage; it's ephemeral.
   const course = recall("course");
   if (course) { $("course-input").value = course; $("course-name-main").value = course; }
@@ -2393,7 +2393,10 @@ loadStatus().then(() => {
   refreshOllama();             // pre-populate the local-AI panel
   wireDropZone($("notion-drop"), $("notion-file"));
   wireDropZone($("sem-schedule-drop"), $("sem-schedule-file"));
-  $("sem-paper-codes")?.addEventListener("change", (e) => rememberPaperCodes(e.target.value));
+  $("sem-paper-codes")?.addEventListener("change", (e) => {
+    rememberPaperCodes(e.target.value);
+    renderPaperChips();
+  });
   $("getting-started-dismiss")?.addEventListener("click", () => {
     remember("gs-dismissed", "1");
     $("getting-started")?.classList.add("hidden");
@@ -2802,18 +2805,87 @@ setMqImportMode("api");
 function applyDetectedPaperCodes(codes) {
   if (!Array.isArray(codes) || !codes.length) return;
   const normalized = codes.map((c) => String(c).split("-")[0].toUpperCase()).filter(Boolean);
-  const input = $("sem-paper-codes");
-  const existing = (
-    (input?.value || "") || recall("sem-paper-codes") || ""
-  ).split(/[,\s]+/).map((s) => s.trim()).filter(Boolean);
-  const merged = [...new Set([
-    ...existing.map((c) => c.split("-")[0].toUpperCase()),
-    ...normalized,
-  ])];
-  const joined = merged.join(", ");
-  if (input) input.value = joined;
+  const existing = getSelectedPaperCodes();
+  const known = new Set([...(recallJson("sem-paper-known") || []), ...normalized, ...existing]);
+  rememberJson("sem-paper-known", [...known]);
+  const merged = [...new Set([...existing, ...normalized])];
+  setSelectedPaperCodes(merged);
+  renderPaperChips();
+}
+
+function recallJson(key) {
+  try { return JSON.parse(recall(key) || "null"); } catch (_) { return null; }
+}
+function rememberJson(key, val) {
+  try { remember(key, JSON.stringify(val)); } catch (_) { /* ignore */ }
+}
+
+function getSelectedPaperCodes() {
+  const hidden = $("sem-paper-codes");
+  const raw = (hidden?.value || recall("sem-paper-codes") || "").trim();
+  return raw.split(/[,\s]+/).map((s) => s.trim().toUpperCase().split("-")[0]).filter(Boolean);
+}
+
+function setSelectedPaperCodes(codes) {
+  const uniq = [...new Set((codes || []).map((c) => String(c).toUpperCase().split("-")[0]).filter(Boolean))];
+  const joined = uniq.join(", ");
+  if ($("sem-paper-codes")) $("sem-paper-codes").value = joined;
   rememberPaperCodes(joined);
 }
+
+function renderPaperChips() {
+  const host = $("sem-paper-chips");
+  if (!host) return;
+  clear(host);
+  const selected = new Set(getSelectedPaperCodes());
+  const known = new Set([...(recallJson("sem-paper-known") || []), ...selected]);
+  if (!known.size) {
+    host.appendChild(el("span", { class: "hint", text: "No paper codes yet — add one below or import from Moodle." }));
+    return;
+  }
+  [...known].sort().forEach((code) => {
+    const on = selected.has(code);
+    const chip = el("button", {
+      type: "button",
+      class: "paper-chip",
+      "aria-pressed": on ? "true" : "false",
+      text: code,
+    });
+    chip.addEventListener("click", (ev) => {
+      if (ev.target.closest(".chip-x")) return;
+      const next = new Set(getSelectedPaperCodes());
+      if (next.has(code)) next.delete(code); else next.add(code);
+      setSelectedPaperCodes([...next]);
+      renderPaperChips();
+    });
+    const x = el("span", { class: "chip-x", text: "×", title: "Remove", role: "button" });
+    x.addEventListener("click", (ev) => {
+      ev.stopPropagation();
+      const nextSel = getSelectedPaperCodes().filter((c) => c !== code);
+      setSelectedPaperCodes(nextSel);
+      const knownList = (recallJson("sem-paper-known") || []).filter((c) => c !== code);
+      rememberJson("sem-paper-known", knownList);
+      renderPaperChips();
+    });
+    chip.appendChild(x);
+    host.appendChild(chip);
+  });
+}
+
+function addPaperCodeFromInput() {
+  const raw = ($("sem-paper-add")?.value || "").trim().toUpperCase().split("-")[0];
+  if (!raw) return;
+  const known = new Set([...(recallJson("sem-paper-known") || []), ...getSelectedPaperCodes(), raw]);
+  rememberJson("sem-paper-known", [...known]);
+  setSelectedPaperCodes([...getSelectedPaperCodes(), raw]);
+  if ($("sem-paper-add")) $("sem-paper-add").value = "";
+  renderPaperChips();
+}
+
+$("sem-paper-add-btn")?.addEventListener("click", addPaperCodeFromInput);
+$("sem-paper-add")?.addEventListener("keydown", (ev) => {
+  if (ev.key === "Enter") { ev.preventDefault(); addPaperCodeFromInput(); }
+});
 
 // ---- remove course files (with confirmation) ------------------------------
 
@@ -3037,6 +3109,7 @@ async function loadSemester() {
   const codes = recall("sem-paper-codes");
   if (codes && $("sem-paper-codes") && !$("sem-paper-codes").value) $("sem-paper-codes").value = codes;
   rememberPaperCodes($("sem-paper-codes")?.value || codes || "");
+  renderPaperChips();
   try {
     // Backend stores codes detected during Moodle connect/import
     const prefs = await api("/api/settings");
@@ -3146,11 +3219,8 @@ $("sem-paper-fetch")?.addEventListener("click", async () => {
     const outline = await postJSON("/api/semester/papers/fetch", { paper_code: code });
     Semester.lastOutline = outline;
     renderOutlinePreview(outline);
-    const base = (outline.paper_code || code).split("-")[0];
-    const cur = $("sem-paper-codes").value.trim();
-    if (!cur.includes(base)) {
-      $("sem-paper-codes").value = cur ? `${cur}, ${base}` : base;
-    }
+    const base = (outline.paper_code || code).split("-")[0].toUpperCase();
+    applyDetectedPaperCodes([base]);
     toast(`Loaded outline for ${outline.paper_code || code}.`, "ok");
   } catch (e) { toastError(e); }
 });
@@ -3171,7 +3241,7 @@ $("sem-schedule-import")?.addEventListener("click", async () => {
 });
 
 $("sem-plan-build")?.addEventListener("click", async () => {
-  const codes = $("sem-paper-codes").value.split(",").map((s) => s.trim()).filter(Boolean);
+  const codes = getSelectedPaperCodes();
   if (!codes.length) return toast("Add at least one paper code.", "warn");
   try {
     const body = { paper_codes: codes, class_schedule_id: Semester.scheduleId || null };
@@ -3203,9 +3273,9 @@ $("sem-calendar-save")?.addEventListener("click", async () => {
 });
 
 $("sem-sync-all")?.addEventListener("click", async () => {
-  const codes = $("sem-paper-codes").value.split(",").map((s) => s.trim()).filter(Boolean);
+  const codes = getSelectedPaperCodes();
   if (!codes.length) return toast("Add at least one paper code.", "warn");
-  rememberPaperCodes($("sem-paper-codes").value);
+  setSelectedPaperCodes(codes);
   const btn = $("sem-sync-all");
   const status = $("sem-sync-status");
   btn.disabled = true;

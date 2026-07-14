@@ -824,44 +824,58 @@ details.sub > summary { cursor: pointer; color: var(--brand); font-size: var(--t
 .collection-cell .k { color: var(--muted); font-size: var(--text-xs); }
 .collection-cell.empty-cell { opacity: .55; font-style: normal; }
 
-/* ---- semester planner (Waikato trimester timeline) ------------------------- */
+/* ---- semester planner ----------------------------------------------------- */
 .semester-layout {
   display: grid;
-  grid-template-columns: 3.5rem 1fr;
+  grid-template-columns: 1fr;
   gap: var(--space-4);
   align-items: start;
-}
-.semester-rail {
-  position: relative;
-  min-height: 12rem;
-  padding-top: var(--space-2);
-}
-.semester-rail-line {
-  position: absolute;
-  left: 50%;
-  top: 0;
-  bottom: 0;
-  width: 3px;
-  transform: translateX(-50%);
-  background: linear-gradient(180deg, #be0403 0%, var(--brand) 45%, var(--border) 100%);
-  border-radius: var(--radius-pill);
-}
-.semester-rail-label {
-  position: sticky;
-  top: 5rem;
-  display: block;
-  writing-mode: vertical-rl;
-  transform: rotate(180deg);
-  font-family: var(--font-display);
-  font-size: var(--text-xs);
-  letter-spacing: .12em;
-  text-transform: uppercase;
-  color: var(--muted);
-  margin: 0 auto;
 }
 .semester-main { display: grid; gap: var(--space-4); }
 .semester-card { position: relative; }
 .semester-hero { border-left: 3px solid var(--copper, #A8530A); }
+.semester-advanced-stack { display: grid; gap: var(--space-4); margin-top: var(--space-3); }
+.semester-subcard {
+  padding: var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface-2);
+}
+.paper-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin: var(--space-2) 0 var(--space-3);
+  min-height: 2rem;
+}
+.paper-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 0.25rem 0.55rem;
+  background: var(--surface);
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+  cursor: pointer;
+}
+.paper-chip[aria-pressed="true"] {
+  border-color: var(--copper, #A8530A);
+  background: color-mix(in srgb, var(--copper, #A8530A) 16%, var(--surface));
+}
+.paper-chip .chip-x {
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 1rem;
+  line-height: 1;
+  padding: 0 0.1rem;
+}
+.paper-add-row { margin-bottom: var(--space-3); }
+.paper-add-row input { max-width: 14rem; }
+.export-more-stack { display: grid; gap: var(--space-4); }
 .outline-preview {
   margin-top: var(--space-3);
   padding: var(--space-3);
@@ -938,7 +952,6 @@ details.sub > summary { cursor: pointer; color: var(--brand); font-size: var(--t
 
 @media (max-width: 640px) {
   .semester-layout { grid-template-columns: 1fr; }
-  .semester-rail { display: none; }
 }
 
 /* ---- reduced motion: honour the OS setting (§14/§15) ------------------------ */
