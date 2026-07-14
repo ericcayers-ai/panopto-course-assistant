@@ -1489,6 +1489,23 @@ document.querySelectorAll("[data-suite-format]").forEach((btn) => {
   });
 });
 
+function renderSuiteLastSync(last) {
+  const host = $("suite-last-sync");
+  if (!host) return;
+  if (!last || typeof last !== "object") {
+    host.textContent = "No suite sync yet. Set destination folders, then Sync suites.";
+    return;
+  }
+  const formats = (last.formats || []).join(", ") || "none";
+  const bits = [
+    `Last sync: ${formats}`,
+    `${last.new_files ?? 0} new`,
+    `${last.updated ?? 0} updated`,
+  ];
+  if (last.at) bits.push(String(last.at).replace("T", " ").slice(0, 19));
+  host.textContent = bits.join(" · ");
+}
+
 async function loadSuiteSettings() {
   try {
     const data = await api("/api/suites/settings");
@@ -1501,6 +1518,7 @@ async function loadSuiteSettings() {
     if ($("suite-enable-notion")) $("suite-enable-notion").checked = enabled.has("notion");
     if ($("suite-enable-onenote")) $("suite-enable-onenote").checked = enabled.has("onenote");
     if ($("suite-auto-sync")) $("suite-auto-sync").checked = !!data.auto_sync;
+    renderSuiteLastSync(data.last_sync);
   } catch (_) { /* ignore */ }
 }
 
@@ -1540,6 +1558,22 @@ document.querySelectorAll(".suite-pick-dest").forEach((btn) => {
 ["suite-enable-obsidian", "suite-enable-notion", "suite-enable-onenote", "suite-auto-sync"]
   .forEach((id) => $(id)?.addEventListener("change", () => { saveSuiteSettings().catch(() => {}); }));
 
+["suite-dest-obsidian", "suite-dest-notion", "suite-dest-onenote"]
+  .forEach((id) => $(id)?.addEventListener("change", () => { saveSuiteSettings().catch(() => {}); }));
+
+function suiteEnabledFormats() {
+  const enabled = [];
+  if ($("suite-enable-obsidian")?.checked) enabled.push("obsidian");
+  if ($("suite-enable-notion")?.checked) enabled.push("notion");
+  if ($("suite-enable-onenote")?.checked) enabled.push("onenote");
+  return enabled;
+}
+
+function suitePaperCodesFromUi() {
+  const raw = ($("sem-paper-codes")?.value || recall("sem-paper-codes") || "").trim();
+  return raw.split(/[,\s]+/).map((s) => s.trim()).filter(Boolean);
+}
+
 $("suite-preview")?.addEventListener("click", async () => {
   const out = $("suite-results");
   out.textContent = "Previewing…";
@@ -1547,6 +1581,10 @@ $("suite-preview")?.addEventListener("click", async () => {
     await saveSuiteSettings();
     const data = await postJSON("/api/suites/preview", { format: selectedSuiteFormat });
     clear(out);
+    if (!(data.task_count || data.subjects?.length)) {
+      out.appendChild(el("p", { class: "hint",
+        text: "No semester plan yet. Import a Moodle course or run Update everything on Semester first." }));
+    }
     out.appendChild(el("p", { class: "ok-text",
       text: `${data.format} suite ≈ ${data.estimated_files} files · ${data.subjects.length} paper(s) · ${data.task_count} tasks` }));
   } catch (e) { out.textContent = errorText(e); toastError(e); }
@@ -1566,6 +1604,9 @@ $("suite-build")?.addEventListener("click", async () => {
       text: `Built ${data.format} suite (${data.file_count} files) at ${data.root}` }));
     if (data.destination) {
       out.appendChild(el("p", { class: "hint", text: `Also mirrored to ${data.destination}` }));
+    } else {
+      out.appendChild(el("p", { class: "hint",
+        text: "No destination folder set for this format — suite built under the library _suites folder." }));
     }
     toast("Suite built.", "ok");
   } catch (e) { out.textContent = errorText(e); toastError(e); }
@@ -1578,15 +1619,35 @@ $("suite-sync")?.addEventListener("click", async () => {
   btn.disabled = true; out.textContent = "Syncing suites…";
   try {
     await saveSuiteSettings();
-    const paperCodes = ($("sem-papers")?.value || "")
-      .split(/[,\s]+/).map((s) => s.trim()).filter(Boolean);
+    const enabled = suiteEnabledFormats();
+    if (!enabled.length) {
+      out.textContent = "Enable at least one suite format (Obsidian, Notion, or OneNote).";
+      toast("Enable a suite format first.", "warn");
+      return;
+    }
+    const missingDest = enabled.filter((fmt) => !($(`suite-dest-${fmt}`)?.value || "").trim());
+    if (missingDest.length === enabled.length) {
+      out.textContent = "Set at least one destination folder before Sync, or use Build to write under the library.";
+      toast("Set a destination folder first.", "warn");
+      return;
+    }
+    const formats = enabled.filter((fmt) => !missingDest.includes(fmt));
+    const paperCodes = suitePaperCodesFromUi();
     const job = await postJSON("/api/suites/sync", {
       push_live: true,
+      formats,
       paper_codes: paperCodes.length ? paperCodes : undefined,
       discover_panopto: true,
+      use_browser: mqImportMode === "browser",
     });
     clear(out);
     out.appendChild(el("p", { class: "ok-text", text: `Suite sync job #${job.id} started.` }));
+    if (missingDest.length) {
+      out.appendChild(el("p", { class: "hint",
+        text: `Skipped ${missingDest.join(", ")} (no destination folder).` }));
+    }
+    out.appendChild(el("p", { class: "hint",
+      text: "Progress is tracked under Jobs. Reopen Export to refresh last-sync status." }));
     toast("Suite sync started — see Jobs.", "ok");
     showTab("jobs"); startJobsPolling();
   } catch (e) { out.textContent = errorText(e); toastError(e); }
@@ -2690,27 +2751,34 @@ async function renderMqCapabilityMatrix(mode) {
   try {
     const data = await api(`/api/moodle/capabilities?mode=${encodeURIComponent(mode)}`);
     clear(host);
-    const table = el("table", { class: "mq-cap-table" });
+    const table = el("table", { class: "mq-cap-table", "data-active-mode": mode });
     table.appendChild(el("thead", {}, [
       el("tr", {}, [
         el("th", { text: "Capability" }),
-        el("th", { text: "API" }),
-        el("th", { text: "Browser" }),
+        el("th", { class: mode === "api" ? "mq-cap-active" : "", text: "API" }),
+        el("th", { class: mode === "browser" ? "mq-cap-active" : "", text: "Browser" }),
       ]),
     ]));
     const tbody = el("tbody");
     for (const row of (data.matrix || [])) {
       tbody.appendChild(el("tr", {}, [
         el("td", { text: row.capability }),
-        el("td", { text: String(row.api === true ? "Yes" : row.api) }),
-        el("td", { text: String(row.browser === true ? "Yes" : row.browser) }),
+        el("td", { class: mode === "api" ? "mq-cap-active" : "",
+          text: String(row.api === true ? "Yes" : row.api) }),
+        el("td", { class: mode === "browser" ? "mq-cap-active" : "",
+          text: String(row.browser === true ? "Yes" : row.browser) }),
       ]));
     }
     table.appendChild(tbody);
     host.appendChild(table);
     if (data.playwright_available === false && mode === "browser") {
       host.appendChild(el("p", { class: "hint",
-        text: "Playwright is not installed yet. Run: pip install -r requirements-browser.txt" }));
+        text: "Playwright is not installed. Browser mode still uses Moodle API/HTML first; "
+          + "for forums & Panopto-only pages run: pip install -r requirements-browser.txt "
+          + "&& playwright install chromium" }));
+    } else if (mode === "browser") {
+      host.appendChild(el("p", { class: "hint",
+        text: "Browser mode prefers API/HTML, then falls back to Playwright for forums and Panopto pages." }));
     }
   } catch (e) {
     host.textContent = "Could not load capability matrix.";
@@ -2733,11 +2801,18 @@ setMqImportMode("api");
 
 function applyDetectedPaperCodes(codes) {
   if (!Array.isArray(codes) || !codes.length) return;
-  const input = $("sem-papers");
-  if (!input) return;
-  const existing = (input.value || "").split(/[,\s]+/).map((s) => s.trim()).filter(Boolean);
-  const merged = [...new Set([...existing, ...codes.map((c) => String(c).split("-")[0])])];
-  input.value = merged.join(", ");
+  const normalized = codes.map((c) => String(c).split("-")[0].toUpperCase()).filter(Boolean);
+  const input = $("sem-paper-codes");
+  const existing = (
+    (input?.value || "") || recall("sem-paper-codes") || ""
+  ).split(/[,\s]+/).map((s) => s.trim()).filter(Boolean);
+  const merged = [...new Set([
+    ...existing.map((c) => c.split("-")[0].toUpperCase()),
+    ...normalized,
+  ])];
+  const joined = merged.join(", ");
+  if (input) input.value = joined;
+  rememberPaperCodes(joined);
 }
 
 // ---- remove course files (with confirmation) ------------------------------
@@ -2924,15 +2999,21 @@ function renderSyncSteps(result) {
 }
 
 function setExportLinks(planId) {
-  $("sem-export-row").hidden = false;
-  $("sem-export-notion").href = `/api/semester/plans/${planId}/export/notion.csv`;
-  $("sem-export-obsidian").href = `/api/semester/plans/${planId}/export/obsidian.zip`;
-  $("sem-export-calendar").href = `/api/semester/plans/${planId}/export/calendar.ics`;
-  $("sem-export-google").href = `/api/semester/plans/${planId}/export/google-calendar.csv`;
+  const row = $("sem-export-row");
+  if (row) row.hidden = false;
+  if ($("sem-export-notion")) $("sem-export-notion").href = `/api/semester/plans/${planId}/export/notion.csv`;
+  if ($("sem-export-obsidian")) $("sem-export-obsidian").href = `/api/semester/plans/${planId}/export/obsidian.zip`;
+  if ($("sem-export-calendar")) $("sem-export-calendar").href = `/api/semester/plans/${planId}/export/calendar.ics`;
+  if ($("sem-export-google")) $("sem-export-google").href = `/api/semester/plans/${planId}/export/google-calendar.csv`;
   updateExportPlanLinks(planId);
   const calHint = $("sem-export-calendar-hint");
   if (calHint) calHint.hidden = false;
 }
+
+$("sem-open-suites")?.addEventListener("click", () => {
+  showTab("export");
+  $("suite-exports-card")?.scrollIntoView({ behavior: "smooth", block: "start" });
+});
 
 function rememberPaperCodes(raw) {
   const codes = raw.split(",").map((s) => s.trim()).filter(Boolean);
@@ -2957,6 +3038,12 @@ async function loadSemester() {
   const codes = recall("sem-paper-codes");
   if (codes && $("sem-paper-codes") && !$("sem-paper-codes").value) $("sem-paper-codes").value = codes;
   rememberPaperCodes($("sem-paper-codes")?.value || codes || "");
+  try {
+    // Backend stores codes detected during Moodle connect/import
+    const prefs = await api("/api/settings");
+    const detected = prefs?.["semester.paper_codes"];
+    if (Array.isArray(detected) && detected.length) applyDetectedPaperCodes(detected);
+  } catch (_) { /* optional */ }
   try {
     const data = await api("/api/semester/plans");
     const plans = (data.plans || []).slice().sort((a, b) =>

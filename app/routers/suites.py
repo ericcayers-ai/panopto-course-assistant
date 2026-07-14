@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import json
-import zipfile
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -49,6 +48,7 @@ def api_suite_formats() -> Dict[str, Any]:
         "destinations": suites.get_destinations(context.db),
         "enabled": suites.get_enabled(context.db),
         "auto_sync": suites.get_auto_sync(context.db),
+        "last_sync": suites.get_last_sync(context.db),
     }
 
 
@@ -58,6 +58,7 @@ def api_suite_settings_get() -> Dict[str, Any]:
         "destinations": suites.get_destinations(context.db),
         "enabled": suites.get_enabled(context.db),
         "auto_sync": suites.get_auto_sync(context.db),
+        "last_sync": suites.get_last_sync(context.db),
     }
 
 
@@ -231,12 +232,19 @@ def api_suite_sync(req: SuiteSyncReq) -> Dict[str, Any]:
             push_live=req.push_live,
         )
         progress("done", 1.0)
-        settings_store.set(context.db, "suite.last_sync", {
+        from .. import core
+        last = {
             "plan_id": plan_row["id"],
             "formats": formats,
             "new_files": suite_result.get("new_files", 0),
             "updated": suite_result.get("updated", 0),
-        })
+            "at": core.now_iso(),
+            "destinations": {
+                k: (v or {}).get("destination")
+                for k, v in (suite_result.get("destinations_written") or {}).items()
+            },
+        }
+        suites.set_last_sync(context.db, last)
         return {
             "ok": True,
             "plan_id": plan_row["id"],

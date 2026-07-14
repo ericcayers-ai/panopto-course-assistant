@@ -44,6 +44,7 @@ SUITE_FOLDERS = (
 SETTING_DESTINATIONS = "suite.destinations"
 SETTING_ENABLED = "suite.enabled"
 SETTING_AUTO_SYNC = "suite.auto_sync"
+SETTING_LAST_SYNC = "suite.last_sync"
 
 
 def _slug(text: str) -> str:
@@ -618,6 +619,17 @@ def set_auto_sync(db: Database, enabled: bool) -> bool:
     return bool(enabled)
 
 
+def get_last_sync(db: Database) -> Optional[Dict[str, Any]]:
+    raw = settings_store.get(db, SETTING_LAST_SYNC, None)
+    return raw if isinstance(raw, dict) else None
+
+
+def set_last_sync(db: Database, report: Dict[str, Any]) -> Dict[str, Any]:
+    payload = dict(report or {})
+    settings_store.set(db, SETTING_LAST_SYNC, payload)
+    return payload
+
+
 def preview_suite(
     *,
     format: str = "obsidian",
@@ -774,7 +786,7 @@ def detect_paper_codes_from_courses(courses: Iterable[Dict[str, Any]]) -> List[s
     codes: List[str] = []
     seen: Set[str] = set()
     for c in courses:
-        for key in ("code", "shortname", "fullname", "name", "fullnamename"):
+        for key in ("code", "shortname", "fullname", "name"):
             raw = c.get(key) or ""
             if not raw:
                 continue

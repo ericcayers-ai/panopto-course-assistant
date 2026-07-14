@@ -493,7 +493,8 @@
             <h2 id="semester-h">Semester plan</h2>
           </div>
           <p class="panel-intro">Configure your papers and schedule, then use <strong>Update everything</strong>
-            to refresh outlines, Moodle calendar, announcements, and exports in one step.</p>
+            to refresh outlines, Moodle calendar, and announcements. Sync Obsidian / Notion / OneNote vaults from
+            <strong>Export → Study suites</strong>.</p>
 
           <div class="semester-layout">
             <div class="semester-rail" aria-hidden="true">
@@ -519,13 +520,19 @@
                 <div id="sem-sync-status" class="results compact" aria-live="polite"></div>
                 <div id="sem-timeline" class="semester-timeline"></div>
                 <div class="row gap wrap" id="sem-export-row" hidden>
-                  <a id="sem-export-notion" class="tag" href="#" download>Download Notion CSV</a>
-                  <a id="sem-export-obsidian" class="tag" href="#" download>Download Obsidian vault</a>
-                  <a id="sem-export-calendar" class="tag tag-calendar" href="#" download>Export calendar (.ics)</a>
-                  <a id="sem-export-google" class="tag tag-calendar" href="#" download>Google Calendar CSV</a>
+                  <button id="sem-open-suites" type="button" class="primary">Sync study suites…</button>
+                  <details class="sem-export-details">
+                    <summary class="hint">Direct file downloads</summary>
+                    <div class="row gap wrap" style="margin-top:8px">
+                      <a id="sem-export-calendar" class="tag tag-calendar" href="#" download>Calendar (.ics)</a>
+                      <a id="sem-export-google" class="tag tag-calendar" href="#" download>Google Calendar CSV</a>
+                      <a id="sem-export-obsidian" class="tag" href="#" download>Obsidian ZIP</a>
+                      <a id="sem-export-notion" class="tag" href="#" download>Notion CSV</a>
+                    </div>
+                  </details>
                 </div>
                 <p id="sem-export-calendar-hint" class="hint" hidden>
-                  Import the .ics file into Google Calendar, Apple Calendar, or Outlook.
+                  Prefer <strong>Sync study suites</strong> for a full vault. Direct downloads remain available above.
                 </p>
               </div>
 
@@ -630,6 +637,9 @@
               <button id="suite-sync" type="button" class="primary">Sync suites</button>
               <a class="tag ghost" href="#semester" id="suite-open-semester">Semester status</a>
             </div>
+            <p id="suite-last-sync" class="hint suite-last-sync" role="status" aria-live="polite">
+              No suite sync yet. Set destination folders, then Sync suites.
+            </p>
             <div id="suite-results" class="results" role="status" aria-live="polite"></div>
           </div>
 

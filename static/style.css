@@ -926,7 +926,15 @@ details.sub > summary { cursor: pointer; color: var(--brand); font-size: var(--t
   vertical-align: top;
 }
 .mq-cap-table th { color: var(--muted); font-weight: 600; }
+.mq-cap-table th.mq-cap-active,
+.mq-cap-table td.mq-cap-active {
+  background: color-mix(in srgb, var(--accent, #be0403) 8%, transparent);
+  font-weight: 600;
+}
 .suite-dest-grid { margin-top: var(--space-3); gap: var(--space-3); }
+.suite-last-sync { margin-top: var(--space-2); }
+.sem-export-details { margin: 0; }
+.sem-export-details > summary { cursor: pointer; list-style: disclosure-closed; }
 
 @media (max-width: 640px) {
   .semester-layout { grid-template-columns: 1fr; }

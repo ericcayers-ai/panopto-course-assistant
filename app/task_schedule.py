@@ -875,6 +875,13 @@ def sync_semester_all(
                 staging_dir=context.OUTPUT_DIR / "_suites",
                 push_live=True,
             )
+            suites.set_last_sync(db, {
+                "plan_id": plan_id,
+                "formats": suite_report.get("formats") or [],
+                "new_files": suite_report.get("new_files", 0),
+                "updated": suite_report.get("updated", 0),
+                "at": now_iso(),
+            })
             steps.append({
                 "step": "suites",
                 "status": "ok",

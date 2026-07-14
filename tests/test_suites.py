@@ -138,6 +138,10 @@ def test_capability_matrix_shape():
     assert browser["mode"] == "browser"
     assert len(api["matrix"]) >= 6
     assert api["matrix"][0]["capability"]
+    assert "playwright_available" in api
+    labels = {row["capability"] for row in api["matrix"]}
+    assert "Paper code detection" in labels
+    assert "Forums / discussions" in labels
 
 
 def test_panopto_rss_fixture_discovery():
@@ -170,9 +174,23 @@ def test_suite_settings_roundtrip(db):
     suites.set_destinations(db, {"obsidian": "C:/Vaults/Obsidian"})
     suites.set_enabled(db, ["obsidian", "notion"])
     suites.set_auto_sync(db, True)
+    suites.set_last_sync(db, {"formats": ["obsidian"], "new_files": 2, "updated": 0})
     assert suites.get_destinations(db)["obsidian"].endswith("Obsidian")
     assert suites.get_enabled(db) == ["obsidian", "notion"]
     assert suites.get_auto_sync(db) is True
+    assert suites.get_last_sync(db)["new_files"] == 2
+
+
+def test_playwright_missing_is_soft_skipped(monkeypatch):
+    monkeypatch.setattr(
+        "app.browser_scrape.playwright_available", lambda: False,
+    )
+    result = panopto_discover.discover(
+        panopto_url="https://waikato.au.panopto.com/Panopto/Pages/Sessions/List.aspx",
+        use_playwright=True,
+    )
+    assert result["feeds"] == []
+    assert any(s.get("skipped") for s in result["steps"])
 
 
 def test_suite_sync_to_destination(tmp_path: Path, db):

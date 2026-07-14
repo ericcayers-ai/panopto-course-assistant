@@ -145,7 +145,20 @@ def discover(
 
     if use_playwright and panopto_url and not feeds:
         try:
-            _add(discover_with_playwright(panopto_url, cookies=cookies))
+            from . import browser_scrape
+            if not browser_scrape.playwright_available():
+                steps.append({
+                    "source": "playwright",
+                    "url": panopto_url,
+                    "feeds": [],
+                    "skipped": True,
+                    "error": (
+                        "Playwright is not installed. "
+                        "Run: pip install -r requirements-browser.txt && playwright install chromium"
+                    ),
+                })
+            else:
+                _add(discover_with_playwright(panopto_url, cookies=cookies))
         except Exception as e:
             steps.append({"source": "playwright", "url": panopto_url, "error": str(e), "feeds": []})
 
