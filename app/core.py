@@ -1095,6 +1095,19 @@ def export_all_sources(output_dir: Path, combined: bool = True, course: str = ""
             transcripts.append((title, body))
     documents = _collect_source_markdown(output_dir / DOCS_DIRNAME, {"documents_pack.md"})
     notion_pages = _collect_source_markdown(output_dir / NOTION_DIRNAME, {"notion_pack.md"})
+    source_files = list(nb.get("files", []))
+    for dirname, excluded in (
+        (DOCS_DIRNAME, {"documents_pack.md"}),
+        (NOTION_DIRNAME, {"notion_pack.md"}),
+    ):
+        root = output_dir / dirname
+        if not root.exists():
+            continue
+        source_files.extend(
+            path.relative_to(output_dir).as_posix()
+            for path in root.rglob("*.md")
+            if path.is_file() and path.name not in excluded
+        )
 
     sections = [
         ("Lecture transcripts", transcripts),
@@ -1127,6 +1140,7 @@ def export_all_sources(output_dir: Path, combined: bool = True, course: str = ""
         "documents": len(documents),
         "notion": len(notion_pages),
         "notebooklm_files": nb["count"],
+        "files": source_files,
         "dest": str(dest),
         "combined": combined_path,
     }

@@ -88,7 +88,7 @@ def api_export_all(req: ExportAllRequest) -> Dict[str, Any]:
         )
     if req.output_dir:
         dest = Path(req.output_dir).expanduser()
-        files = []
+        files = list(result.get("files", []))
         if result.get("combined"):
             files.append(result["combined"])
         _copy_export_files(files, context.OUTPUT_DIR, dest)

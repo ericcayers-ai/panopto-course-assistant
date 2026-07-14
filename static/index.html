@@ -49,7 +49,7 @@
 
   <div class="app">
     <!-- SIDEBAR -->
-    <aside class="sidebar">
+    <aside class="sidebar" id="sidebar">
       <div class="brand">
         <svg class="ico ico-lg" aria-hidden="true"><use href="#i-waveform"/></svg>
         <span>Course Assistant</span>
@@ -71,7 +71,7 @@
         <button class="tab" data-tab="study">
           <svg class="ico" aria-hidden="true"><use href="#i-study"/></svg> Study
         </button>
-        <button class="tab" data-tab="semester" data-adv-only>
+        <button class="tab" data-tab="semester">
           <svg class="ico" aria-hidden="true"><use href="#i-cap"/></svg> Semester
         </button>
         <button class="tab" data-tab="export">
@@ -105,7 +105,8 @@
     <div class="content">
       <header class="topbar">
         <div class="topbar-left">
-          <button id="menu-toggle" class="ghost small icon-only" aria-expanded="false" aria-controls="main">
+          <button id="menu-toggle" class="ghost small icon-only" aria-expanded="false" aria-controls="sidebar"
+                  aria-label="Open navigation">
             <svg class="ico" aria-hidden="true"><use href="#i-menu"/></svg>
             <span class="sr-only">Open navigation</span>
           </button>
@@ -403,10 +404,10 @@
           </div>
 
           <div class="card danger-card">
-            <h3>Remove course files</h3>
-            <p class="hint">Permanently deletes this course's transcripts, documents, Notion pages, and
-              generated exports. The database, settings, and backups are kept.</p>
-            <div class="row"><button id="course-clear" class="danger">Remove all files for this course</button></div>
+            <h3>Clear the library</h3>
+            <p class="hint">Permanently deletes all transcripts, documents, Notion pages, and generated exports
+              stored in this workspace. The database, settings, and backups are kept.</p>
+            <div class="row"><button id="course-clear" class="danger">Clear the entire library</button></div>
             <div id="course-clear-results" class="results"></div>
           </div>
         </section>
@@ -486,7 +487,7 @@
         </section>
 
         <!-- SEMESTER PLANNER -->
-        <section id="semester" class="panel" aria-labelledby="semester-h" data-adv-only>
+        <section id="semester" class="panel" aria-labelledby="semester-h">
           <div class="panel-head">
             <svg class="ico ico-lg" aria-hidden="true"><use href="#i-cap"/></svg>
             <h2 id="semester-h">Semester plan</h2>
@@ -518,9 +519,10 @@
                 <div id="sem-sync-status" class="results compact" aria-live="polite"></div>
                 <div id="sem-timeline" class="semester-timeline"></div>
                 <div class="row gap wrap" id="sem-export-row" hidden>
-                  <a id="sem-export-notion" class="tag" href="#">Download Notion CSV</a>
-                  <a id="sem-export-obsidian" class="tag" href="#">Download Obsidian vault</a>
-                  <a id="sem-export-calendar" class="tag tag-calendar" href="#">Export calendar (.ics)</a>
+                  <a id="sem-export-notion" class="tag" href="#" download>Download Notion CSV</a>
+                  <a id="sem-export-obsidian" class="tag" href="#" download>Download Obsidian vault</a>
+                  <a id="sem-export-calendar" class="tag tag-calendar" href="#" download>Export calendar (.ics)</a>
+                  <a id="sem-export-google" class="tag tag-calendar" href="#" download>Google Calendar CSV</a>
                 </div>
                 <p id="sem-export-calendar-hint" class="hint" hidden>
                   Import the .ics file into Google Calendar, Apple Calendar, or Outlook.
@@ -581,8 +583,44 @@
             <svg class="ico ico-lg" aria-hidden="true"><use href="#i-export"/></svg>
             <h2 id="export-h">Export</h2>
           </div>
-          <p class="panel-intro">Turn the library into study material. Exports are scoped to the current course.
-            Each one opens a file dialog so you choose where it is written.</p>
+          <p class="panel-intro">Turn the library into study material. Choose a ready-made bundle or an
+            individual format; exports stay in the library unless a destination chooser opens.</p>
+
+          <div class="card feature-card" id="export-bundles-card">
+            <h3>Quick export bundles</h3>
+            <p class="hint">Preview exactly what will be created, then run the bundle. These options do not
+              require a local AI model.</p>
+            <div class="export-bundle-grid" role="group" aria-label="Export bundle">
+              <button type="button" class="export-bundle active" data-export-preset="revision"
+                      aria-pressed="true"><strong>Revision kit</strong><span>NotebookLM + Anki cards</span></button>
+              <button type="button" class="export-bundle" data-export-preset="exam"
+                      aria-pressed="false"><strong>Exam kit</strong><span>Revision kit + SRT and VTT</span></button>
+              <button type="button" class="export-bundle" data-export-preset="archive"
+                      aria-pressed="false"><strong>Course archive</strong><span>Portable ZIP backup</span></button>
+            </div>
+            <div class="row">
+              <button id="bundle-preview" type="button" class="ghost">Preview bundle</button>
+              <button id="bundle-run" type="button">Create bundle</button>
+            </div>
+            <div id="bundle-results" class="results" role="status" aria-live="polite"></div>
+          </div>
+
+          <div class="card" id="calendar-exports-card">
+            <h3>Calendar, Obsidian, and planner exports</h3>
+            <p class="hint">The assessment calendar is always available. Semester exports appear automatically
+              after a semester plan has been generated.</p>
+            <div class="row export-links">
+              <a class="tag tag-calendar" href="/api/calendar.ics" download="course-assessments.ics">Assessment calendar (.ics)</a>
+              <button id="export-open-semester" type="button" class="tag ghost">Set up semester plan</button>
+            </div>
+            <div class="row export-links" id="export-semester-links" hidden>
+              <a id="export-sem-calendar" class="tag tag-calendar" href="#" download>Semester calendar (.ics)</a>
+              <a id="export-google-calendar" class="tag tag-calendar" href="#" download>Google Calendar CSV</a>
+              <a id="export-obsidian" class="tag" href="#" download>Obsidian vault (.zip)</a>
+              <a id="export-sem-notion" class="tag" href="#" download>Semester tasks for Notion</a>
+            </div>
+            <div id="calendar-export-status" class="results compact" role="status" aria-live="polite"></div>
+          </div>
 
           <div class="card feature-card">
             <h3>Export everything for AI <span class="pill">all sources</span></h3>
@@ -593,7 +631,7 @@
               <label class="toggle"><input type="checkbox" id="all-combined" checked /> Combined <code>everything_pack.md</code></label>
               <button id="export-all">Export everything…</button>
             </div>
-            <div id="export-all-results" class="results"></div>
+            <div id="export-all-results" class="results" role="status" aria-live="polite"></div>
           </div>
 
           <details class="card" id="export-formats-details">
@@ -606,7 +644,7 @@
                   <label class="toggle"><input type="checkbox" id="nlm-combined" /> Combined <code>course_pack.md</code></label>
                   <button id="nlm-export">Export…</button>
                 </div>
-                <div id="nlm-results" class="results"></div>
+                <div id="nlm-results" class="results" role="status" aria-live="polite"></div>
               </div>
 
               <div class="card">
@@ -617,17 +655,31 @@
                 <div class="row">
                   <button id="studycsv-go">Export CSV…</button>
                 </div>
-                <div id="studycsv-results" class="results"></div>
+                <div id="studycsv-results" class="results" role="status" aria-live="polite"></div>
               </div>
 
               <div class="card">
-                <h3>Transcripts and subtitles (SRT)</h3>
-                <p class="hint">Transcript text plus <code>.srt</code> subtitle files. Place the SRT files beside
-                  the video recordings and media players will load them automatically.</p>
+                <h3>Subtitles with recordings</h3>
+                <p class="hint"><code>.srt</code> subtitles and available video recordings are placed together
+                  so media players can load them automatically.</p>
                 <div class="row">
                   <button id="srt-export">Export subtitles…</button>
                 </div>
-                <div id="srt-results" class="results"></div>
+                <div id="srt-results" class="results" role="status" aria-live="polite"></div>
+              </div>
+
+              <div class="card">
+                <h3>Regenerate transcript formats</h3>
+                <p class="hint">Create alternate files from the stored timed transcript data.</p>
+                <div class="format-checks" id="format-checks">
+                  <label><input type="checkbox" value="vtt" checked /> WebVTT</label>
+                  <label><input type="checkbox" value="srt" /> SRT</label>
+                  <label><input type="checkbox" value="txt" /> Text</label>
+                  <label><input type="checkbox" value="md" /> Markdown</label>
+                  <label><input type="checkbox" value="summary" /> Summary</label>
+                </div>
+                <div class="row"><button id="formats-export" type="button">Generate selected formats</button></div>
+                <div id="formats-results" class="results" role="status" aria-live="polite"></div>
               </div>
             </div>
           </details>

@@ -362,6 +362,13 @@ def test_api_endpoints(tmp_path: Path, monkeypatch):
         assert "BEGIN:VCALENDAR" in r.text
         assert "COMPX202" in r.text
         assert "CATEGORIES:" in r.text
+        r = client.get(f"/api/semester/plans/{plan_id}/export/google-calendar.csv")
+        assert r.status_code == 200
+        assert "Assignment One" in r.text
+        r = client.get(f"/api/semester/plans/{plan_id}/export/obsidian.zip")
+        assert r.status_code == 200
+        assert r.headers["content-type"] == "application/zip"
+        assert r.content.startswith(b"PK")
 
 def test_parse_outer_notion_export_zip():
     """Notion sometimes wraps the Part-1 zip in an outer export archive."""

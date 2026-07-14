@@ -281,8 +281,6 @@ function applyLevel(level) {
   const btn = $("level-toggle");
   if (label) label.textContent = simple ? "Advanced mode" : "Simple mode";
   if (btn) btn.setAttribute("aria-pressed", String(!simple));
-  // Semester is advanced-only — leave Simple users on a visible panel.
-  if (simple && document.querySelector("#semester.active")) showTab("home");
 }
 
 function initLevel() {
@@ -388,6 +386,7 @@ function showTab(name) {
   if (name === "jobs") loadJobs();
   if (name === "study") loadStudy();
   if (name === "semester") loadSemester();
+  if (name === "export") loadExportHub();
 }
 document.querySelectorAll(".tab").forEach((btn) =>
   btn.addEventListener("click", () => showTab(btn.dataset.tab))
@@ -434,6 +433,14 @@ $("theme-toggle")?.addEventListener("click", () =>
 $("menu-toggle").addEventListener("click", (e) => {
   const open = document.querySelector(".app").classList.toggle("menu-open");
   e.currentTarget.setAttribute("aria-expanded", String(open));
+  e.currentTarget.setAttribute("aria-label", open ? "Close navigation" : "Open navigation");
+});
+document.querySelector(".app")?.addEventListener("click", (e) => {
+  const app = document.querySelector(".app");
+  if (!app.classList.contains("menu-open") || e.target.closest("#menu-toggle, .sidebar")) return;
+  app.classList.remove("menu-open");
+  $("menu-toggle")?.setAttribute("aria-expanded", "false");
+  $("menu-toggle")?.setAttribute("aria-label", "Open navigation");
 });
 
 // ---- dashboard ------------------------------------------------------------
@@ -1370,6 +1377,106 @@ $("lib-clear").addEventListener("click", () => {
   loadTranscripts();
 });
 
+// Export hub: preset bundles and planner downloads in one discoverable place.
+let selectedExportPreset = "revision";
+document.querySelectorAll("[data-export-preset]").forEach((button) => {
+  button.addEventListener("click", () => {
+    selectedExportPreset = button.dataset.exportPreset;
+    document.querySelectorAll("[data-export-preset]").forEach((candidate) => {
+      const active = candidate === button;
+      candidate.classList.toggle("active", active);
+      candidate.setAttribute("aria-pressed", String(active));
+    });
+    clear($("bundle-results"));
+  });
+});
+
+function exportArtifactPaths(result) {
+  const paths = [];
+  for (const value of Object.values(result.results || {})) {
+    if (!value || typeof value !== "object") continue;
+    for (const key of ["combined", "path", "csv", "anki_tsv"]) {
+      if (typeof value[key] === "string" && value[key]) paths.push(value[key]);
+    }
+    if (Array.isArray(value.files)) paths.push(...value.files);
+  }
+  return [...new Set(paths)];
+}
+
+$("bundle-preview")?.addEventListener("click", async () => {
+  const out = $("bundle-results");
+  out.textContent = "Checking the library…";
+  try {
+    const data = await postJSON("/api/export/preview", {
+      preset: selectedExportPreset, scope: "course", course: currentCourse(),
+    });
+    clear(out);
+    out.appendChild(el("p", { class: "ok-text",
+      text: `${data.lectures_in_scope} lecture(s) will be included.` }));
+    const list = el("ul", { class: "artifact-preview" });
+    for (const artifact of data.artifacts || []) {
+      list.appendChild(el("li", { text: `${artifact.target.replaceAll("_", " ")}: about ${artifact.estimated_items} item(s)` }));
+    }
+    out.appendChild(list);
+  } catch (e) { out.textContent = errorText(e); toastError(e); }
+});
+
+$("bundle-run")?.addEventListener("click", async () => {
+  const out = $("bundle-results");
+  const btn = $("bundle-run");
+  btn.disabled = true; out.textContent = "Creating bundle…";
+  try {
+    const data = await postJSON("/api/export/run", {
+      preset: selectedExportPreset, scope: "course", course: currentCourse(),
+    });
+    clear(out);
+    const paths = exportArtifactPaths(data);
+    out.appendChild(el("p", { class: "ok-text",
+      text: `Created ${data.targets.length} export type(s) in the library.` }));
+    for (const path of paths.slice(0, 20)) {
+      const canView = /\.(md|txt|csv|srt|vtt)$/i.test(path);
+      out.appendChild(el("div", { class: "list-item" }, [
+        el("span", { class: "li-label", text: path }),
+        canView ? el("button", { class: "tag", text: "View", onclick: () => viewTranscript(path) }) : null,
+      ]));
+    }
+    toast("Export bundle created.", "ok");
+    loadTranscripts();
+  } catch (e) { out.textContent = errorText(e); toastError(e); }
+  finally { btn.disabled = false; }
+});
+
+function updateExportPlanLinks(planId) {
+  const row = $("export-semester-links");
+  if (!row) return;
+  row.hidden = !planId;
+  if (!planId) return;
+  $("export-sem-calendar").href = `/api/semester/plans/${planId}/export/calendar.ics`;
+  $("export-google-calendar").href = `/api/semester/plans/${planId}/export/google-calendar.csv`;
+  $("export-obsidian").href = `/api/semester/plans/${planId}/export/obsidian.zip`;
+  $("export-sem-notion").href = `/api/semester/plans/${planId}/export/notion.csv`;
+}
+
+async function loadExportHub() {
+  const status = $("calendar-export-status");
+  if (!status) return;
+  try {
+    const data = await api("/api/semester/plans");
+    const plans = (data.plans || []).slice().sort((a, b) =>
+      String(b.created_at || "").localeCompare(String(a.created_at || "")));
+    const latest = plans[0];
+    updateExportPlanLinks(latest?.id);
+    status.textContent = latest
+      ? `Using latest semester plan: ${latest.name} (${latest.task_count} tasks).`
+      : "No semester plan yet. The assessment calendar above is still available.";
+  } catch (e) {
+    updateExportPlanLinks(null);
+    status.textContent = "Semester exports are temporarily unavailable.";
+  }
+}
+
+$("export-open-semester")?.addEventListener("click", () => showTab("semester"));
+
 // Export everything (transcripts + documents + Notion) for NotebookLM / any AI
 $("export-all").addEventListener("click", async () => {
   const out = $("export-all-results");
@@ -1480,6 +1587,29 @@ $("srt-export").addEventListener("click", async () => {
     out.appendChild(el("p", { class: "hint",
       text: "The .srt files share each video's name, so players load them automatically when both are in this folder." }));
     toast(`Exported ${data.count} SRT file(s).`, "ok");
+  } catch (e) { out.textContent = errorText(e); toastError(e); }
+  finally { btn.disabled = false; }
+});
+
+$("formats-export")?.addEventListener("click", async () => {
+  const out = $("formats-results");
+  const btn = $("formats-export");
+  const formats = [...document.querySelectorAll("#format-checks input:checked")].map((input) => input.value);
+  if (!formats.length) { toast("Select at least one format.", "warn"); return; }
+  btn.disabled = true; out.textContent = "Generating formats…";
+  try {
+    const data = await postJSON("/api/export/formats", { formats });
+    clear(out);
+    out.appendChild(el("p", { class: "ok-text",
+      text: `Generated ${data.count} file(s): ${data.formats.join(", ")}.` }));
+    for (const path of data.files || []) {
+      out.appendChild(el("div", { class: "list-item" }, [
+        el("span", { class: "li-label", text: path }),
+        el("button", { class: "tag", text: "View", onclick: () => viewTranscript(path) }),
+      ]));
+    }
+    toast(`Generated ${data.count} file(s).`, "ok");
+    loadTranscripts();
   } catch (e) { out.textContent = errorText(e); toastError(e); }
   finally { btn.disabled = false; }
 });
@@ -2418,19 +2548,19 @@ async function mqExport(kind) {
 // ---- remove course files (with confirmation) ------------------------------
 
 $("course-clear")?.addEventListener("click", async () => {
-  const name = currentCourse() || "this course";
   const ok = await confirmModal(
-    "Remove all files for this course?",
-    `This permanently deletes every transcript, document, Notion page, and generated export for `
-    + `${name}. The database, saved settings, and backups are kept. This cannot be undone.`,
+    "Clear the entire library?",
+    "This permanently deletes every transcript, document, Notion page, and generated export in this "
+    + "workspace, including files from other courses. The database, saved settings, and backups are kept. "
+    + "This cannot be undone.",
     { confirmText: "Remove files", danger: true });
   if (!ok) return;
   const out = $("course-clear-results");
-  out.textContent = "Removing course files…";
+    out.textContent = "Clearing the library…";
   try {
     const d = await postJSON("/api/library/clear", {});
     out.textContent = `Removed ${d.files} file(s) across ${d.folders} folder(s).`;
-    toast("Course files removed.", "ok");
+    toast("Library cleared.", "ok");
     loadTranscripts();
     loadDashboard();
   } catch (e) { out.textContent = errorText(e); toastError(e); }
@@ -2603,6 +2733,8 @@ function setExportLinks(planId) {
   $("sem-export-notion").href = `/api/semester/plans/${planId}/export/notion.csv`;
   $("sem-export-obsidian").href = `/api/semester/plans/${planId}/export/obsidian.zip`;
   $("sem-export-calendar").href = `/api/semester/plans/${planId}/export/calendar.ics`;
+  $("sem-export-google").href = `/api/semester/plans/${planId}/export/google-calendar.csv`;
+  updateExportPlanLinks(planId);
   const calHint = $("sem-export-calendar-hint");
   if (calHint) calHint.hidden = false;
 }
@@ -2630,6 +2762,19 @@ async function loadSemester() {
   const codes = recall("sem-paper-codes");
   if (codes && $("sem-paper-codes") && !$("sem-paper-codes").value) $("sem-paper-codes").value = codes;
   rememberPaperCodes($("sem-paper-codes")?.value || codes || "");
+  try {
+    const data = await api("/api/semester/plans");
+    const plans = (data.plans || []).slice().sort((a, b) =>
+      String(b.created_at || "").localeCompare(String(a.created_at || "")));
+    if (plans[0]) {
+      Semester.planId = plans[0].id;
+      setExportLinks(plans[0].id);
+      const plan = await api(`/api/semester/plans/${plans[0].id}`);
+      renderTimeline(plan);
+    } else {
+      renderTimeline(null);
+    }
+  } catch (_) { renderTimeline(null); }
   try {
     const d = await api("/api/semester/moodle/announcements");
     renderAnnouncements(d.announcements || []);
