@@ -1,6 +1,8 @@
 """Semester planner: paper outlines, schedule import, exports, announcements."""
 from __future__ import annotations
 
+import datetime as dt
+import io
 import json
 import zipfile
 from pathlib import Path
@@ -122,6 +124,67 @@ def test_export_formats(tmp_path: Path):
         assert "dateFormat YYYY-MM-DD" in gantt
         assert "section COMPX202" in gantt
         assert "2026-08-14" in gantt
+
+
+def test_obsidian_export_preserves_complete_vault_layout(tmp_path: Path):
+    tasks = [
+        {"id": "compx202-assignment-one", "subject": "COMPX202", "name": "Assignment One",
+         "type": "Assignment", "due_date": "2026-08-14", "weight": 15,
+         "status": "not_started", "source": "schedule"},
+    ]
+    outlines = [
+        {"paper_code": "COMPX202-26B (HAM)", "title": "Mobile Computing"},
+        # An outline with no task must still receive paper and Guide notes.
+        {"paper_code": "JAPAN332-26B (HAM)", "title": "Japanese Language 3"},
+    ]
+    moodle_events = [
+        {"uid": "csmax275-lecture", "paper_code": "CSMAX275",
+         "summary": "CSMAX275: Lecture", "event_type": "lecture",
+         "start": dt.date(2026, 7, 20),
+         "end": dt.date(2026, 7, 21)},
+    ]
+    announcements = [
+        {"title": "Welcome", "body": "First post", "author": "Lecturer",
+         "posted_at": "2026-07-13"},
+    ]
+    dest = tmp_path / "obsidian.zip"
+
+    task_schedule.export_obsidian_zip(
+        tasks, dest, title="Tri B plan", outlines=outlines,
+        moodle_events=moodle_events, announcements=announcements,
+    )
+
+    root = "tri-b-plan"
+    with zipfile.ZipFile(dest) as zf:
+        names = set(zf.namelist())
+        expected_folders = {
+            f"{root}/Study Timetable/", f"{root}/Guide/", f"{root}/Outlines/",
+            f"{root}/Announcements/", f"{root}/papers/", f"{root}/tasks/",
+        }
+        expected_files = {
+            f"{root}/README.md",
+            f"{root}/Study Plan.md",
+            f"{root}/Semester Gantt.md",
+            f"{root}/Study Timetable/Timetable Sheet - Markdown ver.md",
+            f"{root}/papers/compx202.md",
+            f"{root}/papers/japan332.md",
+            f"{root}/papers/csmax275.md",
+            f"{root}/Guide/COMPX202 Gantt.md",
+            f"{root}/Guide/JAPAN332 Gantt.md",
+            f"{root}/Guide/CSMAX275 Gantt.md",
+            f"{root}/Outlines/compx202.md",
+            f"{root}/Outlines/japan332.md",
+            f"{root}/Announcements/index.md",
+            f"{root}/Announcements/welcome.md",
+            f"{root}/tasks/compx202-assignment-one.md",
+        }
+        assert expected_folders <= names
+        assert expected_files <= names
+        assert len([name for name in names if name.startswith(f"{root}/tasks/") and name.endswith(".md")]) == len(tasks)
+        readme = zf.read(f"{root}/README.md").decode()
+        assert "[[papers/japan332|JAPAN332]]" in readme
+        assert "[[Outlines/japan332|JAPAN332]]" in readme
+        assert "[[Announcements/index|All announcements]]" in readme
 
 
 def test_build_mermaid_gantt(tmp_path: Path):
@@ -369,6 +432,14 @@ def test_api_endpoints(tmp_path: Path, monkeypatch):
         assert r.status_code == 200
         assert r.headers["content-type"] == "application/zip"
         assert r.content.startswith(b"PK")
+        with zipfile.ZipFile(io.BytesIO(r.content)) as vault:
+            names = vault.namelist()
+            assert any(name.endswith("/README.md") for name in names)
+            assert any("/Study Timetable/" in name for name in names)
+            assert any("/Guide/" in name for name in names)
+            assert any("/Outlines/" in name for name in names)
+            assert any("/papers/" in name for name in names)
+            assert any("/tasks/" in name for name in names)
 
 def test_parse_outer_notion_export_zip():
     """Notion sometimes wraps the Part-1 zip in an outer export archive."""

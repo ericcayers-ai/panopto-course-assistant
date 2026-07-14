@@ -342,7 +342,29 @@ def export_obsidian_zip(
     )
 
     with zipfile.ZipFile(dest, "w", zipfile.ZIP_DEFLATED) as zf:
-        subjects = sorted({t.get("subject", "") for t in tasks if t.get("subject")})
+        # Keep the agreed vault layout stable even when one source is empty.
+        # Explicit directory entries also make every folder visible immediately
+        # after extracting the zip.
+        folders = (
+            "Study Timetable", "Guide", "Outlines",
+            "Announcements", "papers", "tasks",
+        )
+        for folder in folders:
+            zf.writestr(f"{root}/{folder}/", "")
+
+        subjects = {
+            (t.get("subject") or "").upper().split("-")[0]
+            for t in tasks if t.get("subject")
+        }
+        subjects.update(
+            (o.get("paper_code") or "").upper().split("-")[0]
+            for o in outlines if o.get("paper_code")
+        )
+        subjects.update(
+            (e.get("paper_code") or "").upper().split("-")[0]
+            for e in (moodle_events or []) if e.get("paper_code")
+        )
+        subjects = sorted(subject for subject in subjects if subject)
 
         readme = [
             f"# {title}",
