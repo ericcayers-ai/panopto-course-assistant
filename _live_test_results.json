@@ -1,0 +1,132 @@
+[
+  {
+    "test": "POST /api/courses",
+    "ok": true,
+    "detail": "id=1"
+  },
+  {
+    "test": "POST courses/activate",
+    "ok": true,
+    "detail": "status=200"
+  },
+  {
+    "test": "GET /api/status",
+    "ok": true,
+    "detail": "status=200"
+  },
+  {
+    "test": "GET /api/environment",
+    "ok": true,
+    "detail": "status=200"
+  },
+  {
+    "test": "GET /api/settings",
+    "ok": true,
+    "detail": "status=200"
+  },
+  {
+    "test": "papers/search COMPX202",
+    "ok": true,
+    "detail": "results=1"
+  },
+  {
+    "test": "papers/search CSMAX270",
+    "ok": true,
+    "detail": "results=1"
+  },
+  {
+    "test": "papers/search COMPX225",
+    "ok": true,
+    "detail": "results=1"
+  },
+  {
+    "test": "papers/search JAPAN332",
+    "ok": true,
+    "detail": "results=1"
+  },
+  {
+    "test": "papers/fetch COMPX202-26B",
+    "ok": true,
+    "detail": "assessments=0 weeks=0"
+  },
+  {
+    "test": "papers/fetch CSMAX270-26B",
+    "ok": true,
+    "detail": "assessments=0 weeks=0"
+  },
+  {
+    "test": "papers/fetch COMPX225-26B",
+    "ok": true,
+    "detail": "assessments=0 weeks=0"
+  },
+  {
+    "test": "schedule/import zip",
+    "ok": false,
+    "detail": "{\"detail\":\"No CSV files found in the zip export\"}"
+  },
+  {
+    "test": "plan/build",
+    "ok": true,
+    "detail": "id=1 tasks=0"
+  },
+  {
+    "test": "plan/get",
+    "ok": true,
+    "detail": "timeline=0"
+  },
+  {
+    "test": "export/notion.csv",
+    "ok": true,
+    "detail": "bytes=58"
+  },
+  {
+    "test": "export/obsidian.zip",
+    "ok": true,
+    "detail": "bytes=206"
+  },
+  {
+    "test": "export/calendar.ics",
+    "ok": false,
+    "detail": "bytes=167 {'VEVENT': False, 'CATEGORIES': False, 'COLOR': False, 'DESCRIPTION': False}"
+  },
+  {
+    "test": "export/google-calendar.csv",
+    "ok": true,
+    "detail": "bytes=92"
+  },
+  {
+    "test": "GET /api/library",
+    "ok": true,
+    "detail": "groups=0"
+  },
+  {
+    "test": "GET /api/export/presets",
+    "ok": true,
+    "detail": "presets=6"
+  },
+  {
+    "test": "GET /api/llm/providers",
+    "ok": true,
+    "detail": "{\"providers\":{\"ollama\":{\"kind\":\"local\",\"ready\":true,\"reason\":\"\"},\"llamacpp\":{\"kind\":\"local\",\"ready\":"
+  },
+  {
+    "test": "GET /api/streak",
+    "ok": true,
+    "detail": "status=200"
+  },
+  {
+    "test": "GET /api/jobs",
+    "ok": true,
+    "detail": "count=0"
+  },
+  {
+    "test": "POST llm/summarize",
+    "ok": true,
+    "detail": "status=200 {\"scope\":\"course\",\"summary\":\"\",\"generated\":\"extractive\",\"note\":\"No source text f"
+  },
+  {
+    "test": "moodle/announcements no cookies",
+    "ok": true,
+    "detail": "status=400 {\"detail\":\"That page looks logged-out - paste your browser session cookies.\"}"
+  }
+]
