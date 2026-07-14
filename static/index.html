@@ -818,13 +818,14 @@
             <h2 id="tts-h">Text to speech</h2>
           </div>
           <p class="panel-intro">Reads a Markdown file aloud using
-            <a href="https://github.com/microsoft/VibeVoice" target="_blank" rel="noopener">VibeVoice-Realtime-0.5B</a>.
-            The model runs locally and downloads from Hugging Face on first use (about 1 GB). A GPU is strongly
-            recommended; CPU generation is very slow.</p>
+            <a href="https://github.com/hexgrad/kokoro" target="_blank" rel="noopener">Kokoro-82M</a>
+            (open-weight, Apache-2.0). Built for long-form narration: text is chunked with voice continuity
+            and stitched into one WAV. Runs well on CPU; a GPU speeds things up if available. The model
+            downloads from Hugging Face on first use (~300 MB).</p>
 
           <div id="tts-unavail" class="banner warn hidden">
-            VibeVoice is not installed. From the project folder run
-            <code>pip install -r requirements-tts.txt</code>, then restart. The model and voices download on
+            Kokoro TTS is not installed. From the project folder run
+            <code>pip install -r requirements-tts.txt</code>, then restart. The model downloads on
             first use.
           </div>
 
@@ -847,14 +848,18 @@
                 </select>
               </label>
             </div>
-            <p class="hint">Voice presets download the first time you use them.</p>
+            <p class="hint">Voices ship with Kokoro. Long lectures are chunked automatically so quality stays stable.</p>
 
             <details class="adv-settings">
               <summary>Advanced options</summary>
               <div class="grid">
+                <label for="tts-speed">Speaking speed
+                  <input type="number" id="tts-speed" value="1.0" min="0.5" max="2.0" step="0.05"
+                    placeholder="1.0" />
+                </label>
                 <label for="tts-model-path">Model path or Hugging Face repo
-                  <input type="text" id="tts-model-path" value="microsoft/VibeVoice-Realtime-0.5B"
-                    placeholder="microsoft/VibeVoice-Realtime-0.5B or a local path" />
+                  <input type="text" id="tts-model-path" value="hexgrad/Kokoro-82M"
+                    placeholder="hexgrad/Kokoro-82M or a local path" />
                 </label>
               </div>
             </details>

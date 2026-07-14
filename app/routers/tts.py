@@ -19,22 +19,24 @@ router = APIRouter()
 
 @router.get("/api/tts/status")
 def api_tts_status() -> Dict[str, Any]:
-    """Check whether VibeVoice is installed and return the voice catalog.
-
-    Voices are always listed (downloaded on demand), so the catalog is returned
-    regardless of whether any preset has been cached yet."""
+    """Check whether Kokoro is installed and return the voice catalog."""
     available = tts_mod.is_available()
     voices = tts_mod.list_voices(context.OUTPUT_DIR / "_tts_voices")
-    return {"available": available, "voices": voices}
+    return {
+        "available": available,
+        "voices": voices,
+        "engine": "kokoro",
+        "model": tts_mod.MODEL_ID,
+    }
 
 
 @router.post("/api/tts/generate")
 def api_tts_generate(req: TtsGenerateRequest) -> Dict[str, Any]:
-    """Queue a VibeVoice TTS job. The audio is saved inside the _tts/ subdirectory."""
+    """Queue a Kokoro TTS job. The audio is saved inside the _tts/ subdirectory."""
     if not tts_mod.is_available():
         raise HTTPException(
             status_code=503,
-            detail="VibeVoice is not installed. Run: pip install -r requirements-tts.txt",
+            detail="Kokoro TTS is not installed. Run: pip install -r requirements-tts.txt",
         )
     md_path = req.md_path.strip()
     if not md_path or not Path(md_path).is_file():
@@ -47,8 +49,13 @@ def api_tts_generate(req: TtsGenerateRequest) -> Dict[str, Any]:
     safe_voice = "".join(c if c.isalnum() or c in "-_." else "_" for c in req.voice)
     out_path = str(context.OUTPUT_DIR / "_tts" / f"{safe_stem}_{safe_voice}.wav")
 
-    captured = {"md_path": md_path, "voice": req.voice,
-                "output_path": out_path, "model_path": req.model_path}
+    captured = {
+        "md_path": md_path,
+        "voice": req.voice,
+        "output_path": out_path,
+        "model_path": req.model_path or tts_mod.MODEL_ID,
+        "speed": float(req.speed or 1.0),
+    }
 
     voices_cache = context.OUTPUT_DIR / "_tts_voices"
 
@@ -60,6 +67,7 @@ def api_tts_generate(req: TtsGenerateRequest) -> Dict[str, Any]:
             cache_dir=voices_cache,
             progress=_progress,
             model_path=captured["model_path"],
+            speed=captured["speed"],
         )
         return result
 

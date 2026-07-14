@@ -112,8 +112,9 @@ class PickFileRequest(BaseModel):
 
 class TtsGenerateRequest(BaseModel):
     md_path: str                           # absolute path to the source .md file
-    voice: str = "en-Carter_man"
+    voice: str = "af_heart"
     model_path: str = tts_mod.MODEL_ID
+    speed: float = 1.0                     # Kokoro speaking rate (1.0 = normal)
 
 class OllamaPullRequest(BaseModel):
     model: str = ""

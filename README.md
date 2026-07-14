@@ -12,6 +12,13 @@ A **Python / FastAPI** backend with a plain **HTML + JavaScript** frontend
 
 ## What's new
 
+**v3.7 - long-form Speech with Kokoro.** The Speech tab now uses
+[Kokoro-82M](https://github.com/hexgrad/kokoro) (Apache-2.0) instead of
+VibeVoice Realtime. Lectures and Markdown notes are sentence-chunked with a
+stable voice across chunks, then stitched into one WAV so quality holds for
+tens of minutes. Runs well on CPU; GPU is optional. Install with
+`pip install -r requirements-tts.txt` (or `install-extras-windows.bat`).
+
 **v3.3 - a visual identity, not a template.** The v3.2 redesign still read as a
 generic "warm paper + serif + single accent" AI-default look. This pass replaces
 it with an identity grounded in what the app actually does - turn a spoken

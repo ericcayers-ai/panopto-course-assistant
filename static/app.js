@@ -2836,7 +2836,7 @@ $("course-clear")?.addEventListener("click", async () => {
   } catch (e) { out.textContent = errorText(e); toastError(e); }
 });
 
-// ---- VibeVoice TTS --------------------------------------------------------
+// ---- Kokoro TTS -----------------------------------------------------------
 
 async function initTts() {
   const unavailBanner = $("tts-unavail");
@@ -2844,26 +2844,23 @@ async function initTts() {
   const genBtn = $("tts-generate");
   try {
     const data = await api("/api/tts/status");
-    // Populate the voice dropdown regardless — presets download on demand.
     const voices = data.voices || [];
     voiceSel.innerHTML = "";
-    const opt = (v) => el("option", { value: v.id,
-      text: v.label + (v.downloaded ? "" : " (downloads on first use)") });
-    const eng = voices.filter(v => v.id.startsWith("en-"));
-    const rest = voices.filter(v => !v.id.startsWith("en-"));
-    if (eng.length) {
-      const grp = el("optgroup", { label: "English" });
-      eng.forEach(v => grp.appendChild(opt(v)));
-      voiceSel.appendChild(grp);
+    const opt = (v) => el("option", { value: v.id, text: v.label });
+    const byGroup = new Map();
+    for (const v of voices) {
+      const g = v.group || "Voices";
+      if (!byGroup.has(g)) byGroup.set(g, []);
+      byGroup.get(g).push(v);
     }
-    if (rest.length) {
-      const grp = el("optgroup", { label: "Other languages (experimental)" });
-      rest.forEach(v => grp.appendChild(opt(v)));
+    for (const [label, items] of byGroup) {
+      const grp = el("optgroup", { label });
+      items.forEach(v => grp.appendChild(opt(v)));
       voiceSel.appendChild(grp);
     }
     if (!data.available) {
       unavailBanner.classList.remove("hidden");
-      genBtn.disabled = true;          // installed package required to generate
+      genBtn.disabled = true;
     } else {
       genBtn.disabled = false;
     }
@@ -2901,7 +2898,9 @@ $("tts-generate")?.addEventListener("click", async () => {
   const btn = $("tts-generate");
   const mdPath = $("tts-md-path").value.trim();
   const voice = $("tts-voice").value;
-  const modelPath = $("tts-model-path").value.trim() || "microsoft/VibeVoice-Realtime-0.5B";
+  const modelPath = $("tts-model-path")?.value.trim() || "hexgrad/Kokoro-82M";
+  const speedRaw = parseFloat($("tts-speed")?.value || "1");
+  const speed = Number.isFinite(speedRaw) ? Math.min(2, Math.max(0.5, speedRaw)) : 1.0;
 
   if (!mdPath) { toast("Choose a Markdown file first.", "warn"); return; }
   if (!voice)  { toast("Select a voice.", "warn"); return; }
@@ -2912,14 +2911,14 @@ $("tts-generate")?.addEventListener("click", async () => {
 
   try {
     const data = await postJSON("/api/tts/generate", {
-      md_path: mdPath, voice, model_path: modelPath,
+      md_path: mdPath, voice, model_path: modelPath, speed,
     });
     clear(out);
     if (data.id) {
       // Background job queued — show status and poll
       const outputPath = data.output_path || "";
       const statusP = el("p", { class: "ok-text",
-        text: `Job queued (${data.id.slice(0, 8)}…). Generating audio — this may take several minutes.` });
+        text: `Job queued (${data.id.slice(0, 8)}…). Generating long-form audio — watch chunk progress in Jobs.` });
       out.appendChild(statusP);
       out.appendChild(el("button", { class: "tag", text: "Watch in Jobs",
         onclick: () => { showTab("jobs"); startJobsPolling(); } }));
