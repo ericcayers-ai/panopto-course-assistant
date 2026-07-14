@@ -56,7 +56,10 @@ def build_release(output_dir: Path | None = None) -> Path:
     with tempfile.TemporaryDirectory(prefix="course-assistant-release-") as temp_dir:
         staging_root = Path(temp_dir)
         app_root = staging_root / "CourseAssistant"
-        shutil.copy2(PROJECT_ROOT / "install.bat", staging_root / "install.bat")
+        launcher = PROJECT_ROOT / "installandrun.bat"
+        if not launcher.is_file():
+            raise FileNotFoundError(f"Release launcher missing: {launcher}")
+        shutil.copy2(launcher, staging_root / "installandrun.bat")
         shutil.copytree(PROJECT_ROOT, app_root, ignore=_ignore_release_files)
 
         with zipfile.ZipFile(archive, "w", compression=zipfile.ZIP_DEFLATED) as zip_file:

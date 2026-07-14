@@ -26,5 +26,7 @@ def test_release_zip_has_root_installer_and_application(tmp_path: Path) -> None:
     with zipfile.ZipFile(archive) as release_zip:
         names = set(release_zip.namelist())
 
-    assert "install.bat" in names
+    assert "installandrun.bat" in names
+    assert "install.bat" not in names
     assert "CourseAssistant/run.py" in names
+    assert "CourseAssistant/requirements-browser.txt" in names

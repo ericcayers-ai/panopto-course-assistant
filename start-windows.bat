@@ -56,14 +56,14 @@ echo Installing dependencies ^(first run only, quick after that^)...
 "%VENV_PY%" -m pip install --quiet -r requirements.txt
 if errorlevel 1 ( echo Failed to install dependencies. & pause & exit /b 1 )
 
-REM --- first-run: offer the optional transcription + document + speech add-ons -
+REM --- first-run: offer optional transcription / docs / speech / Playwright ---
 REM  Marked done with a stamp file so returning users are never asked again.
 if not exist ".venv\.extras_offered" (
   echo.
   echo   Optional add-ons enable lecture transcription, full document
-  echo   conversion ^(PDF/PowerPoint/Word^), and text-to-speech. They are a
-  echo   larger download. You can also add them later with
-  echo   install-extras-windows.bat.
+  echo   conversion ^(PDF/PowerPoint/Word^), text-to-speech, and Moodle
+  echo   browser scrape ^(Playwright/Chromium^). They are a larger download.
+  echo   You can also add them later with install-extras-windows.bat.
   echo.
   choice /c YN /t 20 /d N /m "  Install the optional add-ons now"
   if errorlevel 2 ( echo   Skipping add-ons for now. )
@@ -71,6 +71,17 @@ if not exist ".venv\.extras_offered" (
     echo   Installing add-ons ^(this can take a few minutes^)...
     "%VENV_PY%" -m pip install -r requirements-transcribe.txt
     "%VENV_PY%" -m pip install -r requirements-tts.txt
+    "%VENV_PY%" -m pip install -r requirements-browser.txt
+    if errorlevel 1 (
+      echo   WARNING: Playwright pip install failed - browser scrape unavailable.
+    ) else (
+      echo   Installing Chromium for Playwright ^(best-effort^)...
+      "%VENV_PY%" -m playwright install chromium
+      if errorlevel 1 (
+        echo   WARNING: playwright install chromium failed.
+        echo   Retry later: "%VENV_PY%" -m playwright install chromium
+      )
+    )
   )
   echo done> ".venv\.extras_offered"
 )

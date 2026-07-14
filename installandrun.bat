@@ -1,4 +1,6 @@
 @echo off
+REM Install dependencies (first run) and launch Course Assistant.
+REM Works from a release ZIP (root next to CourseAssistant\) or a git checkout.
 setlocal
 set "ROOT=%~dp0"
 

@@ -59,6 +59,39 @@ def _cookie_header_to_playwright(cookies: str, url: str) -> List[Dict[str, Any]]
     return out
 
 
+def _goto_settled(page, url: str, timeout_ms: int) -> None:
+    """Navigate and wait out SSO / meta-refresh redirects that destroy contexts."""
+    page.goto(url, wait_until="domcontentloaded", timeout=timeout_ms)
+    try:
+        page.wait_for_load_state("networkidle", timeout=min(15000, timeout_ms))
+    except Exception:
+        pass
+    try:
+        page.wait_for_timeout(400)
+    except Exception:
+        pass
+
+
+def _collect_hrefs(page, selector: str) -> List[tuple]:
+    """Return (href, text) pairs via locator API (survives soft navigations)."""
+    out: List[tuple] = []
+    try:
+        loc = page.locator(selector)
+        n = loc.count()
+    except Exception:
+        return out
+    for i in range(n):
+        try:
+            el = loc.nth(i)
+            href = el.get_attribute("href") or ""
+            text = (el.inner_text() or "").strip()
+            if href:
+                out.append((href, text))
+        except Exception:
+            continue
+    return out
+
+
 def scrape_panopto_rss(
     panopto_url: str,
     *,
@@ -78,15 +111,16 @@ def scrape_panopto_rss(
             except Exception:
                 pass
         page = context.new_page()
-        page.goto(panopto_url, wait_until="domcontentloaded", timeout=timeout_ms)
+        _goto_settled(page, panopto_url, timeout_ms)
         # Primary selector from plan
-        for el in page.query_selector_all('a.rssLink[href*="Podcast.ashx"]'):
-            href = el.get_attribute("href") or ""
-            if href:
-                feeds.append(urljoin(panopto_url, href))
+        for href, _text in _collect_hrefs(page, 'a.rssLink[href*="Podcast.ashx"]'):
+            feeds.append(urljoin(panopto_url, href))
         # Fallback: any Podcast.ashx link
         if not feeds:
-            html = page.content()
+            try:
+                html = page.content()
+            except Exception:
+                html = ""
             for m in re.findall(r'href=["\']([^"\']*Podcast\.ashx[^"\']*)["\']', html, re.I):
                 feeds.append(urljoin(panopto_url, m))
         browser.close()
@@ -119,26 +153,35 @@ def scrape_moodle_announcements(
             except Exception:
                 pass
         page = context.new_page()
-        page.goto(course_url, wait_until="domcontentloaded", timeout=timeout_ms)
+        _goto_settled(page, course_url, timeout_ms)
         # Prefer forum discussion links under Announcements / News
-        links = page.query_selector_all('a[href*="mod/forum/"]')
         hrefs = []
-        for el in links:
-            href = el.get_attribute("href") or ""
-            text = (el.inner_text() or "").strip()
-            if href and ("discuss" in href or "view" in href):
+        for href, text in _collect_hrefs(page, 'a[href*="mod/forum/"]'):
+            if "discuss" in href or "view" in href:
                 hrefs.append((urljoin(course_url, href), text))
         # Visit up to 15 discussion pages
         for href, text in hrefs[:15]:
             try:
-                page.goto(href, wait_until="domcontentloaded", timeout=timeout_ms)
-                body_el = page.query_selector(".post-content-container, .forumpost .content, .posting")
-                body = (body_el.inner_text() if body_el else "") or ""
-                title_el = page.query_selector("h3, h2, .discussionname")
-                title = (title_el.inner_text() if title_el else text) or "Announcement"
+                _goto_settled(page, href, timeout_ms)
+                body = ""
+                title = text or "Announcement"
+                try:
+                    body_loc = page.locator(
+                        ".post-content-container, .forumpost .content, .posting",
+                    )
+                    if body_loc.count() > 0:
+                        body = (body_loc.first.inner_text() or "").strip()
+                except Exception:
+                    body = ""
+                try:
+                    title_loc = page.locator("h3, h2, .discussionname")
+                    if title_loc.count() > 0:
+                        title = (title_loc.first.inner_text() or title).strip() or title
+                except Exception:
+                    pass
                 announcements.append({
                     "title": title.strip(),
-                    "body": body.strip(),
+                    "body": body,
                     "author": "",
                     "posted_at": "",
                     "source_url": href,
@@ -168,25 +211,23 @@ def scrape_moodle_forums(
             except Exception:
                 pass
         page = context.new_page()
-        page.goto(course_url, wait_until="domcontentloaded", timeout=timeout_ms)
-        forum_links = page.query_selector_all('a[href*="mod/forum/view.php"]')
+        _goto_settled(page, course_url, timeout_ms)
         seen = set()
-        for el in forum_links:
-            href = el.get_attribute("href") or ""
-            name = (el.inner_text() or "").strip() or "Forum"
+        for href, name in _collect_hrefs(page, 'a[href*="mod/forum/view.php"]'):
             full = urljoin(course_url, href)
+            label = name or "Forum"
             if full in seen or not href:
                 continue
             seen.add(full)
-            forums.append({"title": name, "url": full, "posts": []})
+            forums.append({"title": label, "url": full, "posts": []})
         for forum in forums[:8]:
             try:
-                page.goto(forum["url"], wait_until="domcontentloaded", timeout=timeout_ms)
-                for disc in page.query_selector_all('a[href*="discuss.php"]')[:10]:
-                    subject = (disc.inner_text() or "").strip()
-                    dhref = urljoin(forum["url"], disc.get_attribute("href") or "")
+                _goto_settled(page, forum["url"], timeout_ms)
+                for dhref, subject in _collect_hrefs(page, 'a[href*="discuss.php"]')[:10]:
                     forum["posts"].append({
-                        "subject": subject, "url": dhref, "message": "",
+                        "subject": subject,
+                        "url": urljoin(forum["url"], dhref),
+                        "message": "",
                     })
             except Exception:
                 continue

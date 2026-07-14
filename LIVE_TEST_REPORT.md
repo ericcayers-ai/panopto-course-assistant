@@ -1,12 +1,26 @@
 ﻿# Live test report — v3.6.0 (2026-07-14)
 
-v3.6.0 adds **study suites** (Obsidian / Notion / OneNote), **suite Sync**, dual Moodle import (API vs Browser + capability matrix), Panopto RSS discovery, Playwright fallback (`requirements-browser.txt`), and a release ZIP with root `install.bat` + `CourseAssistant/`.
+v3.6.0 adds **study suites** (Obsidian / Notion / OneNote), **suite Sync**, dual Moodle import (API vs Browser + capability matrix), Panopto RSS discovery, Playwright fallback (`requirements-browser.txt`), and a release ZIP with root `installandrun.bat` + `CourseAssistant/` (renamed from `install.bat` in v3.7).
 
 ## Automated suite (v3.6.0)
 
 | Run | Result |
 |-----|--------|
 | `.venv/Scripts/python.exe -m pytest -q` | **528 passed**, 1 skipped |
+
+---
+
+# Live smoke — v3.7.0 (Playwright / Moodle) — 2026-07-14
+
+Privacy: counts and bools only; no cookies, tokens, calendar URLs, HTML, or personal course data retained.
+
+| Check | Result |
+|-------|--------|
+| Playwright package + Chromium launch | PASS |
+| Live `elearn.waikato.ac.nz` login/SSO page reachable | PASS |
+| `scrape_moodle_forums` / `scrape_moodle_announcements` against live host (unauthenticated → 0 items, no crash) | PASS |
+| SSO redirect hardening (`_goto_settled` / locator collection) | PASS |
+| Extras install installs `requirements-browser.txt` + `playwright install chromium` | PASS (scripted) |
 
 ---
 

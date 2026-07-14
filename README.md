@@ -18,6 +18,8 @@ VibeVoice Realtime. Lectures and Markdown notes are sentence-chunked with a
 stable voice across chunks, then stitched into one WAV so quality holds for
 tens of minutes. Runs well on CPU; GPU is optional. Install with
 `pip install -r requirements-tts.txt` (or `install-extras-windows.bat`).
+Optional extras also install Playwright + Chromium for Moodle browser scrape.
+Release ZIPs launch via root `installandrun.bat` next to `CourseAssistant/`.
 
 **v3.3 - a visual identity, not a template.** The v3.2 redesign still read as a
 generic "warm paper + serif + single accent" AI-default look. This pass replaces
@@ -249,10 +251,12 @@ panopto-course-assistant/
 │   └── main.py         # FastAPI app + routes
 ├── static/             # index.html, app.js, style.css (vanilla SPA, sidebar + dark mode)
 ├── tests/              # pytest suite (core, sources, notion, docs, flashcards, study, jobs, API)
-├── start-windows.bat / start-unix.sh          # one-click launchers
-├── install-extras-windows.bat / -unix.sh      # optional heavy add-ons
+├── installandrun.bat                          # release ZIP root launcher
+├── install-extras-windows.bat / -unix.sh      # optional heavy add-ons (+ Playwright)
 ├── requirements.txt
 ├── requirements-transcribe.txt   # optional: faster-whisper, yt-dlp, markitdown[all]
+├── requirements-tts.txt          # optional: Kokoro-82M Speech TTS
+├── requirements-browser.txt      # optional: Playwright (Chromium via extras script)
 ├── requirements-dev.txt          # pytest, httpx
 └── run.py
 ```
