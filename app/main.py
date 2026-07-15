@@ -24,6 +24,7 @@ The HTTP surface lives in :mod:`app.routers`, one module per resource group::
     security   secrets, privacy labels, audit log
     analytics  local usage stats (no cloud)
     tts        text-to-speech
+    stt        adaptive offline speech-to-text (capabilities, models, live WS)
 
 Request bodies live in :mod:`app.schemas`; shared helpers in :mod:`app.context`.
 Browse the live route list at ``/docs`` (rendered offline, no CDN).
@@ -39,7 +40,7 @@ from . import context
 from .errors import install_error_handler
 from .routers import (analytics, courses, exports, ingest, jobs, library, llm,
                       moodle, ollama, pages, planner, security, semester, study,
-                      suites, sync, system, tts)
+                      stt, suites, sync, system, tts)
 
 # Re-exported so `main.moodle_api` keeps resolving: the endpoint tests monkeypatch
 # its transport on the module object, which routers/moodle.py imports too.
@@ -60,7 +61,7 @@ app = FastAPI(title="Course Assistant", version=APP_VERSION,
 # one JSON envelope, so the frontend has a single error path instead of six.
 install_error_handler(app)
 
-for _router in (system, tts, ollama, courses, llm, sync, planner, semester, study,
+for _router in (system, tts, stt, ollama, courses, llm, sync, planner, semester, study,
                 security, analytics, library, exports, suites, jobs, ingest, moodle,
                 pages):
     app.include_router(_router.router)

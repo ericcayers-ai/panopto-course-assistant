@@ -18,8 +18,8 @@ class FeedRequest(BaseModel):
 
 class TranscribeRequest(BaseModel):
     lecture: Dict[str, Any]          # a lecture dict as returned by /api/feed
-    engine: str = "faster-whisper"
-    model: str = "small"
+    engine: str = "auto"             # auto | faster-whisper | whisper | granite | …
+    model: str = "auto"
     language: str = "en"
     device: str = "auto"
     organize: str = "auto"
@@ -34,6 +34,44 @@ class TranscribeRequest(BaseModel):
     force: bool = False
     cookies: str = ""
     course: str = ""
+    # Adaptive STT (4.0) — Auto profile + adaptive router are the defaults.
+    profile: str = "auto"            # auto | quality | fast | live | eco | legacy
+    code_switch: bool = False
+    word_timestamps: bool = True
+    diarization: str = "off"         # off | auto | on
+    speakers: Optional[int] = None
+    vocabulary: Optional[List[str]] = None
+    caption_first: bool = True
+    caption_url: str = ""
+    resume: bool = True
+    chunk_seconds: int = 180
+    compute: str = "auto"
+    hotwords: str = ""
+    initial_prompt: str = ""
+    use_adaptive: bool = True
+
+
+class STTRouteRequest(BaseModel):
+    profile: str = "auto"
+    language: str = "auto"
+    device: str = "auto"
+    code_switch: bool = False
+    engine: str = ""
+    model: str = ""
+    caption_first: bool = True
+    has_usable_captions: bool = False
+
+
+class STTLiveStartRequest(BaseModel):
+    course: str = ""
+    language: str = "en"
+    model: str = ""
+    save: bool = True
+
+
+class STTModelActionRequest(BaseModel):
+    engine: str
+    model_id: str = ""
 
 class OrganizeRequest(BaseModel):
     by: str = "week"                 # auto | none | date | week | lecture | module | topic

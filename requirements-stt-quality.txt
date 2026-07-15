@@ -1,0 +1,10 @@
+# STT quality pack — Granite Speech / Qwen3-ASR (Transformers + Torch).
+# Install with:
+#   pip install -r requirements-stt-quality.txt
+
+-r requirements-stt-base.txt
+
+transformers>=4.40
+torch>=2.1
+accelerate>=0.27
+soundfile>=0.12

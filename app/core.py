@@ -442,6 +442,11 @@ def render_txt(segments: List[Dict[str, Any]], interval: int) -> str:
     return "\n\n".join(blocks).strip() + "\n"
 
 
+def _speaker_prefix(seg: Dict[str, Any]) -> str:
+    sp = (seg.get("speaker") or "").strip()
+    return f"[{sp}] " if sp else ""
+
+
 def render_srt(segments: List[Dict[str, Any]]) -> str:
     lines, n = [], 1
     for seg in segments:
@@ -450,7 +455,7 @@ def render_srt(segments: List[Dict[str, Any]]) -> str:
             continue
         start = float(seg.get("start", 0.0))
         end = max(float(seg.get("end", start)), start)
-        lines.append(f"{n}\n{ts_srt(start)} --> {ts_srt(end)}\n{text}\n")
+        lines.append(f"{n}\n{ts_srt(start)} --> {ts_srt(end)}\n{_speaker_prefix(seg)}{text}\n")
         n += 1
     return "\n".join(lines).strip() + "\n"
 
@@ -463,7 +468,7 @@ def render_vtt(segments: List[Dict[str, Any]]) -> str:
             continue
         start = float(seg.get("start", 0.0))
         end = max(float(seg.get("end", start)), start)
-        lines += [f"{ts_vtt(start)} --> {ts_vtt(end)}", text, ""]
+        lines += [f"{ts_vtt(start)} --> {ts_vtt(end)}", f"{_speaker_prefix(seg)}{text}", ""]
     return "\n".join(lines).strip() + "\n"
 
 
@@ -477,6 +482,10 @@ def render_md(item: LectureItem, segments: List[Dict[str, Any]], meta: Dict[str,
         f"- **Model:** {meta.get('model', '')}",
         f"- **Language:** {meta.get('language') or 'unknown'}",
     ]
+    if meta.get("schema_version"):
+        lines.append(f"- **Schema:** {meta.get('schema_version')}")
+    if meta.get("route_reason"):
+        lines.append(f"- **Route:** {meta.get('route_reason')}")
     if item.week is not None:
         lines.append(f"- **Week:** {item.week}")
     lines += ["", "## Transcript", ""]
@@ -484,7 +493,11 @@ def render_md(item: LectureItem, segments: List[Dict[str, Any]], meta: Dict[str,
         txt = (seg.get("text") or "").strip()
         if not txt:
             continue
-        lines += [f"### {ts_hhmmss(float(seg.get('start', 0.0)))}", "", txt, ""]
+        head = f"### {ts_hhmmss(float(seg.get('start', 0.0)))}"
+        sp = (seg.get("speaker") or "").strip()
+        if sp:
+            head += f" · {sp}"
+        lines += [head, "", txt, ""]
     return "\n".join(lines).rstrip() + "\n"
 
 
@@ -593,9 +606,14 @@ def write_outputs(
         written["summary"] = str(p)
     if "json" in outputs:
         p = out_dir / f"{stem}.json"
+        # schema_version 2 adds optional speaker/language/confidence/words while
+        # keeping start/end/text so v1 readers stay valid. Default to 2 when the
+        # writer did not set a version; never rewrite on-disk v1 libraries here.
+        schema_version = int(meta.get("schema_version") or 2)
         payload = {
             **item.to_dict(),
             **meta,
+            "schema_version": schema_version,
             "segments": segments,
             "text": text,
             "created_at": now_iso(),

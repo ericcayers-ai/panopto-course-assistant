@@ -1,0 +1,11 @@
+# STT live/edge pack — Moonshine streaming for Live / Eco profiles.
+# Install with:
+#   pip install -r requirements-stt-live.txt
+#
+# usefulsensors/moonshine (useful-moonshine) APIs vary by release; install one:
+#   pip install useful-moonshine
+#   # or: pip install moonshine
+#
+# When the package is unavailable the router falls back to faster-whisper.
+
+-r requirements-stt-base.txt

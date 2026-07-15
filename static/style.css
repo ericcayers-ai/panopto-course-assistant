@@ -557,6 +557,7 @@ details.adv-settings[open] > summary { margin-bottom: var(--space-2); }
 .import-switch .seg.active { background: var(--brand); color: var(--on-brand); }
 .import-pane { display: none; }
 .import-pane.active { display: block; animation: fade var(--dur-base) var(--ease); }
+.row > .import-switch { margin: 0; }
 
 /* ---- lectures ------------------------------------------------------------ */
 .lecture { display: flex; align-items: center; gap: var(--space-3); padding: var(--space-3) var(--space-4); }

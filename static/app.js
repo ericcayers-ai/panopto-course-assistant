@@ -302,7 +302,7 @@ const TAB_LABELS = {
   study: "Study",
   semester: "Semester plan",
   export: "Export",
-  tts: "Text to speech",
+  tts: "Speech",
   jobs: "Jobs",
 };
 
@@ -387,6 +387,7 @@ function showTab(name) {
   if (name === "study") loadStudy();
   if (name === "semester") loadSemester();
   if (name === "export") loadExportHub();
+  if (name === "tts") refreshSpeechPanel();
 }
 document.querySelectorAll(".tab").forEach((btn) =>
   btn.addEventListener("click", () => showTab(btn.dataset.tab))
@@ -396,19 +397,43 @@ document.querySelectorAll("[data-goto]").forEach((b) =>
   b.addEventListener("click", () => showTab(b.dataset.goto))
 );
 
-// ---- import sub-switch (lectures / documents / notion / browse) -----------
+// ---- import sub-switch (documents / notion / browse) ----------------------
+// Scoped to [data-import] so Speech reuse of .seg / .import-switch does not clash.
 
 function showImport(name) {
-  document.querySelectorAll(".seg").forEach((b) => {
+  document.querySelectorAll(".seg[data-import]").forEach((b) => {
     const on = b.dataset.import === name;
     b.classList.toggle("active", on);
     b.setAttribute("aria-selected", String(on));
   });
-  document.querySelectorAll(".import-pane").forEach((p) =>
+  document.querySelectorAll("#import .import-pane").forEach((p) =>
     p.classList.toggle("active", p.id === "import-" + name));
 }
-document.querySelectorAll(".seg").forEach((btn) =>
+document.querySelectorAll(".seg[data-import]").forEach((btn) =>
   btn.addEventListener("click", () => showImport(btn.dataset.import))
+);
+
+// ---- Speech sub-switch (Transcribe | Read aloud) --------------------------
+
+let _ttsInited = false;
+let _sttCaps = null;
+
+function showSpeechMode(name) {
+  document.querySelectorAll(".seg[data-speech]").forEach((b) => {
+    const on = b.dataset.speech === name;
+    b.classList.toggle("active", on);
+    b.setAttribute("aria-selected", String(on));
+  });
+  document.querySelectorAll("#tts > .import-pane").forEach((p) =>
+    p.classList.toggle("active", p.id === "speech-" + name));
+  if (name === "read-aloud") {
+    if (!_ttsInited) { _ttsInited = true; initTts(); }
+  } else {
+    refreshSpeechPanel();
+  }
+}
+document.querySelectorAll(".seg[data-speech]").forEach((btn) =>
+  btn.addEventListener("click", () => showSpeechMode(btn.dataset.speech))
 );
 
 // ---- theme + mobile menu --------------------------------------------------
@@ -498,6 +523,24 @@ async function loadStatus() {
     ];
     bar.textContent = parts.join("   •   ");
     bar.className = "status-bar " + (s.any_engine ? "ok" : "warn");
+    // Attach a one-shot "Copy diagnostics" affordance without cluttering the bar forever.
+    if (!$("copy-diagnostics-btn")) {
+      const btn = el("button", {
+        id: "copy-diagnostics-btn", class: "ghost small",
+        text: "Copy diagnostics", title: "Copy local setup info (no secrets)",
+      });
+      btn.addEventListener("click", async () => {
+        try {
+          const bundle = await postJSON("/api/diagnostics/bundle", {});
+          const text = bundle.text || JSON.stringify(bundle, null, 2);
+          await navigator.clipboard.writeText(text);
+          toast("Diagnostics copied", "ok");
+        } catch (err) {
+          toast("Could not copy diagnostics: " + errorText(err), "err");
+        }
+      });
+      bar.parentElement?.appendChild(btn);
+    }
 
     // engine dropdown (only present in the legacy manual-transcribe UI, if any)
     const sel = $("opt-engine");
@@ -560,22 +603,33 @@ function selectedDocExts() {
 
 // ---- settings persistence -------------------------------------------------
 
+function sttProfile() {
+  const active = document.querySelector("#stt-profiles .seg.active");
+  return (active && active.dataset.profile) || "auto";
+}
+
 function gatherSettings() {
   // Output formats / organisation are no longer chosen here - transcription
   // writes a sensible canonical set and the Export step owns the rest. The
   // legacy opt-* controls may be absent (the guided Moodle flow replaced them),
-  // so read each defensively and fall back to sensible defaults.
+  // so read each defensively and fall back to sensible defaults. Speech-panel
+  // STT controls take precedence when present.
   const val = (id, def = "") => { const n = $(id); return n ? n.value : def; };
   const checked = (id, def = false) => { const n = $(id); return n ? n.checked : def; };
+  const lang = (val("stt-language") || val("opt-language")).trim() || "en";
   return {
     engine: val("opt-engine"),
     model: val("opt-model"),
-    language: val("opt-language").trim() || "en",
+    language: lang === "auto" ? "auto" : lang,
     device: val("opt-device") || "auto",
     audio_only: checked("opt-audio"),
     skip_existing: checked("opt-skip", true),
     cookies: val("opt-cookies").trim(),
     course: currentCourse(),
+    profile: sttProfile(),
+    diarization: val("stt-diarization", "off") || "off",
+    caption_first: checked("stt-caption-first", true),
+    use_adaptive: true,
   };
 }
 
@@ -1268,7 +1322,7 @@ const PALETTE_ACTIONS = [
   { label: "Go to Study", run: () => showTab("study") },
   { label: "Go to Export", run: () => showTab("export") },
   { label: "Go to Jobs", run: () => showTab("jobs") },
-  { label: "Go to Text to speech", run: () => showTab("tts") },
+  { label: "Go to Speech", run: () => showTab("tts") },
   { label: "Go to Semester plan", run: () => showTab("semester") },
   { label: "Search the library", run: () => { showTab("library"); const q = $("search-q"); if (q) q.focus(); } },
   { label: "Show keyboard shortcuts", run: () => showShortcuts() },
@@ -2175,15 +2229,21 @@ $("pdf-go").addEventListener("click", async () => {
 
 // ---- jobs -----------------------------------------------------------------
 
-// Friendly, plain-language labels for a job's internal stage.
+const STT_STAGE_LABELS = {
+  captions: "Checking captions",
+  preprocess: "Normalizing audio",
+  transcribing: "Transcribing",
+  enriching: "Aligning / speakers",
+  downloading: "Downloading media",
+  waiting: "Waiting for a free transcription slot",
+  writing: "Saving files",
+  done: "Done",
+};
+
 function stageLabel(stage) {
-  return ({
-    downloading: "Downloading",
-    waiting: "Waiting for a free transcription slot",
-    transcribing: "Transcribing",
-    writing: "Saving files",
-    done: "Done",
-  })[stage] || (stage ? stage.charAt(0).toUpperCase() + stage.slice(1) : "");
+  if (!stage) return "";
+  if (STT_STAGE_LABELS[stage]) return STT_STAGE_LABELS[stage];
+  return stage.charAt(0).toUpperCase() + stage.slice(1);
 }
 
 // Return a human "~Xm remaining" string for a running job, or "" if not enough data.
@@ -2241,6 +2301,13 @@ async function loadJobs() {
           card.appendChild(el("div", { class: "hint", text: "skipped - outputs already exist" }));
         } else if (j.result.outputs) {
           card.appendChild(el("div", { class: "hint", text: "wrote: " + Object.keys(j.result.outputs).join(", ") }));
+        }
+        if (j.type === "transcribe" && (j.result.route_reason || j.result.engine)) {
+          const bits = [
+            j.result.engine && j.result.model ? `${j.result.engine}/${j.result.model}` : j.result.engine,
+            j.result.route_reason,
+          ].filter(Boolean);
+          card.appendChild(el("div", { class: "hint", text: bits.join(" — ") }));
         }
         // Surface whether an AI job actually used the model or fell back to the
         // offline heuristic, so a silent fallback doesn't read as "AI output".
@@ -3003,7 +3070,365 @@ $("course-clear")?.addEventListener("click", async () => {
   } catch (e) { out.textContent = errorText(e); toastError(e); }
 });
 
-// ---- Kokoro TTS -----------------------------------------------------------
+// ---- Speech hub (STT + TTS) ------------------------------------------------
+
+function formatCacheBytes(n) {
+  const b = Number(n) || 0;
+  if (b < 1024) return `${b} B`;
+  if (b < 1024 * 1024) return `${(b / 1024).toFixed(1)} KB`;
+  if (b < 1024 * 1024 * 1024) return `${(b / (1024 * 1024)).toFixed(1)} MB`;
+  return `${(b / (1024 * 1024 * 1024)).toFixed(2)} GB`;
+}
+
+async function refreshSpeechPanel() {
+  if (!$("stt-main")) return;
+  await refreshSttCapabilities();
+  await refreshSttRoute();
+}
+
+async function refreshSttCapabilities() {
+  const strip = $("stt-cap-strip");
+  if (!strip) return;
+  try {
+    _sttCaps = await api("/api/stt/capabilities");
+    const engines = (_sttCaps.engines || []).filter((e) => e.probe && e.probe.installed);
+    const engNames = engines.map((e) => e.display_name || e.name).slice(0, 4);
+    const cache = _sttCaps.cache || {};
+    const cached = (cache.models || []).length;
+    const parts = [
+      engNames.length ? `Engines: ${engNames.join(", ")}` : "No STT engines installed",
+      `Cache: ${formatCacheBytes(cache.bytes)} · ${cached} model(s)`,
+      _sttCaps.privacy || "Local/offline only",
+    ];
+    strip.textContent = parts.join(" · ");
+  } catch (e) {
+    strip.textContent = "Could not load STT capabilities: " + errorText(e);
+  }
+}
+
+async function refreshSttRoute() {
+  const textEl = $("stt-route-text");
+  const status = $("stt-route-status");
+  if (!textEl) return;
+  const lang = ($("stt-language")?.value || "auto").trim() || "auto";
+  const captionFirst = $("stt-caption-first") ? $("stt-caption-first").checked : true;
+  try {
+    const data = await postJSON("/api/stt/route", {
+      profile: sttProfile(),
+      language: lang,
+      caption_first: captionFirst,
+      has_usable_captions: false,
+    });
+    const route = data.route || {};
+    const est = data.estimate || {};
+    const estBit = est.disk_mb != null
+      ? ` · ~${est.disk_mb} MB model${est.cached ? " (cached)" : ""}`
+      : "";
+    textEl.textContent = `${route.reason || "Routed."} → ${route.engine || "?"}/${route.model || "?"}${estBit}`;
+    if (status) {
+      const dot = status.querySelector(".dot");
+      if (dot) { dot.classList.remove("off"); dot.classList.add("on"); }
+    }
+  } catch (e) {
+    textEl.textContent = "Could not route: " + errorText(e);
+    if (status) {
+      const dot = status.querySelector(".dot");
+      if (dot) { dot.classList.add("off"); dot.classList.remove("on"); }
+    }
+  }
+}
+
+document.querySelectorAll("#stt-profiles .seg[data-profile]").forEach((btn) => {
+  btn.addEventListener("click", () => {
+    document.querySelectorAll("#stt-profiles .seg[data-profile]").forEach((b) => {
+      const on = b === btn;
+      b.classList.toggle("active", on);
+      b.setAttribute("aria-selected", String(on));
+    });
+    refreshSttRoute();
+  });
+});
+$("stt-language")?.addEventListener("change", () => refreshSttRoute());
+$("stt-language")?.addEventListener("blur", () => refreshSttRoute());
+$("stt-caption-first")?.addEventListener("change", () => refreshSttRoute());
+$("stt-diarization")?.addEventListener("change", () => refreshSttRoute());
+
+async function enqueueSpeechTranscribe() {
+  if (!State.status || !State.status.any_engine) {
+    toast("No transcription engine installed. pip install -r requirements-transcribe.txt", "warn");
+    return;
+  }
+  const settings = gatherSettings();
+  remember("settings", JSON.stringify(settings));
+  const out = $("stt-results");
+  const indexes = typeof checkedIndexes === "function" ? checkedIndexes() : [];
+  const media = ($("stt-media-url")?.value || "").trim();
+
+  let queued = 0;
+  clear(out);
+
+  if (indexes.length && State.lectures.length) {
+    for (const i of indexes) {
+      const lec = State.lectures[i];
+      if (!lec) continue;
+      try {
+        const job = await api("/api/transcribe", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ ...settings, lecture: lec }),
+        });
+        queued++;
+        if (out && job?.id) {
+          out.appendChild(el("p", {
+            class: "ok-text",
+            text: `Queued “${lec.title}” · job ${String(job.id).slice(0, 8)}…`,
+          }));
+        }
+      } catch (e) {
+        toast(`Could not queue "${lec.title}": ${errorText(e)}`, "err");
+      }
+    }
+  } else if (media) {
+    const title = media.split(/[\\/]/).pop() || "media";
+    try {
+      const job = await api("/api/transcribe", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          ...settings,
+          lecture: { title, url: media },
+        }),
+      });
+      queued++;
+      if (out && job?.id) {
+        out.appendChild(el("p", {
+          class: "ok-text",
+          text: `Queued “${title}” · job ${String(job.id).slice(0, 8)}…`,
+        }));
+        out.appendChild(el("button", {
+          class: "tag", text: "Watch in Jobs",
+          onclick: () => { showTab("jobs"); startJobsPolling(); },
+        }));
+      }
+    } catch (e) {
+      toastError(e);
+      if (out) out.appendChild(el("div", { class: "warn-box", text: errorText(e) }));
+      return;
+    }
+  } else {
+    toast("Enter a media URL / path, or load and select lectures (Moodle → podcast feed).", "warn");
+    return;
+  }
+
+  if (queued) {
+    toast(`Queued ${queued} job(s). Track progress in Jobs.`, "ok");
+    if (out && !out.querySelector(".tag")) {
+      out.appendChild(el("button", {
+        class: "tag", text: "Watch in Jobs",
+        onclick: () => { showTab("jobs"); startJobsPolling(); },
+      }));
+    }
+    startJobsPolling();
+  }
+}
+
+$("stt-transcribe")?.addEventListener("click", () => enqueueSpeechTranscribe());
+
+// ---- Live mic → /ws/stt/live ----------------------------------------------
+
+const LiveStt = {
+  ws: null,
+  stream: null,
+  audioCtx: null,
+  processor: null,
+  source: null,
+  provisional: "",
+  finals: [],
+};
+
+function setLiveButtons({ start, pause, resume, stop }) {
+  if ($("stt-live-start")) $("stt-live-start").disabled = !start;
+  if ($("stt-live-pause")) $("stt-live-pause").disabled = !pause;
+  if ($("stt-live-resume")) $("stt-live-resume").disabled = !resume;
+  if ($("stt-live-stop")) $("stt-live-stop").disabled = !stop;
+}
+
+function renderLiveResults() {
+  const out = $("stt-results");
+  if (!out) return;
+  clear(out);
+  if (LiveStt.finals.length) {
+    out.appendChild(el("p", { class: "ok-text", text: LiveStt.finals.join(" ") }));
+  }
+  if (LiveStt.provisional) {
+    out.appendChild(el("p", { class: "hint", text: "… " + LiveStt.provisional }));
+  }
+}
+
+function floatTo16BitPCM(float32) {
+  const buf = new ArrayBuffer(float32.length * 2);
+  const view = new DataView(buf);
+  for (let i = 0; i < float32.length; i++) {
+    const s = Math.max(-1, Math.min(1, float32[i]));
+    view.setInt16(i * 2, s < 0 ? s * 0x8000 : s * 0x7fff, true);
+  }
+  return buf;
+}
+
+async function startLiveStt() {
+  if (!navigator.mediaDevices?.getUserMedia) {
+    toast("Microphone capture is not available in this browser.", "warn");
+    return;
+  }
+  let stream;
+  try {
+    stream = await navigator.mediaDevices.getUserMedia({
+      audio: { channelCount: 1, echoCancellation: true, noiseSuppression: true },
+    });
+  } catch (e) {
+    toast("Microphone access denied or unavailable. You can still transcribe files.", "warn");
+    return;
+  }
+
+  const proto = location.protocol === "https:" ? "wss:" : "ws:";
+  const wsUrl = `${proto}//${location.host}/ws/stt/live`;
+  let ws;
+  try {
+    ws = new WebSocket(wsUrl);
+  } catch (e) {
+    stream.getTracks().forEach((t) => t.stop());
+    toast("Could not open live STT websocket.", "err");
+    return;
+  }
+
+  LiveStt.stream = stream;
+  LiveStt.ws = ws;
+  LiveStt.provisional = "";
+  LiveStt.finals = [];
+  setLiveButtons({ start: false, pause: false, resume: false, stop: false });
+
+  ws.binaryType = "arraybuffer";
+  ws.onopen = () => {
+    const lang = ($("stt-language")?.value || "en").trim() || "en";
+    ws.send(JSON.stringify({
+      op: "start",
+      language: lang === "auto" ? "en" : lang,
+    }));
+  };
+  ws.onmessage = (ev) => {
+    let msg;
+    try { msg = JSON.parse(ev.data); } catch (_) { return; }
+    const event = msg.event;
+    if (event === "ready") {
+      setLiveButtons({ start: false, pause: true, resume: false, stop: true });
+      const out = $("stt-results");
+      if (out) {
+        clear(out);
+        out.appendChild(el("p", {
+          class: "hint",
+          text: `Live ready · ${msg.engine || "?"}/${msg.model || "?"} — ${msg.reason || ""}`,
+        }));
+      }
+      _beginPcmCapture();
+    } else if (event === "provisional" || (event === "partial")) {
+      LiveStt.provisional = msg.text || "";
+      renderLiveResults();
+    } else if (event === "final" || msg.final === true) {
+      if (msg.text) LiveStt.finals.push(msg.text);
+      LiveStt.provisional = "";
+      renderLiveResults();
+    } else if (event === "paused") {
+      setLiveButtons({ start: false, pause: false, resume: true, stop: true });
+    } else if (event === "resumed") {
+      setLiveButtons({ start: false, pause: true, resume: false, stop: true });
+    } else if (event === "done") {
+      const text = msg.result?.text || LiveStt.finals.join(" ");
+      const out = $("stt-results");
+      if (out) {
+        clear(out);
+        out.appendChild(el("p", { class: "ok-text", text: text || "(no speech captured)" }));
+      }
+      _teardownLiveCapture(false);
+      setLiveButtons({ start: true, pause: false, resume: false, stop: false });
+    } else if (event === "error") {
+      toast("Live STT: " + (msg.error || "unknown error"), "err");
+    } else if (event === "backpressure") {
+      /* drop — server cleared buffer */
+    }
+  };
+  ws.onerror = () => {
+    toast("Live STT connection error.", "err");
+  };
+  ws.onclose = () => {
+    _teardownLiveCapture(false);
+    setLiveButtons({ start: true, pause: false, resume: false, stop: false });
+  };
+}
+
+function _beginPcmCapture() {
+  if (!LiveStt.stream) return;
+  try {
+    const ctx = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 16000 });
+    const source = ctx.createMediaStreamSource(LiveStt.stream);
+    // ScriptProcessor is deprecated but widely available; fine for this pragmatic path.
+    const processor = ctx.createScriptProcessor(4096, 1, 1);
+    processor.onaudioprocess = (e) => {
+      if (!LiveStt.ws || LiveStt.ws.readyState !== WebSocket.OPEN) return;
+      const input = e.inputBuffer.getChannelData(0);
+      LiveStt.ws.send(floatTo16BitPCM(input));
+    };
+    source.connect(processor);
+    const mute = ctx.createGain();
+    mute.gain.value = 0;
+    processor.connect(mute);
+    mute.connect(ctx.destination);
+    LiveStt.audioCtx = ctx;
+    LiveStt.source = source;
+    LiveStt.processor = processor;
+  } catch (e) {
+    toast("Could not start audio capture: " + errorText(e), "err");
+    stopLiveStt();
+  }
+}
+
+function _teardownLiveCapture(closeWs) {
+  try { LiveStt.processor?.disconnect(); } catch (_) {}
+  try { LiveStt.source?.disconnect(); } catch (_) {}
+  try { LiveStt.audioCtx?.close(); } catch (_) {}
+  LiveStt.processor = null;
+  LiveStt.source = null;
+  LiveStt.audioCtx = null;
+  if (LiveStt.stream) {
+    LiveStt.stream.getTracks().forEach((t) => t.stop());
+    LiveStt.stream = null;
+  }
+  if (closeWs && LiveStt.ws) {
+    try { LiveStt.ws.close(); } catch (_) {}
+  }
+  LiveStt.ws = null;
+}
+
+function pauseLiveStt() {
+  if (LiveStt.ws?.readyState === WebSocket.OPEN) {
+    LiveStt.ws.send(JSON.stringify({ op: "pause" }));
+  }
+}
+function resumeLiveStt() {
+  if (LiveStt.ws?.readyState === WebSocket.OPEN) {
+    LiveStt.ws.send(JSON.stringify({ op: "resume" }));
+  }
+}
+function stopLiveStt() {
+  if (LiveStt.ws?.readyState === WebSocket.OPEN) {
+    try { LiveStt.ws.send(JSON.stringify({ op: "stop" })); } catch (_) {}
+  } else {
+    _teardownLiveCapture(true);
+    setLiveButtons({ start: true, pause: false, resume: false, stop: false });
+  }
+}
+
+$("stt-live-start")?.addEventListener("click", () => startLiveStt());
+$("stt-live-pause")?.addEventListener("click", () => pauseLiveStt());
+$("stt-live-resume")?.addEventListener("click", () => resumeLiveStt());
+$("stt-live-stop")?.addEventListener("click", () => stopLiveStt());
 
 async function initTts() {
   const unavailBanner = $("tts-unavail");
@@ -3035,15 +3460,6 @@ async function initTts() {
     unavailBanner.textContent = "Could not reach TTS status endpoint: " + e.message;
     unavailBanner.classList.remove("hidden");
   }
-}
-
-// Lazy-init TTS section when the user first opens the tab
-const _ttsTabBtn = document.querySelector('[data-tab="tts"]');
-if (_ttsTabBtn) {
-  let _ttsInited = false;
-  _ttsTabBtn.addEventListener("click", () => {
-    if (!_ttsInited) { _ttsInited = true; initTts(); }
-  });
 }
 
 // Browse for a .md file

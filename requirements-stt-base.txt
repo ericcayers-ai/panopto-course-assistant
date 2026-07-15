@@ -1,0 +1,20 @@
+# STT base pack — faster-whisper + download/convert helpers.
+# Install with:
+#   pip install -r requirements-stt-base.txt
+#
+# Recommended default for transcription (CPU-friendly with int8).
+# Also pulled in by requirements-transcribe.txt and the other STT packs.
+
+faster-whisper>=1.0
+yt-dlp>=2024.1
+# markitdown needs its [all] extras for PDF / PowerPoint / Word / Excel support;
+# the bare package only handles plain text + html.
+markitdown[all]>=0.0.1a2
+
+# One-click "grab my login" reads the logged-in browser's Moodle session cookie
+# locally, so laymen never have to copy/paste from devtools. Also in the core
+# requirements.txt; listed here too so install-extras pulls it in.
+browser-cookie3>=0.19
+
+# Alternative engine (larger install, pulls in torch):
+# openai-whisper>=20231117

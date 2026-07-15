@@ -12,6 +12,24 @@ A **Python / FastAPI** backend with a plain **HTML + JavaScript** frontend
 
 ## What's new
 
+**v4.0 - Adaptive offline STT + Speech hub.** Transcription is a local model
+router (Auto / Quality / Fast / Live / Eco), not a single Whisper call. Caption-
+first Panopto reuse, 180s resumable chunking, schema-v2 segments (speaker /
+words / confidence), and optional Granite, Qwen3, Parakeet, Moonshine, plus
+faster-whisper as the universal fallback. Heavy engines run in a subprocess
+worker. The Speech panel is Transcribe | Read aloud. Install packs:
+
+| Pack | Install |
+| --- | --- |
+| Base (recommended) | `pip install -r requirements-stt-base.txt` (also via `requirements-transcribe.txt`) |
+| Quality (Granite / Qwen) | `pip install -r requirements-stt-quality.txt` |
+| Speakers (pyannote) | `pip install -r requirements-stt-speakers.txt` |
+| Live (Moonshine) | `pip install -r requirements-stt-live.txt` |
+| Specialist (FireRed / Omnilingual) | `pip install -r requirements-stt-specialist.txt` |
+
+No audio leaves your machine. Model weights stay in a local cache — never in
+git or release ZIPs. Health: `GET /api/health`, setup: `GET /api/setup/preflight`.
+
 **v3.7 - long-form Speech with Kokoro.** The Speech tab now uses
 [Kokoro-82M](https://github.com/hexgrad/kokoro) (Apache-2.0) instead of
 VibeVoice Realtime. Lectures and Markdown notes are sentence-chunked with a

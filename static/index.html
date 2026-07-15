@@ -877,64 +877,141 @@
           </details>
         </section>
 
-        <!-- SPEECH -->
+        <!-- SPEECH (STT + TTS hub) -->
         <section id="tts" class="panel" aria-labelledby="tts-h">
           <div class="panel-head">
             <svg class="ico ico-lg" aria-hidden="true"><use href="#i-mic"/></svg>
-            <h2 id="tts-h">Text to speech</h2>
+            <h2 id="tts-h">Speech</h2>
           </div>
-          <p class="panel-intro">Reads a Markdown file aloud using
-            <a href="https://github.com/hexgrad/kokoro" target="_blank" rel="noopener">Kokoro-82M</a>
-            (open-weight, Apache-2.0). Built for long-form narration: text is chunked with voice continuity
-            and stitched into one WAV. Runs well on CPU; a GPU speeds things up if available. The model
-            downloads from Hugging Face on first use (~300 MB).</p>
+          <p class="panel-intro">Transcribe lecture audio offline, or read Markdown aloud. Speech stays on this
+            machine — no cloud STT.</p>
 
-          <div id="tts-unavail" class="banner warn hidden">
-            Kokoro TTS is not installed. From the project folder run
-            <code>pip install -r requirements-tts.txt</code>, then restart. The model downloads on
-            first use.
+          <div class="import-switch" role="tablist" aria-label="Speech mode">
+            <button type="button" class="seg active" data-speech="transcribe" role="tab"
+                    aria-selected="true" aria-controls="speech-transcribe">Transcribe</button>
+            <button type="button" class="seg" data-speech="read-aloud" role="tab"
+                    aria-selected="false" aria-controls="speech-read-aloud">Read aloud</button>
           </div>
 
-          <div class="card" id="tts-main">
-            <h3>Generate speech from a Markdown file</h3>
+          <!-- TRANSCRIBE -->
+          <div id="speech-transcribe" class="import-pane active" role="tabpanel" aria-labelledby="tts-h">
+            <div class="card" id="stt-main">
+              <h3>Transcribe</h3>
+              <p class="hint" id="stt-privacy">Local only — no cloud STT</p>
 
-            <div class="grid">
-              <label for="tts-md-path">Markdown file
-                <div class="row">
-                  <input type="text" id="tts-md-path" placeholder="Path to a .md file" />
-                  <button class="ghost small" id="tts-pick-file">Browse…</button>
-                </div>
-              </label>
-            </div>
-
-            <div class="grid">
-              <label for="tts-voice">Voice
-                <select id="tts-voice">
-                  <option value="">Loading voices…</option>
-                </select>
-              </label>
-            </div>
-            <p class="hint">Voices ship with Kokoro. Long lectures are chunked automatically so quality stays stable.</p>
-
-            <details class="adv-settings">
-              <summary>Advanced options</summary>
               <div class="grid">
-                <label for="tts-speed">Speaking speed
-                  <input type="number" id="tts-speed" value="1.0" min="0.5" max="2.0" step="0.05"
-                    placeholder="1.0" />
-                </label>
-                <label for="tts-model-path">Model path or Hugging Face repo
-                  <input type="text" id="tts-model-path" value="hexgrad/Kokoro-82M"
-                    placeholder="hexgrad/Kokoro-82M or a local path" />
+                <label for="stt-media-url">Media URL or path
+                  <input type="text" id="stt-media-url"
+                    placeholder="https://… or a local audio/video path (or select loaded lectures)" />
                 </label>
               </div>
-            </details>
 
-            <div class="row" style="margin-top:12px">
-              <button id="tts-generate" class="primary" disabled>Generate speech…</button>
+              <div class="row" style="margin-top:8px">
+                <span class="toggles-label" id="stt-profile-label">Profile</span>
+                <div class="import-switch" id="stt-profiles" role="tablist" aria-labelledby="stt-profile-label">
+                  <button type="button" class="seg active" data-profile="auto" role="tab" aria-selected="true">Auto</button>
+                  <button type="button" class="seg" data-profile="fast" role="tab" aria-selected="false">Fast</button>
+                  <button type="button" class="seg" data-profile="quality" role="tab" aria-selected="false" data-adv-only>Quality</button>
+                  <button type="button" class="seg" data-profile="live" role="tab" aria-selected="false" data-adv-only>Live</button>
+                  <button type="button" class="seg" data-profile="eco" role="tab" aria-selected="false" data-adv-only>Eco</button>
+                </div>
+              </div>
+
+              <div class="grid">
+                <label for="stt-language">Language
+                  <input type="text" id="stt-language" value="auto" placeholder="auto or en, zh, …" />
+                </label>
+                <label for="stt-diarization" data-adv-only>Diarization
+                  <select id="stt-diarization">
+                    <option value="off" selected>Off</option>
+                    <option value="auto">Auto</option>
+                    <option value="on">On</option>
+                  </select>
+                </label>
+              </div>
+
+              <label class="toggle">
+                <input type="checkbox" id="stt-caption-first" checked />
+                Prefer existing captions when available (caption-first)
+              </label>
+
+              <div id="stt-route-status" class="cookie-status" role="status" aria-live="polite">
+                <span class="dot off" aria-hidden="true"></span>
+                <span id="stt-route-text">Choosing a model…</span>
+              </div>
+              <div id="stt-cap-strip" class="hint" role="status">Model / cache status will appear here.</div>
+
+              <div class="row" style="margin-top:12px">
+                <button type="button" id="stt-transcribe" class="primary">Transcribe</button>
+              </div>
+
+              <div class="mq-grab" role="group" aria-labelledby="stt-live-label" style="margin-top:12px">
+                <span class="toggles-label" id="stt-live-label">Live mic:</span>
+                <button type="button" id="stt-live-start" class="ghost small">Start</button>
+                <button type="button" id="stt-live-pause" class="ghost small" disabled>Pause</button>
+                <button type="button" id="stt-live-resume" class="ghost small" disabled>Resume</button>
+                <button type="button" id="stt-live-stop" class="ghost small" disabled>Stop</button>
+              </div>
+
+              <div id="stt-results" class="results" role="status" aria-live="polite"></div>
+            </div>
+          </div>
+
+          <!-- READ ALOUD (TTS) -->
+          <div id="speech-read-aloud" class="import-pane" role="tabpanel" aria-labelledby="tts-h">
+            <p class="panel-intro">Reads a Markdown file aloud using
+              <a href="https://github.com/hexgrad/kokoro" target="_blank" rel="noopener">Kokoro-82M</a>
+              (open-weight, Apache-2.0). Built for long-form narration: text is chunked with voice continuity
+              and stitched into one WAV. Runs well on CPU; a GPU speeds things up if available. The model
+              downloads from Hugging Face on first use (~300 MB).</p>
+
+            <div id="tts-unavail" class="banner warn hidden">
+              Kokoro TTS is not installed. From the project folder run
+              <code>pip install -r requirements-tts.txt</code>, then restart. The model downloads on
+              first use.
             </div>
 
-            <div id="tts-results" class="results"></div>
+            <div class="card" id="tts-main">
+              <h3>Generate speech from a Markdown file</h3>
+
+              <div class="grid">
+                <label for="tts-md-path">Markdown file
+                  <div class="row">
+                    <input type="text" id="tts-md-path" placeholder="Path to a .md file" />
+                    <button class="ghost small" id="tts-pick-file">Browse…</button>
+                  </div>
+                </label>
+              </div>
+
+              <div class="grid">
+                <label for="tts-voice">Voice
+                  <select id="tts-voice">
+                    <option value="">Loading voices…</option>
+                  </select>
+                </label>
+              </div>
+              <p class="hint">Voices ship with Kokoro. Long lectures are chunked automatically so quality stays stable.</p>
+
+              <details class="adv-settings">
+                <summary>Advanced options</summary>
+                <div class="grid">
+                  <label for="tts-speed">Speaking speed
+                    <input type="number" id="tts-speed" value="1.0" min="0.5" max="2.0" step="0.05"
+                      placeholder="1.0" />
+                  </label>
+                  <label for="tts-model-path">Model path or Hugging Face repo
+                    <input type="text" id="tts-model-path" value="hexgrad/Kokoro-82M"
+                      placeholder="hexgrad/Kokoro-82M or a local path" />
+                  </label>
+                </div>
+              </details>
+
+              <div class="row" style="margin-top:12px">
+                <button id="tts-generate" class="primary" disabled>Generate speech…</button>
+              </div>
+
+              <div id="tts-results" class="results"></div>
+            </div>
           </div>
         </section>
 

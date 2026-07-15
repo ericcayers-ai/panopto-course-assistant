@@ -129,6 +129,7 @@ def test_transcribe_force_does_not_skip(tmp_path: Path, monkeypatch):
     res = transcribe.transcribe_lecture(
         item, tmp_path, outputs=["txt"], organize="week",
         skip_existing=True, force=True, keep_media=True,
+        use_adaptive=False,
     )
     assert res["status"] == "done"
     txt = (out_dir / f"{item.safe_title}.txt").read_text(encoding="utf-8")
@@ -145,7 +146,7 @@ def test_transcribe_filters_invalid_outputs(tmp_path: Path, monkeypatch):
                                          "text": "x", "language": "en"})
     res = transcribe.transcribe_lecture(
         item, tmp_path, outputs=["txt", "bogus"], organize="none",
-        skip_existing=False, keep_media=True,
+        skip_existing=False, keep_media=True, use_adaptive=False,
     )
     assert "txt" in res["outputs"]
     assert "bogus" not in res["outputs"]
@@ -154,5 +155,5 @@ def test_transcribe_filters_invalid_outputs(tmp_path: Path, monkeypatch):
 def test_engine_status_shape():
     s = transcribe.engine_status()
     assert "engines" in s and "any_engine" in s
-    assert set(s["engines"]) == {"faster-whisper", "whisper"}
+    assert {"faster-whisper", "whisper"} <= set(s["engines"])
     assert isinstance(s["cuda"], bool)

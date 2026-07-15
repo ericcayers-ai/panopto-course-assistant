@@ -56,7 +56,9 @@ transcripts/course_assistant.db   (SQLite - all persistent state)
 | `core.py` | Feed parsing, `LectureItem`, `write_outputs`, `list_transcripts`, `list_library`, all exporters (NotebookLM, all-sources, subtitles), `split_sentences`, `summarize_text`. No heavy deps - stdlib + `requests` only. |
 | `database.py` | SQLite DAO. Single `RLock`-guarded connection. Schema migrations are append-only numbered steps in `_MIGRATIONS` - never edit a shipped migration. |
 | `jobs.py` | `JobManager` - thread pool, DB-backed state (`queued → running → done/failed/interrupted`). `manager.bind(db)` wires persistence. Without a bound DB it runs in-memory (used in unit tests). |
-| `transcribe.py` | Lazy-imports whisper/faster-whisper/yt-dlp. The rest of the app starts fine if these are absent. |
+| `transcribe.py` | Compatibility facade over adaptive STT. Lazy-imports; app starts without STT extras. |
+| `stt/` | Adaptive offline STT: types, registry/router, engines, captions/chunk/checkpoint, workers, enrichment. |
+| `routers/stt.py` | `/api/stt/*` capabilities, route, models, live WebSocket. |
 | `exports.py` | Preset-driven export engine (intent × scope). Wraps the raw exporters in `core.py`. |
 | `flashcards.py` | Anki card extraction. Uses `core.split_sentences()` (not raw regex). |
 | `secrets.py` | Key/token storage: OS keyring → encrypted file → plaintext fallback. Never store secrets in the DB. |
