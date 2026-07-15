@@ -33,7 +33,9 @@ from .jobs import manager
 from .schemas import AnkiSyncReq, NotionSyncReq
 
 BASE_DIR = Path(__file__).resolve().parent.parent
-APP_VERSION = "3.5.0"
+
+# Single version source — keep in sync with app/__init__.py only via import.
+from . import __version__ as APP_VERSION  # noqa: E402
 
 # Rebound by init(); routers must reference these as ``context.<name>``.
 STATIC_DIR: Path = BASE_DIR / "static"
@@ -261,8 +263,8 @@ def _make_transcribe_work(payload: Dict[str, Any]):
     def work(progress) -> Dict[str, Any]:
         return transcribe.transcribe_lecture(
             item, OUTPUT_DIR,
-            engine=payload.get("engine", "faster-whisper"),
-            model=payload.get("model", "small"),
+            engine=payload.get("engine", "auto"),
+            model=payload.get("model", "auto"),
             language=payload.get("language", "en"),
             device=payload.get("device", "auto"),
             organize=payload.get("organize", "auto"),
@@ -276,6 +278,20 @@ def _make_transcribe_work(payload: Dict[str, Any]):
             course=payload.get("course", ""),
             video_url=lecture.get("video_url", ""),
             progress=progress,
+            profile=payload.get("profile", "auto"),
+            code_switch=bool(payload.get("code_switch", False)),
+            word_timestamps=bool(payload.get("word_timestamps", True)),
+            diarization=payload.get("diarization", "off"),
+            speakers=payload.get("speakers"),
+            vocabulary=payload.get("vocabulary"),
+            caption_first=bool(payload.get("caption_first", True)),
+            caption_url=payload.get("caption_url") or lecture.get("caption_url", ""),
+            resume=bool(payload.get("resume", True)),
+            chunk_seconds=int(payload.get("chunk_seconds", 180) or 180),
+            compute=payload.get("compute", "auto"),
+            hotwords=payload.get("hotwords", ""),
+            initial_prompt=payload.get("initial_prompt", ""),
+            use_adaptive=bool(payload.get("use_adaptive", True)),
         )
 
     return work

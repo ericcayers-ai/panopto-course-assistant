@@ -3,17 +3,12 @@
 #
 #   pip install -r requirements-transcribe.txt
 #
-# faster-whisper is the recommended engine (fast, CPU-friendly with int8).
-faster-whisper>=1.0
-yt-dlp>=2024.1
-# markitdown needs its [all] extras for PDF / PowerPoint / Word / Excel support;
-# the bare package only handles plain text + html.
-markitdown[all]>=0.0.1a2
+# This meta file pulls the STT base pack (faster-whisper + yt-dlp + markitdown).
+# Optional capability packs (install only what you need):
+#
+#   requirements-stt-quality.txt     Granite / Qwen3 (transformers + torch)
+#   requirements-stt-speakers.txt    pyannote diarization (needs HF token once)
+#   requirements-stt-live.txt        Moonshine streaming (useful-moonshine)
+#   requirements-stt-specialist.txt  FireRedASR / Omnilingual long-tail
 
-# One-click "grab my login" reads the logged-in browser's Moodle session cookie
-# locally, so laymen never have to copy/paste from devtools. Also in the core
-# requirements.txt; listed here too so install-extras pulls it in.
-browser-cookie3>=0.19
-
-# Alternative engine (larger install, pulls in torch):
-# openai-whisper>=20231117
+-r requirements-stt-base.txt

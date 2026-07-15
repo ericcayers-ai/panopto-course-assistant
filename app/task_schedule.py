@@ -332,159 +332,23 @@ def export_obsidian_zip(
     moodle_events: Optional[List[Dict[str, Any]]] = None,
     announcements: Optional[List[Dict[str, Any]]] = None,
 ) -> Path:
-    """Write an Obsidian vault zip mirroring Waikato study vault conventions."""
+    """Write an Obsidian vault zip via the shared suite engine."""
+    import tempfile
+    from . import suites
+
     dest = Path(dest)
     dest.parent.mkdir(parents=True, exist_ok=True)
-    root = _slug(title) or "semester-plan"
-    outlines = outlines or []
-    gantt = build_mermaid_gantt(
-        tasks, outlines=outlines, moodle_events=moodle_events, title=title,
-    )
-
-    with zipfile.ZipFile(dest, "w", zipfile.ZIP_DEFLATED) as zf:
-        subjects = sorted({t.get("subject", "") for t in tasks if t.get("subject")})
-
-        readme = [
-            f"# {title}",
-            "",
-            "Semester plan exported from Course Assistant.",
-            "",
-            "## Quick links",
-            "",
-            "- [[Study Plan]]",
-            "- [[Semester Gantt]]",
-            "- [[Study Timetable/Timetable Sheet - Markdown ver]]",
-            "",
-            "## Papers",
-            "",
-        ]
-        for s in subjects:
-            readme.append(f"- [[papers/{_slug(s)}|{s}]]")
-        if outlines:
-            readme += ["", "## Outlines", ""]
-            for o in outlines:
-                code = (o.get("paper_code") or "").split("-")[0]
-                readme.append(f"- [[Outlines/{_slug(code)}|{code}]]")
-        if announcements:
-            readme += ["", "## Announcements", ""]
-            readme.append("- [[Announcements/index|All announcements]]")
-        zf.writestr(f"{root}/README.md", "\n".join(readme) + "\n")
-
-        study_plan = [
-            "---",
-            "tags: [study-plan, semester]",
-            "---",
-            "",
-            f"# {title} — Study plan",
-            "",
-            "## Timeline",
-            "",
-        ]
-        for t in tasks:
-            due = t.get("due_date") or "TBD"
-            study_plan.append(
-                f"- {due} · [[tasks/{t['id']}|{t.get('name', '')}]] "
-                f"({t.get('type', '')}{', ' + str(t['weight']) + '%' if t.get('weight') else ''})"
-            )
-        zf.writestr(f"{root}/Study Plan.md", "\n".join(study_plan) + "\n")
-
-        gantt_body = [
-            "---",
-            "tags: [gantt, semester, reference]",
-            "aliases: [Semester Timeline]",
-            "---",
-            "",
-            f"# {title} — Gantt chart",
-            "",
-            "Visual timeline of assessments, classes, and key dates.",
-            "",
-            gantt.rstrip(),
-            "",
-        ]
-        zf.writestr(f"{root}/Semester Gantt.md", "\n".join(gantt_body) + "\n")
-
-        zf.writestr(
-            f"{root}/Study Timetable/Timetable Sheet - Markdown ver.md",
-            _timetable_markdown(tasks),
+    with tempfile.TemporaryDirectory() as tmp:
+        built = suites.build_suite_tree(
+            Path(tmp),
+            format="obsidian",
+            title=title,
+            tasks=tasks,
+            outlines=outlines or [],
+            moodle_events=moodle_events,
+            announcements=announcements,
         )
-
-        for s in subjects:
-            paper_tasks = [t for t in tasks if t.get("subject") == s]
-            lines = [
-                "---",
-                f"tags: [{s.lower()}, paper]",
-                "---",
-                "",
-                f"# {s}",
-                "",
-                f"See also: [[Semester Gantt]] · [[Study Plan]]",
-                "",
-            ]
-            for t in paper_tasks:
-                lines.append(
-                    f"- [[tasks/{t['id']}|{t.get('name', '')}]] ({t.get('due_date', 'TBD')})"
-                )
-            zf.writestr(f"{root}/papers/{_slug(s)}.md", "\n".join(lines) + "\n")
-
-            paper_events = [e for e in (moodle_events or [])
-                            if (e.get("paper_code") or "").upper() == s]
-            paper_gantt = build_mermaid_gantt(
-                [t for t in tasks if t.get("subject") == s],
-                outlines=[o for o in outlines
-                          if (o.get("paper_code") or "").startswith(s)],
-                moodle_events=paper_events,
-                title=f"{s} — {title}",
-            )
-            pg = [
-                "---",
-                f"tags: [{s.lower()}, gantt]",
-                "---",
-                "",
-                f"# {s} Gantt",
-                "",
-                paper_gantt.rstrip(),
-                "",
-            ]
-            zf.writestr(f"{root}/Guide/{s} Gantt.md", "\n".join(pg) + "\n")
-
-        for o in outlines:
-            code = (o.get("paper_code") or "outline").split("-")[0]
-            zf.writestr(f"{root}/Outlines/{_slug(code)}.md", _outline_note(o))
-
-        if announcements:
-            ann_index = ["# Moodle announcements", ""]
-            for a in announcements:
-                slug, body = _announcement_note(a)
-                ann_index.append(f"- [[Announcements/{slug}|{a.get('title', 'Post')}]]")
-                zf.writestr(f"{root}/Announcements/{slug}.md", body)
-            zf.writestr(f"{root}/Announcements/index.md", "\n".join(ann_index) + "\n")
-
-        for t in tasks:
-            subj = t.get("subject", "")
-            typ = t.get("type", "")
-            fm_tags = ["task"]
-            if subj:
-                fm_tags.append(subj.lower())
-            if typ:
-                fm_tags.append(_slug(typ))
-            body = [
-                "---",
-                f"tags: [{', '.join(fm_tags)}]",
-                "---",
-                "",
-                f"# {t.get('name', 'Task')}",
-                "",
-                f"- Paper: [[papers/{_slug(subj)}|{subj}]]",
-                f"- Type: {typ}",
-                f"- Due: {t.get('due_date', '')}",
-                f"- Weight: {t.get('weight', '')}%" if t.get("weight") is not None else "- Weight:",
-                f"- Status: {t.get('status', '')}",
-                f"- Source: {t.get('source', '')}",
-                "",
-                f"[[Semester Gantt]] · [[Study Plan]]",
-            ]
-            zf.writestr(f"{root}/tasks/{t['id']}.md", "\n".join(body) + "\n")
-
+        suites.zip_suite(Path(built["root"]), dest)
     return dest
 
 
@@ -871,6 +735,9 @@ def sync_semester_all(
     errors: List[str] = []
     moodle_cal_events: List[Dict[str, Any]] = []
 
+    from . import settings_store
+    course_id = settings_store.ensure_active_course(db, course_id)
+
     outlines: List[Dict[str, Any]] = []
     for code in paper_codes:
         try:
@@ -996,6 +863,37 @@ def sync_semester_all(
     )
     steps.append({"step": "exports", "status": "ok", "detail": "ICS + Obsidian updated"})
 
+    suite_report: Dict[str, Any] = {}
+    try:
+        from . import suites
+        if suites.get_auto_sync(db) and suites.get_destinations(db):
+            suite_report = suites.sync_suites_to_destinations(
+                db=db,
+                plan_payload=payload,
+                title=label,
+                outlines=outlines,
+                announcements=ann_rows or None,
+                moodle_events=moodle_cal_events or None,
+                library_dir=context.OUTPUT_DIR,
+                staging_dir=context.OUTPUT_DIR / "_suites",
+                push_live=True,
+            )
+            suites.set_last_sync(db, {
+                "plan_id": plan_id,
+                "formats": suite_report.get("formats") or [],
+                "new_files": suite_report.get("new_files", 0),
+                "updated": suite_report.get("updated", 0),
+                "at": now_iso(),
+            })
+            steps.append({
+                "step": "suites",
+                "status": "ok",
+                "detail": f"Wrote {', '.join(suite_report.get('formats') or [])}",
+            })
+    except Exception as e:
+        errors.append(f"suites: {e}")
+        steps.append({"step": "suites", "status": "error", "detail": str(e)})
+
     return {
         "ok": not errors,
         "plan_id": plan_id,
@@ -1005,4 +903,5 @@ def sync_semester_all(
         "errors": errors,
         "artifacts": artifacts,
         "timeline": semester_timeline(tasks),
+        "suites": suite_report,
     }

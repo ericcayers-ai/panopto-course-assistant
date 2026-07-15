@@ -1,113 +1,80 @@
 # Course Assistant
 
-A **web app** that turns university course material into study resources. Point
-it at a [Panopto](https://www.panopto.com/) lecture feed and/or your course
-documents, and it transcribes, converts, organises and **exports clean sources
-for [NotebookLM](https://notebooklm.google.com/), [Anki](https://apps.ankiweb.net/)
-and [Notion](https://notion.so/)**. Built around the University of Waikato
-courses but **course-agnostic** (validated against 7 different Moodle exports).
+A **local-first web app** that turns university course material into study
+resources. Point it at a [Panopto](https://www.panopto.com/) lecture feed and/or
+your course documents, and it transcribes, converts, organises, and **exports
+clean sources** for [NotebookLM](https://notebooklm.google.com/),
+[Anki](https://apps.ankiweb.net/), [Notion](https://notion.so/), Obsidian, and
+related workflows. Built around University of Waikato courses but
+**course-agnostic**.
 
-A **Python / FastAPI** backend with a plain **HTML + JavaScript** frontend
-(no build step), a sidebar dashboard, and light/dark themes.
+A **Python / FastAPI** backend with a plain **HTML + JavaScript** frontend (no
+build step), light/dark themes, and everything under your control on
+`127.0.0.1` — **no lecture audio leaves your machine**.
 
-## What's new
+Current release: **v4.0.0**.
 
-**v3.3 - a visual identity, not a template.** The v3.2 redesign still read as a
-generic "warm paper + serif + single accent" AI-default look. This pass replaces
-it with an identity grounded in what the app actually does - turn a spoken
-recording into written knowledge:
+## What's new in v4.0.0
 
-- **"Signal & Instrument" palette and type.** Cool brushed-aluminium surfaces,
-  a copper "signal" accent (a VU needle at speaking volume, not a brand blue or
-  a terracotta), a technical signage face (Bahnschrift) for headings and panel
-  labels, and every count/timecode/duration set in tabular monospace - the one
-  place numbers are meant to look "read out" rather than typeset. Verified
-  against WCAG AA arithmetically, both themes.
-- **The Home pipeline reads as a patch bay.** The four workspace stages are
-  connected by jack connectors that light up copper when either side of the
-  seam is live - a signature drawn from the subject (audio signal chains), not
-  a decorative flourish.
-- **A channel-strip sidebar.** Each nav row carries a selector edge that lights
-  when its channel is active, and progress bars render as a segmented level
-  meter rather than a smooth loading bar.
-- **The brand mark is a waveform**, not a generic graduation cap.
+**Adaptive offline STT + Speech hub.** Transcription is a local model
+router (profiles **Auto / Quality / Fast / Live / Eco**), not a single Whisper
+call. Caption-first Panopto reuse when captions are usable, resumable chunking
+with checkpoints, schema-v2 segments (optional speaker / words / confidence),
+and optional Granite, Qwen3, Parakeet, Moonshine, plus faster-whisper as the
+universal fallback. Heavy engines run in a subprocess worker. The **Speech**
+panel is **Transcribe | Read aloud** (Kokoro TTS).
 
-**v3.2 - interface and codebase revamp.** A ground-up pass on how the app looks
-and how it is put together:
+| Pack | Install |
+| --- | --- |
+| Base (recommended) | `pip install -r requirements-stt-base.txt` (also via `requirements-transcribe.txt`) |
+| Quality (Granite / Qwen) | `pip install -r requirements-stt-quality.txt` |
+| Speakers (pyannote) | `pip install -r requirements-stt-speakers.txt` |
+| Live (Moonshine) | `pip install -r requirements-stt-live.txt` |
+| Specialist (FireRed / Omnilingual) | `pip install -r requirements-stt-specialist.txt` |
 
-- **A deliberate visual identity.** A paper-and-ink palette with a single teal
-  accent (not the default dashboard blue), serif headings, and a token-driven
-  stylesheet. Every emoji glyph is replaced by an inline SVG icon set that
-  inherits the theme. Light and dark both meet WCAG AA contrast, checked
-  arithmetically in the test suite.
-- **Accessibility.** Keyboard-reachable controls with a visible focus ring,
-  accessible names on every icon-only button, dialogs that trap focus and
-  return it on close, and live-region announcements for background work.
-- **One coherent suite.** `GET /api/collections` gathers everything derived from
-  a lecture - glossary terms, keywords, citations, notes, tags and sibling
-  lectures - so a lecture reads as one thing, and the Study panel cross-links
-  the guide to the glossary it was built from.
-- **A backend that is one app, not 129 loose routes.** `main.py` is now app
-  setup plus router mounts; the HTTP surface lives in `app/routers/` (one module
-  per resource group). Every integration failure renders through one shared
-  error envelope (`app/errors.py`) instead of six bespoke shapes.
-- **One-click launch that offers the add-ons.** The first run of
-  `start-windows.bat` now offers the transcription, document and speech extras,
-  so a new user is set up in a single double-click.
+Model weights stay in a local cache — never in git or release ZIPs. Details:
+[docs/STT.md](docs/STT.md). Health: `GET /api/health`; setup:
+`GET /api/setup/preflight`.
 
-**v2.2 - download a whole course from its link.** `POST /api/moodle/fetch-course` parses the course, **downloads every resource file** (slides, assignment briefs, PDFs) using your browser session cookies, converts them to Markdown, and reports the Panopto feeds for transcription - one call from the course URL. The Moodle "Simple" window now runs this end-to-end (import → files → auto-transcribe → export). Resource download URLs are captured from the page, Panopto's duplicated `itpc://`/`https://` feeds are de-duplicated, and there's an **"include images & diagrams" toggle (on by default)** on both the document import and the Moodle flow.
+Earlier highlights still in the product:
 
-**v2.1 - imagery & diagrams are no longer lost.** Converting a PDF/PPTX/DOCX used to keep only the text; now embedded **figures, diagrams and screenshots are extracted and attached** to the Markdown (`![Figure N (p.X)](…_assets/…)`) so worked examples, assignment figures and lecture-slide diagrams survive into NotebookLM/AI exports and the course archive. Office/EPUB images come out with the standard library; PDFs use PyMuPDF or pdfplumber. Images are preserved even when text extraction fails, and Notion-export images are copied across too.
-
-### v2.0
-
-A big step from "single-session tool" toward a persistent, multi-course study platform:
-
-- **Pick how you work** - a launcher with two windows (*Full workspace* vs *Just my Moodle course*), each in **Simple** or **Advanced** mode. Simple uses best defaults; Advanced exposes every knob.
-- **Import a Moodle course from its link** - paste `…/course/view.php?id=…`; with your browser session it pulls the outline, activities and Panopto lecture feeds (crawls the linked section pages).
-- **Guided Simple flow** - import → auto-transcribe with the best detected settings for your machine → one export choice (NotebookLM or general AI). Transcription progress refreshes ~every 30 s.
-- **Study planner** - assessments, an SM-2 spaced-repetition scheduler, `.ics` calendar export, an hours-budgeted study plan, and progress/mastery tracking.
-- **Live sync** - incremental, duplicate-aware Notion & Anki sync with a dry-run preview.
-- **Export engine** - intent presets (revision/ai/exam/notion/anki/archive) × scopes, preview-before-write, and a portable course archive.
-- **Privacy & safety** - secrets in the OS keyring (never plaintext), data-egress labels, an audit log, local-only analytics, and one-file backup/restore.
+- **Speech TTS** — Kokoro-82M read-aloud (`requirements-tts.txt`) for long-form
+  lectures and Markdown.
+- **Study + Export** — glossary, study guides, quizzes, intent-driven export
+  presets, practice/exam packs, and **Study suites** (Master + Courses vault /
+  sync toward Obsidian, Notion, or OneNote).
+- **Moodle** — course link / SSO token / browser scrape paths; guided Simple
+  window for import → transcribe → export.
 
 ## An all-in-one course workflow
 
-The app is organised as **one flow around a single course**, not a pile of
-separate tools. You **name your course once** (in the bar at the top - it tags
-every import and export automatically), then move through four steps:
+Work around **one course** (named in the top bar so imports and exports stay
+tagged), then move through the sidebar:
 
-| Step | What it does |
+| Panel | What it does |
 | --- | --- |
-| 🏠 **Home** | Overview: how the flow works, environment status, and at-a-glance counts for the current course. |
-| 🎓 **1 · Course** | Name your course, or **grab its real title + week/topic outline from a Moodle export** (any Moodle course) and use it as the course name in one click. |
-| 📥 **2 · Import** | One hub to **keep importing whatever you have**, with a sub-switch: **Lectures** (load a Panopto RSS feed - URL, local `.xml`, or upload - then transcribe one, a selection, or all pending), **Documents** (PDF / PowerPoint / Word / Excel / HTML / EPUB / CSV… → Markdown via [MarkItDown](https://github.com/microsoft/markitdown)), **Notion** (upload the export **`.zip`** - nested `ExportBlock` zips and all - or a single `.html`/folder → clean Markdown), and **Browse files** (find a folder path on disk). Everything lands in your Library. |
-| 📚 **3 · Library** | **Everything** you've imported, in one place and fully categorised - transcripts (with format chips), converted documents, Notion pages, generated exports and any other source files - with full-text **search**, a **viewer**, and **reorganize** into auto/week/lecture/module/date/topic folders. |
-| 📤 **4 · Export** | Turn the library into study material. **Export everything for AI** brings *all* your imported sources (transcripts + documents + Notion pages) together into one combined `everything_pack.md` for NotebookLM or any other AI; or export one kind at a time - **NotebookLM** sources, **subtitles & extra formats** (SRT/VTT/TXT/MD generated on demand), an **Anki** flashcard deck (auto-tagged by course·week·topic, plus categorize-an-existing-deck), and a **Notion study-database CSV** - all tagged with your course name. |
-| ⚙️ **Jobs** | Live progress of transcription jobs with a count badge; finished jobs refresh the lecture badges. |
+| **Home** | Overview, environment status, and at-a-glance counts for the current course. |
+| **Moodle** | Guided / advanced Moodle import (outline, resources, Panopto feeds). |
+| **Import** | Lectures (Panopto RSS — URL, local `.xml`, or upload), documents (PDF / Office / HTML / EPUB / … → Markdown), Notion export zips, and browse-on-disk. |
+| **Library** | Everything imported — transcripts, documents, exports — with search, viewer, and folder reorganize. |
+| **Study** | Streak / next review, glossary, study guides, and planners tied to your library. |
+| **Export** | NotebookLM packs, Anki decks, subtitle formats, Notion CSV, study suites / sync, and “export everything for AI”. |
+| **Speech** | Offline **Transcribe** (adaptive STT profiles) and **Read aloud** (Kokoro). |
+| **Jobs** | Live progress for transcription and related background work. |
 
-### Transcription options
+### Transcription
 
-The **Transcription settings** panel is intentionally minimal - engine, model,
-language and device (auto/cuda/cpu), plus **skip already-transcribed** and
-**audio-only download** (saves bandwidth) toggles, and an optional cookies-file
-path for auth-gated feeds. Every transcription writes a sensible **canonical
-set** - clean text, Markdown, rich JSON, and an extractive **study summary** (no
-LLM required) - which is enough to power the Library, search and every export.
-Lectures are auto-organised into folders (`auto` detects whichever of
-Week/Lecture/Module/Unit/Session/Lab a title uses, so non-"Week N" courses still
-organise sensibly); you can re-sort any time from the Library.
+Install the STT base pack (or `requirements-transcribe.txt`) when you want
+offline transcription. Without it, the app still parses feeds, converts
+documents, searches the library, and exports — Speech / Import simply reports
+that no engine is installed.
 
-**Subtitles and other formats** (`srt`, `vtt`, extra `txt`/`md`) are generated on
-demand from the **Export** step rather than cluttering the transcribe screen -
-they're rebuilt from the stored JSON whenever you want them. Your settings, feed
-URL and course name are remembered in the browser between visits.
-
-The transcription engine ([faster-whisper](https://github.com/SYSTRAN/faster-whisper)
-or [openai-whisper](https://github.com/openai/whisper)) is **optional**. The app
-runs fine for feed parsing, search, viewing, PDF conversion, export and browsing
-without it - the **Import → Lectures** view simply shows that no engine is
-installed and disables the transcribe buttons.
+Settings cover profile/engine, language, device (auto/cuda/cpu), skip-already-
+transcribed, audio-only download, and an optional cookies file for auth-gated
+feeds. Each job writes a canonical set: clean `.txt`, Markdown, rich `.json`
+(schema v2 when available), and an extractive study summary (no cloud LLM
+required). Subtitles (`srt` / `vtt`) and other formats are generated on demand
+from **Export**.
 
 ## Quick start (no terminal needed)
 
@@ -120,21 +87,23 @@ You only need **[Python 3.10+](https://www.python.org/downloads/)** installed
 | **macOS** | `start-unix.sh` (rename to `start-unix.command` to double-click) |
 | **Linux** | `./start-unix.sh` |
 
-The first run creates a private environment and installs the core dependencies
-(about a minute); after that it just starts the app and opens your browser at
-**http://127.0.0.1:8000**. Leave the little window open while you use the app;
-close it to stop.
+The first run creates a private environment and installs the core dependencies;
+after that it starts the app and opens **http://127.0.0.1:8000**. Leave the
+launcher window open while you use the app; close it to stop.
 
-### Optional add-ons (transcription + full document conversion)
+Release ZIPs can also launch via root `installandrun.bat` next to
+`CourseAssistant/`.
 
-For Whisper transcription and PDF/PowerPoint/Word/Excel → Markdown, run once:
+### Optional add-ons
 
-| Windows | macOS / Linux |
-| --- | --- |
-| `install-extras-windows.bat` | `./install-extras-unix.sh` |
+| Need | Windows | macOS / Linux |
+| --- | --- | --- |
+| Transcription + full document conversion | `install-extras-windows.bat` | `./install-extras-unix.sh` |
+| Or install packs by hand | see table in **What's new** / [CONTRIBUTING.md](CONTRIBUTING.md) | same |
 
-This adds `faster-whisper` (CPU int8 or CUDA GPU), `yt-dlp`, and
-`markitdown[all]`. The first transcription downloads the chosen Whisper model.
+The extras script adds the STT base stack (`faster-whisper`, `yt-dlp`,
+`markitdown`) and can install Playwright + Chromium for Moodle browser scrape.
+The first transcription downloads the chosen model into a local cache.
 
 ### Manual start (for developers)
 
@@ -147,116 +116,92 @@ python run.py                     # http://127.0.0.1:8000
 
 ## Exporting to NotebookLM
 
-[NotebookLM](https://notebooklm.google.com/) works best when each source is
-clean, readable prose - per-segment timestamps fragment sentences and add noise.
-The **Export → NotebookLM sources** button (or `POST /api/export/notebooklm`)
-turns your existing transcripts into NotebookLM-ready Markdown:
+[NotebookLM](https://notebooklm.google.com/) works best with clean prose — raw
+per-segment timestamps add noise. **Export → NotebookLM sources** (or
+`POST /api/export/notebooklm`) writes NotebookLM-ready Markdown under
+`transcripts/_notebooklm/`:
 
-- **One file per lecture** under `transcripts/_notebooklm/`, mirroring the
-  Week/Topic folder structure. Each file has a clear `# Title` heading, a compact
-  metadata line (week · date · duration) to help NotebookLM ground its citations,
-  and the transcript re-flowed into clean paragraphs with timestamps removed.
-- **Optional combined `course_pack.md`** - every lecture in one document with a
-  table of contents, so you can upload the whole course as a single source.
+- **One file per lecture**, mirroring week/topic folders, with a clear heading,
+  compact metadata, and paragraphs without fragmented timestamps.
+- **Optional combined `course_pack.md`** with a table of contents.
 
-How to use it:
-
-1. Transcribe some lectures (or drop existing `.txt`/`.json` transcripts in the
-   output folder).
-2. Open the **Export** step, tick *combined* if you want a single file, and click
-   **Export all** (the course name from the top bar is applied automatically).
-3. In NotebookLM, click **+ Add source** and upload the `.md` files from
-   `transcripts/_notebooklm/` (or just `course_pack.md`).
-
-The exporter reads from the richest source available per lecture (`.json` →
-`.txt` → `.md`), so it works even on transcripts produced before this feature
-existed. You can also produce a NotebookLM file at transcription time by adding
-`notebooklm` to the `outputs` list.
+Upload the `.md` files (or just `course_pack.md`) as NotebookLM sources. The
+exporter prefers the richest on-disk form (`.json` → `.txt` → `.md`).
 
 ## Configuration
 
 | Env var | Default | Meaning |
 | --- | --- | --- |
-| `PANOPTO_OUTPUT` | `./transcripts` | Where transcripts are written and read. |
+| `PANOPTO_OUTPUT` | `./transcripts` | Library directory (transcripts, SQLite DB, exports). |
 | `HOST` | `127.0.0.1` | Bind address for `run.py`. |
-| `PORT` | `8000` | Preferred port for `run.py` (auto-bumps to the next free one if taken). |
-| `PANOPTO_WORKERS` | `1` | Transcription jobs run concurrently up to this many. Default `1` keeps exactly one job in flight so a whole feed doesn't exhaust RAM/VRAM or freeze the desktop. |
-| `PANOPTO_NICE` | `1` | Drop to below-normal process priority while jobs run, so the GUI stays responsive. Set `0` to disable. |
-| `PANOPTO_CPU_THREADS` | *cores − 2* | CPU threads for CPU transcription; the default leaves a couple of cores free for the rest of the machine. |
+| `PORT` | `8000` | Preferred port (auto-bumps if taken). |
+| `PANOPTO_WORKERS` | `1` | Max concurrent transcription jobs. |
+| `PANOPTO_NICE` | `1` | Below-normal process priority while jobs run (`0` disables). |
+| `PANOPTO_CPU_THREADS` | *cores − 2* | CPU threads for CPU transcription. |
 
 ## API
 
-The frontend is a thin client over a JSON API (see `app/main.py`):
+The frontend is a thin client over a JSON API. Interactive docs are at `/docs`
+when the server is running. Common groups:
 
-- `GET  /api/status` – which engines/deps are installed
-- `POST /api/feed` `{source, cookies?}` – parse a feed URL/path
-- `POST /api/feed/upload` – parse an uploaded RSS `.xml`
-- `GET  /api/transcripts` – list generated transcripts
-- `GET  /api/library` – comprehensive, categorised listing of every file
-- `GET  /api/transcript?path=` – read one transcript file
-- `GET  /api/search?q=` – full-text search
-- `POST /api/export/notebooklm` `{selection?, combined?, course?}` – NotebookLM export
-- `POST /api/export/all` `{combined?, course?}` – combine transcripts + documents + Notion into one AI export
-- `POST /api/export/formats` `{formats, interval?}` – generate subtitles / alternate formats
-- `POST /api/export/notion-csv` `{course?, filename?}` – Notion study-database CSV
-- `POST /api/flashcards/generate` `{selection?, course?, deck?, prefer?, max_per_lecture?}` – Anki cards
-- `POST /api/flashcards/categorize` `{text|path, course?, extra_keywords?, deck?}` – tag a deck
-- `POST /api/docs/convert` `{input_path, exts?, target, combined?, ...}` – documents → Markdown
-- `POST /api/transcribe` – queue a transcription job
-- `POST /api/organize` `{by}` – reorganize existing transcripts into folders
-- `POST /api/moodle/parse` `{path, save_outline?}` – parse a whole Moodle course export (sections, activities, resources)
-- `POST /api/notion/convert` `{path, combined?}` – Notion export (.zip/.html/folder) → Markdown
-- `POST /api/notion/upload` – convert an uploaded Notion export (.zip/.html)
-- `GET  /api/jobs` / `GET /api/jobs/{id}` – job status
-- `GET  /api/materials?path=` – list a local folder
-
-Interactive API docs are available at `/docs` when the server is running.
+- Status / health — `GET /api/status`, `GET /api/health`, `GET /api/setup/preflight`
+- Feeds & library — `/api/feed*`, `/api/transcripts`, `/api/library`, `/api/search`
+- Export & flashcards — `/api/export/*`, `/api/flashcards/*`
+- Documents / Notion / Moodle — `/api/docs/*`, `/api/notion/*`, `/api/moodle/*`
+- Transcription jobs — `POST /api/transcribe`, `GET /api/jobs`
+- Adaptive STT — `/api/stt/capabilities`, `/api/stt/route`, `/api/stt/models*`, WebSocket `/ws/stt/live`
 
 ## Tests
 
 ```bash
 pip install -r requirements.txt -r requirements-dev.txt
-python -m pytest -q          # 160+ unit + API tests
+python -m pytest -q
 ```
 
-The suite covers feed-parsing edge cases (malformed XML, missing/garbage
-fields), date/week/sequence inference, the Moodle parser (synthetic + the real
-example exports), timestamp rounding, every renderer, the extractive summary,
-transcript listing/search, the path-traversal guard, the NotebookLM/Notion-CSV
-exports, document conversion, flashcard generation/categorisation, reorganisation,
-the background job lifecycle, the skip/force transcribe flow, and the HTTP API
-(via `fastapi.testclient`).
+**Important:** set `PANOPTO_OUTPUT` to a temp directory **before** importing
+`app.main` so tests never touch a real `./transcripts` library. Existing tests
+already do this; new API tests should follow the same pattern. See
+[CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## Project layout
 
 ```
 panopto-course-assistant/
 ├── app/
-│   ├── core.py         # feed parsing, organise, writers, search, summary, NotebookLM, docs→MD
-│   ├── sources.py      # Moodle course HTML export parser
-│   ├── notion.py       # Notion HTML export -> Markdown converter (stdlib only)
-│   ├── flashcards.py   # Anki flashcard generation + categorisation
-│   ├── study.py        # Notion study-database CSV export
-│   ├── transcribe.py   # optional download + whisper engines (lazy imports)
-│   ├── jobs.py         # in-memory background job manager
-│   └── main.py         # FastAPI app + routes
-├── static/             # index.html, app.js, style.css (vanilla SPA, sidebar + dark mode)
-├── tests/              # pytest suite (core, sources, notion, docs, flashcards, study, jobs, API)
-├── start-windows.bat / start-unix.sh          # one-click launchers
-├── install-extras-windows.bat / -unix.sh      # optional heavy add-ons
+│   ├── main.py            # FastAPI app + router mounts
+│   ├── routers/           # HTTP surface (one module per resource group)
+│   ├── core.py            # feed parsing, library, exporters, summaries
+│   ├── transcribe.py      # compatibility façade over adaptive STT
+│   ├── stt/               # offline STT: routers, engines, chunking, workers
+│   ├── database.py        # SQLite persistence (jobs, courses, settings)
+│   ├── jobs.py            # background job manager
+│   └── …                  # flashcards, study, exports, Moodle, TTS, …
+├── static/                # index.html, app.js, style.css (vanilla SPA)
+├── tests/                 # pytest suite
+├── docs/STT.md            # adaptive STT profiles and ops notes
 ├── requirements.txt
-├── requirements-transcribe.txt   # optional: faster-whisper, yt-dlp, markitdown[all]
-├── requirements-dev.txt          # pytest, httpx
+├── requirements-transcribe.txt   # → STT base pack
+├── requirements-stt-*.txt        # optional STT capability packs
+├── requirements-tts.txt
+├── requirements-dev.txt
 └── run.py
 ```
 
+## Contributing
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) and the
+[Code of Conduct](CODE_OF_CONDUCT.md). Please open issues with the provided
+templates under `.github/ISSUE_TEMPLATE/`.
+
 ## Notes
 
-- State (the job list) is in memory and resets when the server restarts - this
-  is a single-user local tool, not a multi-user service.
+- Persistent state (courses, jobs, settings) lives in SQLite under
+  `PANOPTO_OUTPUT` (`course_assistant.db`). Secrets use OS keyring / encrypted
+  file storage — never the DB.
+- This is a single-user local tool, not a multi-user hosted service.
 - Only download/transcribe content you are entitled to access. For auth-gated
   feeds, export cookies (Netscape format) and pass the path in the feed form.
 
 ## License
 
-MIT - see [LICENSE](LICENSE).
+MIT — see [LICENSE](LICENSE).

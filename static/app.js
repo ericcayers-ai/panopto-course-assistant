@@ -281,8 +281,6 @@ function applyLevel(level) {
   const btn = $("level-toggle");
   if (label) label.textContent = simple ? "Advanced mode" : "Simple mode";
   if (btn) btn.setAttribute("aria-pressed", String(!simple));
-  // Semester is advanced-only — leave Simple users on a visible panel.
-  if (simple && document.querySelector("#semester.active")) showTab("home");
 }
 
 function initLevel() {
@@ -304,7 +302,7 @@ const TAB_LABELS = {
   study: "Study",
   semester: "Semester plan",
   export: "Export",
-  tts: "Text to speech",
+  tts: "Speech",
   jobs: "Jobs",
 };
 
@@ -388,6 +386,8 @@ function showTab(name) {
   if (name === "jobs") loadJobs();
   if (name === "study") loadStudy();
   if (name === "semester") loadSemester();
+  if (name === "export") loadExportHub();
+  if (name === "tts") refreshSpeechPanel();
 }
 document.querySelectorAll(".tab").forEach((btn) =>
   btn.addEventListener("click", () => showTab(btn.dataset.tab))
@@ -397,19 +397,43 @@ document.querySelectorAll("[data-goto]").forEach((b) =>
   b.addEventListener("click", () => showTab(b.dataset.goto))
 );
 
-// ---- import sub-switch (lectures / documents / notion / browse) -----------
+// ---- import sub-switch (documents / notion / browse) ----------------------
+// Scoped to [data-import] so Speech reuse of .seg / .import-switch does not clash.
 
 function showImport(name) {
-  document.querySelectorAll(".seg").forEach((b) => {
+  document.querySelectorAll(".seg[data-import]").forEach((b) => {
     const on = b.dataset.import === name;
     b.classList.toggle("active", on);
     b.setAttribute("aria-selected", String(on));
   });
-  document.querySelectorAll(".import-pane").forEach((p) =>
+  document.querySelectorAll("#import .import-pane").forEach((p) =>
     p.classList.toggle("active", p.id === "import-" + name));
 }
-document.querySelectorAll(".seg").forEach((btn) =>
+document.querySelectorAll(".seg[data-import]").forEach((btn) =>
   btn.addEventListener("click", () => showImport(btn.dataset.import))
+);
+
+// ---- Speech sub-switch (Transcribe | Read aloud) --------------------------
+
+let _ttsInited = false;
+let _sttCaps = null;
+
+function showSpeechMode(name) {
+  document.querySelectorAll(".seg[data-speech]").forEach((b) => {
+    const on = b.dataset.speech === name;
+    b.classList.toggle("active", on);
+    b.setAttribute("aria-selected", String(on));
+  });
+  document.querySelectorAll("#tts > .import-pane").forEach((p) =>
+    p.classList.toggle("active", p.id === "speech-" + name));
+  if (name === "read-aloud") {
+    if (!_ttsInited) { _ttsInited = true; initTts(); }
+  } else {
+    refreshSpeechPanel();
+  }
+}
+document.querySelectorAll(".seg[data-speech]").forEach((btn) =>
+  btn.addEventListener("click", () => showSpeechMode(btn.dataset.speech))
 );
 
 // ---- theme + mobile menu --------------------------------------------------
@@ -434,6 +458,14 @@ $("theme-toggle")?.addEventListener("click", () =>
 $("menu-toggle").addEventListener("click", (e) => {
   const open = document.querySelector(".app").classList.toggle("menu-open");
   e.currentTarget.setAttribute("aria-expanded", String(open));
+  e.currentTarget.setAttribute("aria-label", open ? "Close navigation" : "Open navigation");
+});
+document.querySelector(".app")?.addEventListener("click", (e) => {
+  const app = document.querySelector(".app");
+  if (!app.classList.contains("menu-open") || e.target.closest("#menu-toggle, .sidebar")) return;
+  app.classList.remove("menu-open");
+  $("menu-toggle")?.setAttribute("aria-expanded", "false");
+  $("menu-toggle")?.setAttribute("aria-label", "Open navigation");
 });
 
 // ---- dashboard ------------------------------------------------------------
@@ -491,6 +523,24 @@ async function loadStatus() {
     ];
     bar.textContent = parts.join("   •   ");
     bar.className = "status-bar " + (s.any_engine ? "ok" : "warn");
+    // Attach a one-shot "Copy diagnostics" affordance without cluttering the bar forever.
+    if (!$("copy-diagnostics-btn")) {
+      const btn = el("button", {
+        id: "copy-diagnostics-btn", class: "ghost small",
+        text: "Copy diagnostics", title: "Copy local setup info (no secrets)",
+      });
+      btn.addEventListener("click", async () => {
+        try {
+          const bundle = await postJSON("/api/diagnostics/bundle", {});
+          const text = bundle.text || JSON.stringify(bundle, null, 2);
+          await navigator.clipboard.writeText(text);
+          toast("Diagnostics copied", "ok");
+        } catch (err) {
+          toast("Could not copy diagnostics: " + errorText(err), "err");
+        }
+      });
+      bar.parentElement?.appendChild(btn);
+    }
 
     // engine dropdown (only present in the legacy manual-transcribe UI, if any)
     const sel = $("opt-engine");
@@ -516,7 +566,7 @@ async function loadStatus() {
       }
     }
 
-    // LLM availability - show/hide flashcard sections
+    // LLM availability - flashcards still require a model; cheat sheet / practice exam work extractively
     const llmReady = s.llm_ready === true;
     const fcMissing = $("fc-llm-missing");
     const fcCatMissing = $("fc-cat-llm-missing");
@@ -529,7 +579,7 @@ async function loadStatus() {
     if (csMissing) csMissing.classList.toggle("hidden", llmReady);
     if (fcBtn) fcBtn.disabled = !llmReady;
     if (fcCatBtn) fcCatBtn.disabled = !llmReady;
-    if (csBtn) csBtn.disabled = !llmReady;
+    if (csBtn) csBtn.disabled = false;
   } catch (e) {
     bar.textContent = "could not reach backend: " + e.message;
     bar.className = "status-bar warn";
@@ -553,22 +603,33 @@ function selectedDocExts() {
 
 // ---- settings persistence -------------------------------------------------
 
+function sttProfile() {
+  const active = document.querySelector("#stt-profiles .seg.active");
+  return (active && active.dataset.profile) || "auto";
+}
+
 function gatherSettings() {
   // Output formats / organisation are no longer chosen here - transcription
   // writes a sensible canonical set and the Export step owns the rest. The
   // legacy opt-* controls may be absent (the guided Moodle flow replaced them),
-  // so read each defensively and fall back to sensible defaults.
+  // so read each defensively and fall back to sensible defaults. Speech-panel
+  // STT controls take precedence when present.
   const val = (id, def = "") => { const n = $(id); return n ? n.value : def; };
   const checked = (id, def = false) => { const n = $(id); return n ? n.checked : def; };
+  const lang = (val("stt-language") || val("opt-language")).trim() || "en";
   return {
     engine: val("opt-engine"),
     model: val("opt-model"),
-    language: val("opt-language").trim() || "en",
+    language: lang === "auto" ? "auto" : lang,
     device: val("opt-device") || "auto",
     audio_only: checked("opt-audio"),
     skip_existing: checked("opt-skip", true),
     cookies: val("opt-cookies").trim(),
     course: currentCourse(),
+    profile: sttProfile(),
+    diarization: val("stt-diarization", "off") || "off",
+    caption_first: checked("stt-caption-first", true),
+    use_adaptive: true,
   };
 }
 
@@ -1151,7 +1212,8 @@ async function startPractice() {
     const quiz = await api(`/api/practice-quiz?count=${count}`);
     if (!quiz.count) {
       clear(box);
-      box.appendChild(emptyState(quiz.reason || "Not enough review cards yet. Grade some reviews in Study first.", [
+      box.appendChild(emptyState(quiz.reason || "Not enough review cards yet. Generate flashcards under Export to seed the deck.", [
+        { label: "Generate flashcards", primary: true, run: () => { showTab("export"); $("export-more-tools")?.setAttribute("open", ""); } },
         { label: "Open Study", run: () => showTab("study") },
       ]));
       return;
@@ -1260,7 +1322,7 @@ const PALETTE_ACTIONS = [
   { label: "Go to Study", run: () => showTab("study") },
   { label: "Go to Export", run: () => showTab("export") },
   { label: "Go to Jobs", run: () => showTab("jobs") },
-  { label: "Go to Text to speech", run: () => showTab("tts") },
+  { label: "Go to Speech", run: () => showTab("tts") },
   { label: "Go to Semester plan", run: () => showTab("semester") },
   { label: "Search the library", run: () => { showTab("library"); const q = $("search-q"); if (q) q.focus(); } },
   { label: "Show keyboard shortcuts", run: () => showShortcuts() },
@@ -1368,6 +1430,282 @@ $("lib-tag").addEventListener("keydown", (e) => { if (e.key === "Enter") applyLi
 $("lib-clear").addEventListener("click", () => {
   $("lib-type").value = ""; $("lib-week").value = ""; $("lib-tag").value = ""; $("lib-sort").value = "date";
   loadTranscripts();
+});
+
+// Export hub: preset bundles and planner downloads in one discoverable place.
+let selectedExportPreset = "revision";
+document.querySelectorAll("[data-export-preset]").forEach((button) => {
+  button.addEventListener("click", () => {
+    selectedExportPreset = button.dataset.exportPreset;
+    document.querySelectorAll("[data-export-preset]").forEach((candidate) => {
+      const active = candidate === button;
+      candidate.classList.toggle("active", active);
+      candidate.setAttribute("aria-pressed", String(active));
+    });
+    clear($("bundle-results"));
+  });
+});
+
+function exportArtifactPaths(result) {
+  const paths = [];
+  for (const value of Object.values(result.results || {})) {
+    if (!value || typeof value !== "object") continue;
+    for (const key of ["combined", "path", "csv", "anki_tsv"]) {
+      if (typeof value[key] === "string" && value[key]) paths.push(value[key]);
+    }
+    if (Array.isArray(value.files)) paths.push(...value.files);
+  }
+  return [...new Set(paths)];
+}
+
+$("bundle-preview")?.addEventListener("click", async () => {
+  const out = $("bundle-results");
+  out.textContent = "Checking the library…";
+  try {
+    const data = await postJSON("/api/export/preview", {
+      preset: selectedExportPreset, scope: "course", course: currentCourse(),
+    });
+    clear(out);
+    out.appendChild(el("p", { class: "ok-text",
+      text: `${data.lectures_in_scope} lecture(s) will be included.` }));
+    const list = el("ul", { class: "artifact-preview" });
+    for (const artifact of data.artifacts || []) {
+      list.appendChild(el("li", { text: `${artifact.target.replaceAll("_", " ")}: about ${artifact.estimated_items} item(s)` }));
+    }
+    out.appendChild(list);
+  } catch (e) { out.textContent = errorText(e); toastError(e); }
+});
+
+$("bundle-run")?.addEventListener("click", async () => {
+  const out = $("bundle-results");
+  const btn = $("bundle-run");
+  btn.disabled = true; out.textContent = "Creating bundle…";
+  try {
+    const data = await postJSON("/api/export/run", {
+      preset: selectedExportPreset, scope: "course", course: currentCourse(),
+    });
+    clear(out);
+    const paths = exportArtifactPaths(data);
+    out.appendChild(el("p", { class: "ok-text",
+      text: `Created ${data.targets.length} export type(s) in the library.` }));
+    for (const path of paths.slice(0, 20)) {
+      const canView = /\.(md|txt|csv|srt|vtt)$/i.test(path);
+      out.appendChild(el("div", { class: "list-item" }, [
+        el("span", { class: "li-label", text: path }),
+        canView ? el("button", { class: "tag", text: "View", onclick: () => viewTranscript(path) }) : null,
+      ]));
+    }
+    toast("Export bundle created.", "ok");
+    loadTranscripts();
+  } catch (e) { out.textContent = errorText(e); toastError(e); }
+  finally { btn.disabled = false; }
+});
+
+function updateExportPlanLinks(planId) {
+  // Semester download rows were demoted; suites are the primary path.
+  const status = $("calendar-export-status");
+  if (status && planId) {
+    status.dataset.planId = String(planId);
+  }
+}
+
+async function loadExportHub() {
+  const status = $("calendar-export-status");
+  if (!status) return;
+  try {
+    const data = await api("/api/semester/plans");
+    const plans = (data.plans || []).slice().sort((a, b) =>
+      String(b.created_at || "").localeCompare(String(a.created_at || "")));
+    const latest = plans[0];
+    updateExportPlanLinks(latest?.id);
+    status.textContent = latest
+      ? `Latest plan: ${latest.name} (${latest.task_count} tasks). Use Study suites → Sync above.`
+      : "No semester plan yet. The assessment calendar above is still available.";
+  } catch (e) {
+    updateExportPlanLinks(null);
+    status.textContent = "Semester plan status is temporarily unavailable.";
+  }
+  loadSuiteSettings();
+}
+
+$("export-open-semester")?.addEventListener("click", () => showTab("semester"));
+$("suite-open-semester")?.addEventListener("click", (e) => { e.preventDefault(); showTab("semester"); });
+
+// ---- Study suites ---------------------------------------------------------
+let selectedSuiteFormat = "obsidian";
+
+document.querySelectorAll("[data-suite-format]").forEach((btn) => {
+  btn.addEventListener("click", () => {
+    document.querySelectorAll("[data-suite-format]").forEach((b) => {
+      b.classList.toggle("active", b === btn);
+      b.setAttribute("aria-pressed", b === btn ? "true" : "false");
+    });
+    selectedSuiteFormat = btn.dataset.suiteFormat;
+  });
+});
+
+function renderSuiteLastSync(last) {
+  const host = $("suite-last-sync");
+  if (!host) return;
+  if (!last || typeof last !== "object") {
+    host.textContent = "No suite sync yet. Set destination folders, then Sync suites.";
+    return;
+  }
+  const formats = (last.formats || []).join(", ") || "none";
+  const bits = [
+    `Last sync: ${formats}`,
+    `${last.new_files ?? 0} new`,
+    `${last.updated ?? 0} updated`,
+  ];
+  if (last.at) bits.push(String(last.at).replace("T", " ").slice(0, 19));
+  host.textContent = bits.join(" · ");
+}
+
+async function loadSuiteSettings() {
+  try {
+    const data = await api("/api/suites/settings");
+    const dest = data.destinations || {};
+    if ($("suite-dest-obsidian")) $("suite-dest-obsidian").value = dest.obsidian || "";
+    if ($("suite-dest-notion")) $("suite-dest-notion").value = dest.notion || "";
+    if ($("suite-dest-onenote")) $("suite-dest-onenote").value = dest.onenote || "";
+    const enabled = new Set(data.enabled || ["obsidian"]);
+    if ($("suite-enable-obsidian")) $("suite-enable-obsidian").checked = enabled.has("obsidian");
+    if ($("suite-enable-notion")) $("suite-enable-notion").checked = enabled.has("notion");
+    if ($("suite-enable-onenote")) $("suite-enable-onenote").checked = enabled.has("onenote");
+    if ($("suite-auto-sync")) $("suite-auto-sync").checked = !!data.auto_sync;
+    renderSuiteLastSync(data.last_sync);
+  } catch (_) { /* ignore */ }
+}
+
+async function saveSuiteSettings() {
+  const destinations = {
+    obsidian: ($("suite-dest-obsidian")?.value || "").trim(),
+    notion: ($("suite-dest-notion")?.value || "").trim(),
+    onenote: ($("suite-dest-onenote")?.value || "").trim(),
+  };
+  const enabled = [];
+  if ($("suite-enable-obsidian")?.checked) enabled.push("obsidian");
+  if ($("suite-enable-notion")?.checked) enabled.push("notion");
+  if ($("suite-enable-onenote")?.checked) enabled.push("onenote");
+  await api("/api/suites/settings", {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      destinations,
+      enabled,
+      auto_sync: !!$("suite-auto-sync")?.checked,
+    }),
+  });
+}
+
+document.querySelectorAll(".suite-pick-dest").forEach((btn) => {
+  btn.addEventListener("click", async () => {
+    const key = btn.dataset.suite;
+    const dest = await pickFolder(`Choose destination folder for ${key}`);
+    if (dest === null) return;
+    const input = $(`suite-dest-${key}`);
+    if (input) input.value = dest;
+    await saveSuiteSettings();
+    toast(`${key} destination saved.`, "ok");
+  });
+});
+
+["suite-enable-obsidian", "suite-enable-notion", "suite-enable-onenote", "suite-auto-sync"]
+  .forEach((id) => $(id)?.addEventListener("change", () => { saveSuiteSettings().catch(() => {}); }));
+
+["suite-dest-obsidian", "suite-dest-notion", "suite-dest-onenote"]
+  .forEach((id) => $(id)?.addEventListener("change", () => { saveSuiteSettings().catch(() => {}); }));
+
+function suiteEnabledFormats() {
+  const enabled = [];
+  if ($("suite-enable-obsidian")?.checked) enabled.push("obsidian");
+  if ($("suite-enable-notion")?.checked) enabled.push("notion");
+  if ($("suite-enable-onenote")?.checked) enabled.push("onenote");
+  return enabled;
+}
+
+function suitePaperCodesFromUi() {
+  return getSelectedPaperCodes();
+}
+
+$("suite-preview")?.addEventListener("click", async () => {
+  const out = $("suite-results");
+  out.textContent = "Previewing…";
+  try {
+    await saveSuiteSettings();
+    const data = await postJSON("/api/suites/preview", { format: selectedSuiteFormat });
+    clear(out);
+    if (!(data.task_count || data.subjects?.length)) {
+      out.appendChild(el("p", { class: "hint",
+        text: "No semester plan yet. Import a Moodle course or run Update everything on Semester first." }));
+    }
+    out.appendChild(el("p", { class: "ok-text",
+      text: `${data.format} suite ≈ ${data.estimated_files} files · ${data.subjects.length} paper(s) · ${data.task_count} tasks` }));
+  } catch (e) { out.textContent = errorText(e); toastError(e); }
+});
+
+$("suite-build")?.addEventListener("click", async () => {
+  const out = $("suite-results");
+  const btn = $("suite-build");
+  btn.disabled = true; out.textContent = "Building suite…";
+  try {
+    await saveSuiteSettings();
+    const data = await postJSON("/api/suites/build", {
+      format: selectedSuiteFormat, output: "folder",
+    });
+    clear(out);
+    out.appendChild(el("p", { class: "ok-text",
+      text: `Built ${data.format} suite (${data.file_count} files) at ${data.root}` }));
+    if (data.destination) {
+      out.appendChild(el("p", { class: "hint", text: `Also mirrored to ${data.destination}` }));
+    } else {
+      out.appendChild(el("p", { class: "hint",
+        text: "No destination folder set for this format — suite built under the library _suites folder." }));
+    }
+    toast("Suite built.", "ok");
+  } catch (e) { out.textContent = errorText(e); toastError(e); }
+  finally { btn.disabled = false; }
+});
+
+$("suite-sync")?.addEventListener("click", async () => {
+  const out = $("suite-results");
+  const btn = $("suite-sync");
+  btn.disabled = true; out.textContent = "Syncing suites…";
+  try {
+    await saveSuiteSettings();
+    const enabled = suiteEnabledFormats();
+    if (!enabled.length) {
+      out.textContent = "Enable at least one suite format (Obsidian, Notion, or OneNote).";
+      toast("Enable a suite format first.", "warn");
+      return;
+    }
+    const missingDest = enabled.filter((fmt) => !($(`suite-dest-${fmt}`)?.value || "").trim());
+    if (missingDest.length === enabled.length) {
+      out.textContent = "Set at least one destination folder before Sync, or use Build to write under the library.";
+      toast("Set a destination folder first.", "warn");
+      return;
+    }
+    const formats = enabled.filter((fmt) => !missingDest.includes(fmt));
+    const paperCodes = suitePaperCodesFromUi();
+    const job = await postJSON("/api/suites/sync", {
+      push_live: true,
+      formats,
+      paper_codes: paperCodes.length ? paperCodes : undefined,
+      discover_panopto: true,
+      use_browser: mqImportMode === "browser",
+    });
+    clear(out);
+    out.appendChild(el("p", { class: "ok-text", text: `Suite sync job #${job.id} started.` }));
+    if (missingDest.length) {
+      out.appendChild(el("p", { class: "hint",
+        text: `Skipped ${missingDest.join(", ")} (no destination folder).` }));
+    }
+    out.appendChild(el("p", { class: "hint",
+      text: "Progress is tracked under Jobs. Reopen Export to refresh last-sync status." }));
+    toast("Suite sync started — see Jobs.", "ok");
+    showTab("jobs"); startJobsPolling();
+  } catch (e) { out.textContent = errorText(e); toastError(e); }
+  finally { btn.disabled = false; }
 });
 
 // Export everything (transcripts + documents + Notion) for NotebookLM / any AI
@@ -1480,6 +1818,29 @@ $("srt-export").addEventListener("click", async () => {
     out.appendChild(el("p", { class: "hint",
       text: "The .srt files share each video's name, so players load them automatically when both are in this folder." }));
     toast(`Exported ${data.count} SRT file(s).`, "ok");
+  } catch (e) { out.textContent = errorText(e); toastError(e); }
+  finally { btn.disabled = false; }
+});
+
+$("formats-export")?.addEventListener("click", async () => {
+  const out = $("formats-results");
+  const btn = $("formats-export");
+  const formats = [...document.querySelectorAll("#format-checks input:checked")].map((input) => input.value);
+  if (!formats.length) { toast("Select at least one format.", "warn"); return; }
+  btn.disabled = true; out.textContent = "Generating formats…";
+  try {
+    const data = await postJSON("/api/export/formats", { formats });
+    clear(out);
+    out.appendChild(el("p", { class: "ok-text",
+      text: `Generated ${data.count} file(s): ${data.formats.join(", ")}.` }));
+    for (const path of data.files || []) {
+      out.appendChild(el("div", { class: "list-item" }, [
+        el("span", { class: "li-label", text: path }),
+        el("button", { class: "tag", text: "View", onclick: () => viewTranscript(path) }),
+      ]));
+    }
+    toast(`Generated ${data.count} file(s).`, "ok");
+    loadTranscripts();
   } catch (e) { out.textContent = errorText(e); toastError(e); }
   finally { btn.disabled = false; }
 });
@@ -1633,6 +1994,95 @@ $("cheatsheet-go")?.addEventListener("click", async () => {
   finally { btn.disabled = false; }
 });
 
+function parseTopicWeights(raw) {
+  const text = (raw || "").trim();
+  if (!text) return null;
+  const out = {};
+  text.split(/[,;]+/).forEach((part) => {
+    const m = part.trim().match(/^([^:]+):?\s*([\d.]+)\s*%?$/);
+    if (m) out[m[1].trim()] = parseFloat(m[2]);
+  });
+  return Object.keys(out).length ? out : null;
+}
+
+function selectedPracticeTypes() {
+  const types = [];
+  if ($("pe-type-mcq")?.checked) types.push("mcq");
+  if ($("pe-type-short")?.checked) types.push("short");
+  if ($("pe-type-long")?.checked) types.push("long");
+  if ($("pe-type-cloze")?.checked) types.push("cloze");
+  if ($("pe-type-tf")?.checked) types.push("truefalse");
+  return types.length ? types : ["mcq", "short", "long"];
+}
+
+function renderPdfJobHint(container, result) {
+  if (!result) return;
+  const path = result.path || result.pdf_path || result.md_path;
+  if (path) {
+    container.appendChild(el("p", { class: "hint", text: "Saved: " + path }));
+  }
+  if (result.truncated) {
+    container.appendChild(el("p", { class: "banner warn",
+      text: "Page budget full — lower-priority points were dropped." }));
+  }
+  if (result.note) {
+    container.appendChild(el("p", { class: "hint", text: result.note }));
+  }
+  if (result.rel) {
+    container.appendChild(el("button", {
+      class: "tag", text: "Open in library",
+      onclick: () => { viewTranscript(result.rel); showTab("library"); },
+    }));
+  }
+}
+
+$("practice-exam-go")?.addEventListener("click", async () => {
+  const out = $("practice-exam-results");
+  const btn = $("practice-exam-go");
+  const course = currentCourse();
+  const n = Math.max(10, Math.min(parseInt($("pe-count").value, 10) || 100, 150));
+  const kind = $("pe-kind-exam")?.checked ? "exam" : "practice";
+  const stem = (course || "course").replace(/[^\w.-]+/g, "_")
+    + (kind === "exam" ? "_exam" : "_practice") + `_${n}q.pdf`;
+  const save = await pickSaveFile(
+    kind === "exam" ? "Save the exam paper" : "Save the practice exam", stem, ".pdf");
+  if (save === null) return;
+  const formats = ["pdf"];
+  if ($("pe-format-md")?.checked) formats.push("md");
+  btn.disabled = true; out.textContent = "Queuing practice exam job…";
+  try {
+    const payload = {
+      course,
+      n,
+      types: selectedPracticeTypes(),
+      difficulty: $("pe-difficulty")?.value || "medium",
+      scope: $("pe-scope")?.value || "course",
+      target: $("pe-target")?.value.trim() || "",
+      weights: parseTopicWeights($("pe-weights")?.value),
+      seed: $("pe-seed")?.value.trim() || null,
+      include_answer_key: $("pe-answer-key")?.checked !== false,
+      time_minutes: parseInt($("pe-time")?.value, 10) || null,
+      total_marks: parseInt($("pe-marks")?.value, 10) || null,
+      kind,
+      formats,
+      save_path: save,
+    };
+    const data = await api("/api/export/practice-exam", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    clear(out);
+    if (data.id) {
+      out.appendChild(el("p", { class: "ok-text",
+        text: `${kind === "exam" ? "Exam" : "Practice exam"} job queued (${n} questions). See Jobs for progress.` }));
+      out.appendChild(el("button", { class: "tag", text: "Go to Jobs", onclick: () => showTab("jobs") }));
+      toast("Practice exam generation started.", "ok");
+      startJobsPolling();
+    }
+  } catch (e) { out.textContent = errorText(e); toastError(e); }
+  finally { btn.disabled = false; }
+});
+
 // ---- local Ollama management ----------------------------------------------
 
 function renderOllamaStatus(s) {
@@ -1779,15 +2229,21 @@ $("pdf-go").addEventListener("click", async () => {
 
 // ---- jobs -----------------------------------------------------------------
 
-// Friendly, plain-language labels for a job's internal stage.
+const STT_STAGE_LABELS = {
+  captions: "Checking captions",
+  preprocess: "Normalizing audio",
+  transcribing: "Transcribing",
+  enriching: "Aligning / speakers",
+  downloading: "Downloading media",
+  waiting: "Waiting for a free transcription slot",
+  writing: "Saving files",
+  done: "Done",
+};
+
 function stageLabel(stage) {
-  return ({
-    downloading: "Downloading",
-    waiting: "Waiting for a free transcription slot",
-    transcribing: "Transcribing",
-    writing: "Saving files",
-    done: "Done",
-  })[stage] || (stage ? stage.charAt(0).toUpperCase() + stage.slice(1) : "");
+  if (!stage) return "";
+  if (STT_STAGE_LABELS[stage]) return STT_STAGE_LABELS[stage];
+  return stage.charAt(0).toUpperCase() + stage.slice(1);
 }
 
 // Return a human "~Xm remaining" string for a running job, or "" if not enough data.
@@ -1846,6 +2302,13 @@ async function loadJobs() {
         } else if (j.result.outputs) {
           card.appendChild(el("div", { class: "hint", text: "wrote: " + Object.keys(j.result.outputs).join(", ") }));
         }
+        if (j.type === "transcribe" && (j.result.route_reason || j.result.engine)) {
+          const bits = [
+            j.result.engine && j.result.model ? `${j.result.engine}/${j.result.model}` : j.result.engine,
+            j.result.route_reason,
+          ].filter(Boolean);
+          card.appendChild(el("div", { class: "hint", text: bits.join(" — ") }));
+        }
         // Surface whether an AI job actually used the model or fell back to the
         // offline heuristic, so a silent fallback doesn't read as "AI output".
         if (j.result.generated === "ai") {
@@ -1855,6 +2318,11 @@ async function loadJobs() {
             || "the AI model was unavailable or its reply couldn't be parsed";
           card.appendChild(el("div", { class: "banner warn",
             text: "Built with offline heuristics - " + why }));
+        }
+        if (j.type === "cheatsheet" || j.type === "practice_exam") {
+          const resBox = el("div", { class: "results compact" });
+          renderPdfJobHint(resBox, j.result);
+          if (resBox.childNodes.length) card.appendChild(resBox);
         }
       }
       if (j.status === "error") {
@@ -2065,6 +2533,7 @@ function restore() {
   $("notion-path").value = recall("notionpath");
   if ($("sem-paper-codes")) $("sem-paper-codes").value = recall("sem-paper-codes");
   rememberPaperCodes(recall("sem-paper-codes"));
+  renderPaperChips();
   // We no longer restore mqcookies from localStorage; it's ephemeral.
   const course = recall("course");
   if (course) { $("course-input").value = course; $("course-name-main").value = course; }
@@ -2086,7 +2555,10 @@ loadStatus().then(() => {
   refreshOllama();             // pre-populate the local-AI panel
   wireDropZone($("notion-drop"), $("notion-file"));
   wireDropZone($("sem-schedule-drop"), $("sem-schedule-file"));
-  $("sem-paper-codes")?.addEventListener("change", (e) => rememberPaperCodes(e.target.value));
+  $("sem-paper-codes")?.addEventListener("change", (e) => {
+    rememberPaperCodes(e.target.value);
+    renderPaperChips();
+  });
   $("getting-started-dismiss")?.addEventListener("click", () => {
     remember("gs-dismissed", "1");
     $("getting-started")?.classList.add("hidden");
@@ -2209,6 +2681,7 @@ async function _moodleConnect(url, token) {
     }
     _mqConnected = true;
     _mqBaseUrl = d.base_url || url;
+    applyDetectedPaperCodes(d.paper_codes || []);
     toast("Connected to Moodle.", "ok");
   } catch (e) {
     const msg = e.message || "";
@@ -2267,6 +2740,22 @@ function renderMqImport(data, { grabLectures = true, grabTranscripts = true, gra
   if (feeds.length && $("mq-panopto-url") && !$("mq-panopto-url").value.trim())
     $("mq-panopto-url").value = feeds[0];
   $("mq-step-export").classList.remove("hidden");
+  applyDetectedPaperCodes(data.paper_codes || []);
+  // Browser mode: try auto Panopto discovery beyond Moodle-linked feeds
+  if (mqImportMode === "browser" && !feeds.length) {
+    postJSON("/api/panopto/discover", {
+      moodle_url: _mqBaseUrl || ($("mq-url")?.value || ""),
+      cookies: "",
+      use_playwright: true,
+    }).then((d) => {
+      if ((d.feeds || []).length && $("mq-panopto-url")) {
+        $("mq-panopto-url").value = d.feeds[0];
+        State.mqFeeds = d.feeds;
+        renderMqFeeds();
+        toast(`Discovered ${d.feeds.length} Panopto feed(s).`, "ok");
+      }
+    }).catch(() => {});
+  }
   toast("Course imported.", "ok");
 }
 
@@ -2397,7 +2886,10 @@ async function autoTranscribeMq() {
 }
 $("mq-autotranscribe")?.addEventListener("click", autoTranscribeMq);
 
-$("mq-export-nblm")?.addEventListener("click", () => mqExport("notebooklm"));
+$("mq-export-suites")?.addEventListener("click", () => {
+  showTab("export");
+  $("suite-exports-card")?.scrollIntoView({ behavior: "smooth", block: "start" });
+});
 $("mq-export-ai")?.addEventListener("click", () => mqExport("all"));
 async function mqExport(kind) {
   const out = $("mq-export-result");
@@ -2415,28 +2907,528 @@ async function mqExport(kind) {
   } catch (e) { out.appendChild(el("div", { class: "warn-box", text: "Export failed: " + e.message })); }
 }
 
+// ---- Moodle import mode + capability matrix ------------------------------
+let mqImportMode = "api";
+
+async function renderMqCapabilityMatrix(mode) {
+  const host = $("mq-capability-matrix");
+  if (!host) return;
+  try {
+    const data = await api(`/api/moodle/capabilities?mode=${encodeURIComponent(mode)}`);
+    clear(host);
+    const table = el("table", { class: "mq-cap-table", "data-active-mode": mode });
+    table.appendChild(el("thead", {}, [
+      el("tr", {}, [
+        el("th", { text: "Capability" }),
+        el("th", { class: mode === "api" ? "mq-cap-active" : "", text: "API" }),
+        el("th", { class: mode === "browser" ? "mq-cap-active" : "", text: "Browser" }),
+      ]),
+    ]));
+    const tbody = el("tbody");
+    for (const row of (data.matrix || [])) {
+      tbody.appendChild(el("tr", {}, [
+        el("td", { text: row.capability }),
+        el("td", { class: mode === "api" ? "mq-cap-active" : "",
+          text: String(row.api === true ? "Yes" : row.api) }),
+        el("td", { class: mode === "browser" ? "mq-cap-active" : "",
+          text: String(row.browser === true ? "Yes" : row.browser) }),
+      ]));
+    }
+    table.appendChild(tbody);
+    host.appendChild(table);
+    if (data.playwright_available === false && mode === "browser") {
+      host.appendChild(el("p", { class: "hint",
+        text: "Playwright is not installed. Browser mode still uses Moodle API/HTML first; "
+          + "for forums & Panopto-only pages run: pip install -r requirements-browser.txt "
+          + "&& playwright install chromium" }));
+    } else if (mode === "browser") {
+      host.appendChild(el("p", { class: "hint",
+        text: "Browser mode prefers API/HTML, then falls back to Playwright for forums and Panopto pages." }));
+    }
+  } catch (e) {
+    host.textContent = "Could not load capability matrix.";
+  }
+}
+
+function setMqImportMode(mode) {
+  mqImportMode = mode === "browser" ? "browser" : "api";
+  document.querySelectorAll("[data-mq-mode]").forEach((btn) => {
+    const active = btn.dataset.mqMode === mqImportMode;
+    btn.classList.toggle("active", active);
+    btn.setAttribute("aria-pressed", active ? "true" : "false");
+  });
+  renderMqCapabilityMatrix(mqImportMode);
+}
+
+$("mq-mode-api")?.addEventListener("click", () => setMqImportMode("api"));
+$("mq-mode-browser")?.addEventListener("click", () => setMqImportMode("browser"));
+setMqImportMode("api");
+
+function applyDetectedPaperCodes(codes) {
+  if (!Array.isArray(codes) || !codes.length) return;
+  const normalized = codes.map((c) => String(c).split("-")[0].toUpperCase()).filter(Boolean);
+  const existing = getSelectedPaperCodes();
+  const known = new Set([...(recallJson("sem-paper-known") || []), ...normalized, ...existing]);
+  rememberJson("sem-paper-known", [...known]);
+  const merged = [...new Set([...existing, ...normalized])];
+  setSelectedPaperCodes(merged);
+  renderPaperChips();
+}
+
+function recallJson(key) {
+  try { return JSON.parse(recall(key) || "null"); } catch (_) { return null; }
+}
+function rememberJson(key, val) {
+  try { remember(key, JSON.stringify(val)); } catch (_) { /* ignore */ }
+}
+
+function getSelectedPaperCodes() {
+  const hidden = $("sem-paper-codes");
+  const raw = (hidden?.value || recall("sem-paper-codes") || "").trim();
+  return raw.split(/[,\s]+/).map((s) => s.trim().toUpperCase().split("-")[0]).filter(Boolean);
+}
+
+function setSelectedPaperCodes(codes) {
+  const uniq = [...new Set((codes || []).map((c) => String(c).toUpperCase().split("-")[0]).filter(Boolean))];
+  const joined = uniq.join(", ");
+  if ($("sem-paper-codes")) $("sem-paper-codes").value = joined;
+  rememberPaperCodes(joined);
+}
+
+function renderPaperChips() {
+  const host = $("sem-paper-chips");
+  if (!host) return;
+  clear(host);
+  const selected = new Set(getSelectedPaperCodes());
+  const known = new Set([...(recallJson("sem-paper-known") || []), ...selected]);
+  if (!known.size) {
+    host.appendChild(el("span", { class: "hint", text: "No paper codes yet — add one below or import from Moodle." }));
+    return;
+  }
+  [...known].sort().forEach((code) => {
+    const on = selected.has(code);
+    const chip = el("button", {
+      type: "button",
+      class: "paper-chip",
+      "aria-pressed": on ? "true" : "false",
+      text: code,
+    });
+    chip.addEventListener("click", (ev) => {
+      if (ev.target.closest(".chip-x")) return;
+      const next = new Set(getSelectedPaperCodes());
+      if (next.has(code)) next.delete(code); else next.add(code);
+      setSelectedPaperCodes([...next]);
+      renderPaperChips();
+    });
+    const x = el("span", { class: "chip-x", text: "×", title: "Remove", role: "button" });
+    x.addEventListener("click", (ev) => {
+      ev.stopPropagation();
+      const nextSel = getSelectedPaperCodes().filter((c) => c !== code);
+      setSelectedPaperCodes(nextSel);
+      const knownList = (recallJson("sem-paper-known") || []).filter((c) => c !== code);
+      rememberJson("sem-paper-known", knownList);
+      renderPaperChips();
+    });
+    chip.appendChild(x);
+    host.appendChild(chip);
+  });
+}
+
+function addPaperCodeFromInput() {
+  const raw = ($("sem-paper-add")?.value || "").trim().toUpperCase().split("-")[0];
+  if (!raw) return;
+  const known = new Set([...(recallJson("sem-paper-known") || []), ...getSelectedPaperCodes(), raw]);
+  rememberJson("sem-paper-known", [...known]);
+  setSelectedPaperCodes([...getSelectedPaperCodes(), raw]);
+  if ($("sem-paper-add")) $("sem-paper-add").value = "";
+  renderPaperChips();
+}
+
+$("sem-paper-add-btn")?.addEventListener("click", addPaperCodeFromInput);
+$("sem-paper-add")?.addEventListener("keydown", (ev) => {
+  if (ev.key === "Enter") { ev.preventDefault(); addPaperCodeFromInput(); }
+});
+
 // ---- remove course files (with confirmation) ------------------------------
 
 $("course-clear")?.addEventListener("click", async () => {
-  const name = currentCourse() || "this course";
   const ok = await confirmModal(
-    "Remove all files for this course?",
-    `This permanently deletes every transcript, document, Notion page, and generated export for `
-    + `${name}. The database, saved settings, and backups are kept. This cannot be undone.`,
+    "Clear the entire library?",
+    "This permanently deletes every transcript, document, Notion page, and generated export in this "
+    + "workspace, including files from other courses. The database, saved settings, and backups are kept. "
+    + "This cannot be undone.",
     { confirmText: "Remove files", danger: true });
   if (!ok) return;
   const out = $("course-clear-results");
-  out.textContent = "Removing course files…";
+    out.textContent = "Clearing the library…";
   try {
     const d = await postJSON("/api/library/clear", {});
     out.textContent = `Removed ${d.files} file(s) across ${d.folders} folder(s).`;
-    toast("Course files removed.", "ok");
+    toast("Library cleared.", "ok");
     loadTranscripts();
     loadDashboard();
   } catch (e) { out.textContent = errorText(e); toastError(e); }
 });
 
-// ---- VibeVoice TTS --------------------------------------------------------
+// ---- Speech hub (STT + TTS) ------------------------------------------------
+
+function formatCacheBytes(n) {
+  const b = Number(n) || 0;
+  if (b < 1024) return `${b} B`;
+  if (b < 1024 * 1024) return `${(b / 1024).toFixed(1)} KB`;
+  if (b < 1024 * 1024 * 1024) return `${(b / (1024 * 1024)).toFixed(1)} MB`;
+  return `${(b / (1024 * 1024 * 1024)).toFixed(2)} GB`;
+}
+
+async function refreshSpeechPanel() {
+  if (!$("stt-main")) return;
+  await refreshSttCapabilities();
+  await refreshSttRoute();
+}
+
+async function refreshSttCapabilities() {
+  const strip = $("stt-cap-strip");
+  if (!strip) return;
+  try {
+    _sttCaps = await api("/api/stt/capabilities");
+    const engines = (_sttCaps.engines || []).filter((e) => e.probe && e.probe.installed);
+    const engNames = engines.map((e) => e.display_name || e.name).slice(0, 4);
+    const cache = _sttCaps.cache || {};
+    const cached = (cache.models || []).length;
+    const parts = [
+      engNames.length ? `Engines: ${engNames.join(", ")}` : "No STT engines installed",
+      `Cache: ${formatCacheBytes(cache.bytes)} · ${cached} model(s)`,
+      _sttCaps.privacy || "Local/offline only",
+    ];
+    strip.textContent = parts.join(" · ");
+  } catch (e) {
+    strip.textContent = "Could not load STT capabilities: " + errorText(e);
+  }
+}
+
+async function refreshSttRoute() {
+  const textEl = $("stt-route-text");
+  const status = $("stt-route-status");
+  if (!textEl) return;
+  const lang = ($("stt-language")?.value || "auto").trim() || "auto";
+  const captionFirst = $("stt-caption-first") ? $("stt-caption-first").checked : true;
+  try {
+    const data = await postJSON("/api/stt/route", {
+      profile: sttProfile(),
+      language: lang,
+      caption_first: captionFirst,
+      has_usable_captions: false,
+    });
+    const route = data.route || {};
+    const est = data.estimate || {};
+    const estBit = est.disk_mb != null
+      ? ` · ~${est.disk_mb} MB model${est.cached ? " (cached)" : ""}`
+      : "";
+    textEl.textContent = `${route.reason || "Routed."} → ${route.engine || "?"}/${route.model || "?"}${estBit}`;
+    if (status) {
+      const dot = status.querySelector(".dot");
+      if (dot) { dot.classList.remove("off"); dot.classList.add("on"); }
+    }
+  } catch (e) {
+    textEl.textContent = "Could not route: " + errorText(e);
+    if (status) {
+      const dot = status.querySelector(".dot");
+      if (dot) { dot.classList.add("off"); dot.classList.remove("on"); }
+    }
+  }
+}
+
+document.querySelectorAll("#stt-profiles .seg[data-profile]").forEach((btn) => {
+  btn.addEventListener("click", () => {
+    document.querySelectorAll("#stt-profiles .seg[data-profile]").forEach((b) => {
+      const on = b === btn;
+      b.classList.toggle("active", on);
+      b.setAttribute("aria-selected", String(on));
+    });
+    refreshSttRoute();
+  });
+});
+$("stt-language")?.addEventListener("change", () => refreshSttRoute());
+$("stt-language")?.addEventListener("blur", () => refreshSttRoute());
+$("stt-caption-first")?.addEventListener("change", () => refreshSttRoute());
+$("stt-diarization")?.addEventListener("change", () => refreshSttRoute());
+
+async function enqueueSpeechTranscribe() {
+  if (!State.status || !State.status.any_engine) {
+    toast("No transcription engine installed. pip install -r requirements-transcribe.txt", "warn");
+    return;
+  }
+  const settings = gatherSettings();
+  remember("settings", JSON.stringify(settings));
+  const out = $("stt-results");
+  const indexes = typeof checkedIndexes === "function" ? checkedIndexes() : [];
+  const media = ($("stt-media-url")?.value || "").trim();
+
+  let queued = 0;
+  clear(out);
+
+  if (indexes.length && State.lectures.length) {
+    for (const i of indexes) {
+      const lec = State.lectures[i];
+      if (!lec) continue;
+      try {
+        const job = await api("/api/transcribe", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ ...settings, lecture: lec }),
+        });
+        queued++;
+        if (out && job?.id) {
+          out.appendChild(el("p", {
+            class: "ok-text",
+            text: `Queued “${lec.title}” · job ${String(job.id).slice(0, 8)}…`,
+          }));
+        }
+      } catch (e) {
+        toast(`Could not queue "${lec.title}": ${errorText(e)}`, "err");
+      }
+    }
+  } else if (media) {
+    const title = media.split(/[\\/]/).pop() || "media";
+    try {
+      const job = await api("/api/transcribe", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          ...settings,
+          lecture: { title, url: media },
+        }),
+      });
+      queued++;
+      if (out && job?.id) {
+        out.appendChild(el("p", {
+          class: "ok-text",
+          text: `Queued “${title}” · job ${String(job.id).slice(0, 8)}…`,
+        }));
+        out.appendChild(el("button", {
+          class: "tag", text: "Watch in Jobs",
+          onclick: () => { showTab("jobs"); startJobsPolling(); },
+        }));
+      }
+    } catch (e) {
+      toastError(e);
+      if (out) out.appendChild(el("div", { class: "warn-box", text: errorText(e) }));
+      return;
+    }
+  } else {
+    toast("Enter a media URL / path, or load and select lectures (Moodle → podcast feed).", "warn");
+    return;
+  }
+
+  if (queued) {
+    toast(`Queued ${queued} job(s). Track progress in Jobs.`, "ok");
+    if (out && !out.querySelector(".tag")) {
+      out.appendChild(el("button", {
+        class: "tag", text: "Watch in Jobs",
+        onclick: () => { showTab("jobs"); startJobsPolling(); },
+      }));
+    }
+    startJobsPolling();
+  }
+}
+
+$("stt-transcribe")?.addEventListener("click", () => enqueueSpeechTranscribe());
+
+// ---- Live mic → /ws/stt/live ----------------------------------------------
+
+const LiveStt = {
+  ws: null,
+  stream: null,
+  audioCtx: null,
+  processor: null,
+  source: null,
+  provisional: "",
+  finals: [],
+};
+
+function setLiveButtons({ start, pause, resume, stop }) {
+  if ($("stt-live-start")) $("stt-live-start").disabled = !start;
+  if ($("stt-live-pause")) $("stt-live-pause").disabled = !pause;
+  if ($("stt-live-resume")) $("stt-live-resume").disabled = !resume;
+  if ($("stt-live-stop")) $("stt-live-stop").disabled = !stop;
+}
+
+function renderLiveResults() {
+  const out = $("stt-results");
+  if (!out) return;
+  clear(out);
+  if (LiveStt.finals.length) {
+    out.appendChild(el("p", { class: "ok-text", text: LiveStt.finals.join(" ") }));
+  }
+  if (LiveStt.provisional) {
+    out.appendChild(el("p", { class: "hint", text: "… " + LiveStt.provisional }));
+  }
+}
+
+function floatTo16BitPCM(float32) {
+  const buf = new ArrayBuffer(float32.length * 2);
+  const view = new DataView(buf);
+  for (let i = 0; i < float32.length; i++) {
+    const s = Math.max(-1, Math.min(1, float32[i]));
+    view.setInt16(i * 2, s < 0 ? s * 0x8000 : s * 0x7fff, true);
+  }
+  return buf;
+}
+
+async function startLiveStt() {
+  if (!navigator.mediaDevices?.getUserMedia) {
+    toast("Microphone capture is not available in this browser.", "warn");
+    return;
+  }
+  let stream;
+  try {
+    stream = await navigator.mediaDevices.getUserMedia({
+      audio: { channelCount: 1, echoCancellation: true, noiseSuppression: true },
+    });
+  } catch (e) {
+    toast("Microphone access denied or unavailable. You can still transcribe files.", "warn");
+    return;
+  }
+
+  const proto = location.protocol === "https:" ? "wss:" : "ws:";
+  const wsUrl = `${proto}//${location.host}/ws/stt/live`;
+  let ws;
+  try {
+    ws = new WebSocket(wsUrl);
+  } catch (e) {
+    stream.getTracks().forEach((t) => t.stop());
+    toast("Could not open live STT websocket.", "err");
+    return;
+  }
+
+  LiveStt.stream = stream;
+  LiveStt.ws = ws;
+  LiveStt.provisional = "";
+  LiveStt.finals = [];
+  setLiveButtons({ start: false, pause: false, resume: false, stop: false });
+
+  ws.binaryType = "arraybuffer";
+  ws.onopen = () => {
+    const lang = ($("stt-language")?.value || "en").trim() || "en";
+    ws.send(JSON.stringify({
+      op: "start",
+      language: lang === "auto" ? "en" : lang,
+    }));
+  };
+  ws.onmessage = (ev) => {
+    let msg;
+    try { msg = JSON.parse(ev.data); } catch (_) { return; }
+    const event = msg.event;
+    if (event === "ready") {
+      setLiveButtons({ start: false, pause: true, resume: false, stop: true });
+      const out = $("stt-results");
+      if (out) {
+        clear(out);
+        out.appendChild(el("p", {
+          class: "hint",
+          text: `Live ready · ${msg.engine || "?"}/${msg.model || "?"} — ${msg.reason || ""}`,
+        }));
+      }
+      _beginPcmCapture();
+    } else if (event === "provisional" || (event === "partial")) {
+      LiveStt.provisional = msg.text || "";
+      renderLiveResults();
+    } else if (event === "final" || msg.final === true) {
+      if (msg.text) LiveStt.finals.push(msg.text);
+      LiveStt.provisional = "";
+      renderLiveResults();
+    } else if (event === "paused") {
+      setLiveButtons({ start: false, pause: false, resume: true, stop: true });
+    } else if (event === "resumed") {
+      setLiveButtons({ start: false, pause: true, resume: false, stop: true });
+    } else if (event === "done") {
+      const text = msg.result?.text || LiveStt.finals.join(" ");
+      const out = $("stt-results");
+      if (out) {
+        clear(out);
+        out.appendChild(el("p", { class: "ok-text", text: text || "(no speech captured)" }));
+      }
+      _teardownLiveCapture(false);
+      setLiveButtons({ start: true, pause: false, resume: false, stop: false });
+    } else if (event === "error") {
+      toast("Live STT: " + (msg.error || "unknown error"), "err");
+    } else if (event === "backpressure") {
+      /* drop — server cleared buffer */
+    }
+  };
+  ws.onerror = () => {
+    toast("Live STT connection error.", "err");
+  };
+  ws.onclose = () => {
+    _teardownLiveCapture(false);
+    setLiveButtons({ start: true, pause: false, resume: false, stop: false });
+  };
+}
+
+function _beginPcmCapture() {
+  if (!LiveStt.stream) return;
+  try {
+    const ctx = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 16000 });
+    const source = ctx.createMediaStreamSource(LiveStt.stream);
+    // ScriptProcessor is deprecated but widely available; fine for this pragmatic path.
+    const processor = ctx.createScriptProcessor(4096, 1, 1);
+    processor.onaudioprocess = (e) => {
+      if (!LiveStt.ws || LiveStt.ws.readyState !== WebSocket.OPEN) return;
+      const input = e.inputBuffer.getChannelData(0);
+      LiveStt.ws.send(floatTo16BitPCM(input));
+    };
+    source.connect(processor);
+    const mute = ctx.createGain();
+    mute.gain.value = 0;
+    processor.connect(mute);
+    mute.connect(ctx.destination);
+    LiveStt.audioCtx = ctx;
+    LiveStt.source = source;
+    LiveStt.processor = processor;
+  } catch (e) {
+    toast("Could not start audio capture: " + errorText(e), "err");
+    stopLiveStt();
+  }
+}
+
+function _teardownLiveCapture(closeWs) {
+  try { LiveStt.processor?.disconnect(); } catch (_) {}
+  try { LiveStt.source?.disconnect(); } catch (_) {}
+  try { LiveStt.audioCtx?.close(); } catch (_) {}
+  LiveStt.processor = null;
+  LiveStt.source = null;
+  LiveStt.audioCtx = null;
+  if (LiveStt.stream) {
+    LiveStt.stream.getTracks().forEach((t) => t.stop());
+    LiveStt.stream = null;
+  }
+  if (closeWs && LiveStt.ws) {
+    try { LiveStt.ws.close(); } catch (_) {}
+  }
+  LiveStt.ws = null;
+}
+
+function pauseLiveStt() {
+  if (LiveStt.ws?.readyState === WebSocket.OPEN) {
+    LiveStt.ws.send(JSON.stringify({ op: "pause" }));
+  }
+}
+function resumeLiveStt() {
+  if (LiveStt.ws?.readyState === WebSocket.OPEN) {
+    LiveStt.ws.send(JSON.stringify({ op: "resume" }));
+  }
+}
+function stopLiveStt() {
+  if (LiveStt.ws?.readyState === WebSocket.OPEN) {
+    try { LiveStt.ws.send(JSON.stringify({ op: "stop" })); } catch (_) {}
+  } else {
+    _teardownLiveCapture(true);
+    setLiveButtons({ start: true, pause: false, resume: false, stop: false });
+  }
+}
+
+$("stt-live-start")?.addEventListener("click", () => startLiveStt());
+$("stt-live-pause")?.addEventListener("click", () => pauseLiveStt());
+$("stt-live-resume")?.addEventListener("click", () => resumeLiveStt());
+$("stt-live-stop")?.addEventListener("click", () => stopLiveStt());
 
 async function initTts() {
   const unavailBanner = $("tts-unavail");
@@ -2444,26 +3436,23 @@ async function initTts() {
   const genBtn = $("tts-generate");
   try {
     const data = await api("/api/tts/status");
-    // Populate the voice dropdown regardless — presets download on demand.
     const voices = data.voices || [];
     voiceSel.innerHTML = "";
-    const opt = (v) => el("option", { value: v.id,
-      text: v.label + (v.downloaded ? "" : " (downloads on first use)") });
-    const eng = voices.filter(v => v.id.startsWith("en-"));
-    const rest = voices.filter(v => !v.id.startsWith("en-"));
-    if (eng.length) {
-      const grp = el("optgroup", { label: "English" });
-      eng.forEach(v => grp.appendChild(opt(v)));
-      voiceSel.appendChild(grp);
+    const opt = (v) => el("option", { value: v.id, text: v.label });
+    const byGroup = new Map();
+    for (const v of voices) {
+      const g = v.group || "Voices";
+      if (!byGroup.has(g)) byGroup.set(g, []);
+      byGroup.get(g).push(v);
     }
-    if (rest.length) {
-      const grp = el("optgroup", { label: "Other languages (experimental)" });
-      rest.forEach(v => grp.appendChild(opt(v)));
+    for (const [label, items] of byGroup) {
+      const grp = el("optgroup", { label });
+      items.forEach(v => grp.appendChild(opt(v)));
       voiceSel.appendChild(grp);
     }
     if (!data.available) {
       unavailBanner.classList.remove("hidden");
-      genBtn.disabled = true;          // installed package required to generate
+      genBtn.disabled = true;
     } else {
       genBtn.disabled = false;
     }
@@ -2471,15 +3460,6 @@ async function initTts() {
     unavailBanner.textContent = "Could not reach TTS status endpoint: " + e.message;
     unavailBanner.classList.remove("hidden");
   }
-}
-
-// Lazy-init TTS section when the user first opens the tab
-const _ttsTabBtn = document.querySelector('[data-tab="tts"]');
-if (_ttsTabBtn) {
-  let _ttsInited = false;
-  _ttsTabBtn.addEventListener("click", () => {
-    if (!_ttsInited) { _ttsInited = true; initTts(); }
-  });
 }
 
 // Browse for a .md file
@@ -2501,7 +3481,9 @@ $("tts-generate")?.addEventListener("click", async () => {
   const btn = $("tts-generate");
   const mdPath = $("tts-md-path").value.trim();
   const voice = $("tts-voice").value;
-  const modelPath = $("tts-model-path").value.trim() || "microsoft/VibeVoice-Realtime-0.5B";
+  const modelPath = $("tts-model-path")?.value.trim() || "hexgrad/Kokoro-82M";
+  const speedRaw = parseFloat($("tts-speed")?.value || "1");
+  const speed = Number.isFinite(speedRaw) ? Math.min(2, Math.max(0.5, speedRaw)) : 1.0;
 
   if (!mdPath) { toast("Choose a Markdown file first.", "warn"); return; }
   if (!voice)  { toast("Select a voice.", "warn"); return; }
@@ -2512,14 +3494,14 @@ $("tts-generate")?.addEventListener("click", async () => {
 
   try {
     const data = await postJSON("/api/tts/generate", {
-      md_path: mdPath, voice, model_path: modelPath,
+      md_path: mdPath, voice, model_path: modelPath, speed,
     });
     clear(out);
     if (data.id) {
       // Background job queued — show status and poll
       const outputPath = data.output_path || "";
       const statusP = el("p", { class: "ok-text",
-        text: `Job queued (${data.id.slice(0, 8)}…). Generating audio — this may take several minutes.` });
+        text: `Job queued (${data.id.slice(0, 8)}…). Generating long-form audio — watch chunk progress in Jobs.` });
       out.appendChild(statusP);
       out.appendChild(el("button", { class: "tag", text: "Watch in Jobs",
         onclick: () => { showTab("jobs"); startJobsPolling(); } }));
@@ -2599,13 +3581,21 @@ function renderSyncSteps(result) {
 }
 
 function setExportLinks(planId) {
-  $("sem-export-row").hidden = false;
-  $("sem-export-notion").href = `/api/semester/plans/${planId}/export/notion.csv`;
-  $("sem-export-obsidian").href = `/api/semester/plans/${planId}/export/obsidian.zip`;
-  $("sem-export-calendar").href = `/api/semester/plans/${planId}/export/calendar.ics`;
+  const row = $("sem-export-row");
+  if (row) row.hidden = false;
+  if ($("sem-export-notion")) $("sem-export-notion").href = `/api/semester/plans/${planId}/export/notion.csv`;
+  if ($("sem-export-obsidian")) $("sem-export-obsidian").href = `/api/semester/plans/${planId}/export/obsidian.zip`;
+  if ($("sem-export-calendar")) $("sem-export-calendar").href = `/api/semester/plans/${planId}/export/calendar.ics`;
+  if ($("sem-export-google")) $("sem-export-google").href = `/api/semester/plans/${planId}/export/google-calendar.csv`;
+  updateExportPlanLinks(planId);
   const calHint = $("sem-export-calendar-hint");
   if (calHint) calHint.hidden = false;
 }
+
+$("sem-open-suites")?.addEventListener("click", () => {
+  showTab("export");
+  $("suite-exports-card")?.scrollIntoView({ behavior: "smooth", block: "start" });
+});
 
 function rememberPaperCodes(raw) {
   const codes = raw.split(",").map((s) => s.trim()).filter(Boolean);
@@ -2630,6 +3620,26 @@ async function loadSemester() {
   const codes = recall("sem-paper-codes");
   if (codes && $("sem-paper-codes") && !$("sem-paper-codes").value) $("sem-paper-codes").value = codes;
   rememberPaperCodes($("sem-paper-codes")?.value || codes || "");
+  renderPaperChips();
+  try {
+    // Backend stores codes detected during Moodle connect/import
+    const prefs = await api("/api/settings");
+    const detected = prefs?.["semester.paper_codes"];
+    if (Array.isArray(detected) && detected.length) applyDetectedPaperCodes(detected);
+  } catch (_) { /* optional */ }
+  try {
+    const data = await api("/api/semester/plans");
+    const plans = (data.plans || []).slice().sort((a, b) =>
+      String(b.created_at || "").localeCompare(String(a.created_at || "")));
+    if (plans[0]) {
+      Semester.planId = plans[0].id;
+      setExportLinks(plans[0].id);
+      const plan = await api(`/api/semester/plans/${plans[0].id}`);
+      renderTimeline(plan);
+    } else {
+      renderTimeline(null);
+    }
+  } catch (_) { renderTimeline(null); }
   try {
     const d = await api("/api/semester/moodle/announcements");
     renderAnnouncements(d.announcements || []);
@@ -2720,11 +3730,8 @@ $("sem-paper-fetch")?.addEventListener("click", async () => {
     const outline = await postJSON("/api/semester/papers/fetch", { paper_code: code });
     Semester.lastOutline = outline;
     renderOutlinePreview(outline);
-    const base = (outline.paper_code || code).split("-")[0];
-    const cur = $("sem-paper-codes").value.trim();
-    if (!cur.includes(base)) {
-      $("sem-paper-codes").value = cur ? `${cur}, ${base}` : base;
-    }
+    const base = (outline.paper_code || code).split("-")[0].toUpperCase();
+    applyDetectedPaperCodes([base]);
     toast(`Loaded outline for ${outline.paper_code || code}.`, "ok");
   } catch (e) { toastError(e); }
 });
@@ -2745,7 +3752,7 @@ $("sem-schedule-import")?.addEventListener("click", async () => {
 });
 
 $("sem-plan-build")?.addEventListener("click", async () => {
-  const codes = $("sem-paper-codes").value.split(",").map((s) => s.trim()).filter(Boolean);
+  const codes = getSelectedPaperCodes();
   if (!codes.length) return toast("Add at least one paper code.", "warn");
   try {
     const body = { paper_codes: codes, class_schedule_id: Semester.scheduleId || null };
@@ -2777,9 +3784,9 @@ $("sem-calendar-save")?.addEventListener("click", async () => {
 });
 
 $("sem-sync-all")?.addEventListener("click", async () => {
-  const codes = $("sem-paper-codes").value.split(",").map((s) => s.trim()).filter(Boolean);
+  const codes = getSelectedPaperCodes();
   if (!codes.length) return toast("Add at least one paper code.", "warn");
-  rememberPaperCodes($("sem-paper-codes").value);
+  setSelectedPaperCodes(codes);
   const btn = $("sem-sync-all");
   const status = $("sem-sync-status");
   btn.disabled = true;

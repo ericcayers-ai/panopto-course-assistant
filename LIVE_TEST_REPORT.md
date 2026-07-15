@@ -1,4 +1,30 @@
-﻿# Live test report — v3.5.0 (2026-07-14)
+﻿# Live test report — v3.6.0 (2026-07-14)
+
+v3.6.0 adds **study suites** (Obsidian / Notion / OneNote), **suite Sync**, dual Moodle import (API vs Browser + capability matrix), Panopto RSS discovery, Playwright fallback (`requirements-browser.txt`), and a release ZIP with root `installandrun.bat` + `CourseAssistant/` (renamed from `install.bat` in v3.7).
+
+## Automated suite (v3.6.0)
+
+| Run | Result |
+|-----|--------|
+| `.venv/Scripts/python.exe -m pytest -q` | **528 passed**, 1 skipped |
+
+---
+
+# Live smoke — v3.7.0 (Playwright / Moodle) — 2026-07-14
+
+Privacy: counts and bools only; no cookies, tokens, calendar URLs, HTML, or personal course data retained.
+
+| Check | Result |
+|-------|--------|
+| Playwright package + Chromium launch | PASS |
+| Live `elearn.waikato.ac.nz` login/SSO page reachable | PASS |
+| `scrape_moodle_forums` / `scrape_moodle_announcements` against live host (unauthenticated → 0 items, no crash) | PASS |
+| SSO redirect hardening (`_goto_settled` / locator collection) | PASS |
+| Extras install installs `requirements-browser.txt` + `playwright install chromium` | PASS (scripted) |
+
+---
+
+# Live test report — v3.5.0 (2026-07-14)
 
 Server: `.venv/Scripts/python.exe -m uvicorn app.main:app --port 8123` with isolated `PANOPTO_OUTPUT` (`%TEMP%\panopto_live_release_v35`).
 
@@ -106,3 +132,5 @@ Job queue listed empty; no live Panopto transcription run (smoke only).
 
 1. **Nested Notion export zip** — outer archive containing only `*-Part-1.zip` now unwraps automatically (`app/schedule_parser.py`).
 2. **Plan merge with full paper codes** — `COMPX202-26B` now matches schedule subject `COMPX202` (`app/task_schedule.py`).
+
+- Release 3.6.0: added suites and dual Moodle import support.

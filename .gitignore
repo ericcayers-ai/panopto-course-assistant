@@ -13,6 +13,11 @@ transcripts/
 *.mp3
 *.wav
 
+# Local STT benchmark corpora / manifests (metrics-only outputs are OK to share)
+stt_benchmark_metrics.json
+**/benchmark_manifest.json
+**/stt_fixtures/
+
 # Test scratch output
 _test_out.txt
 

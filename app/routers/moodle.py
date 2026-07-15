@@ -19,6 +19,7 @@ from urllib.parse import urlparse
 from .. import core
 from .. import courses
 from .. import secrets as secret_store
+from .. import settings_store
 from .. import sources
 from .. import sso_protocol
 from ..imports import moodle_api
@@ -27,7 +28,7 @@ from ..imports import moodle_sso
 from ..imports import moodle_web
 from .. import context
 from ..context import _MOODLE_PASSPORT, _audit, _moodle_token_name, _save_api_outline, _sso_provider_label
-from ..schemas import DecodeLaunchTokenReq, FeedRequest, MoodleApiImportReq, MoodleConnectReq, MoodleFetchReq, MoodleRequest, MoodleUrlReq, SsoCallbackReq
+from ..schemas import DecodeLaunchTokenReq, FeedRequest, MoodleApiImportReq, MoodleConnectReq, MoodleFetchReq, MoodleRequest, MoodleUrlReq, PanoptoDiscoverReq, SsoCallbackReq
 
 router = APIRouter()
 
@@ -242,12 +243,17 @@ def api_moodle_connect(req: MoodleConnectReq) -> Dict[str, Any]:
 
     secret_store.set_secret(_moodle_token_name(host), token, root=context.OUTPUT_DIR)
     _audit("moodle.connect", target=host, feature="moodle_import_url")
+    from .. import suites
+    paper_codes = suites.detect_paper_codes_from_courses(courses_list)
+    if paper_codes:
+        settings_store.set(context.db, "semester.paper_codes", paper_codes)
     return {
         "host": host,
         "base_url": base,
         "sitename": info.get("sitename", ""),
         "fullname": info.get("fullname", ""),
         "courses": courses_list,
+        "paper_codes": paper_codes,
     }
 
 
@@ -307,6 +313,15 @@ def api_moodle_api_import(req: MoodleApiImportReq) -> Dict[str, Any]:
            detail=f"docs={downloaded['downloaded']} lectures={model['counts']['lectures']}",
            feature="moodle_import_url")
 
+    from .. import suites
+    paper_codes = suites.detect_paper_codes_from_courses([model["course"]])
+    if paper_codes:
+        existing = settings_store.get(context.db, "semester.paper_codes", []) or []
+        if not isinstance(existing, list):
+            existing = []
+        merged = list(dict.fromkeys([*existing, *paper_codes]))
+        settings_store.set(context.db, "semester.paper_codes", merged)
+
     return {
         "course": {**model["course"], "local_course": course_rec},
         "counts": model["counts"],
@@ -320,12 +335,38 @@ def api_moodle_api_import(req: MoodleApiImportReq) -> Dict[str, Any]:
         "exported": exported,
         "outline": outline_rel,
         "keep_images": req.keep_images,
+        "paper_codes": paper_codes,
     }
 
 
+@router.get("/api/moodle/capabilities")
+def api_moodle_capabilities(mode: str = "api") -> Dict[str, Any]:
+    """Capability matrix for API vs Browser Moodle import modes."""
+    from .. import browser_scrape
+    try:
+        return browser_scrape.capability_matrix(mode)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.post("/api/panopto/discover")
+def api_panopto_discover(req: PanoptoDiscoverReq) -> Dict[str, Any]:
+    """Discover Panopto Podcast.ashx RSS feeds (Moodle HTML → cookies → Playwright)."""
+    from .. import panopto_discover
+    try:
+        return panopto_discover.discover(
+            moodle_html=req.moodle_html,
+            moodle_url=req.moodle_url,
+            panopto_url=req.panopto_url,
+            cookies=req.cookies,
+            use_playwright=req.use_playwright,
+        )
+    except panopto_discover.PanoptoDiscoverError as e:
+        raise HTTPException(status_code=502, detail=str(e))
+
+
 @router.post("/api/moodle/quick-upload")
-async def api_moodle_quick_upload(
-    files: List[UploadFile] = File(...),
+async def api_moodle_quick_upload(    files: List[UploadFile] = File(...),
     cookies: str = Form(""),
     convert: bool = Form(True),
     keep_images: bool = Form(True),

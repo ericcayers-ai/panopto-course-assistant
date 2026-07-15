@@ -1,0 +1,14 @@
+# STT specialist pack — long-tail / dialect engines (not in the default install).
+# Install with:
+#   pip install -r requirements-stt-specialist.txt
+#
+# FireRedASR (Mandarin / Chinese dialects):
+#   pip install fireredasr
+#
+# Meta Omnilingual ASR (long-tail languages):
+#   # packaging varies; see upstream facebook/omnilingual-asr docs
+#   # pip install omnilingual
+#
+# Routers fall back to Qwen3 / faster-whisper when specialists are absent.
+
+-r requirements-stt-base.txt

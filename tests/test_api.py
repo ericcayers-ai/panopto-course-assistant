@@ -194,6 +194,30 @@ def test_export_presets_preview_run(client):
     assert c.post("/api/export/preview", json={"preset": "bogus"}).status_code == 400
 
 
+def test_export_all_copies_each_source_without_combined_pack(client):
+    c, tmp = client
+    _seed(tmp)
+    docs = tmp / "_docs"
+    docs.mkdir()
+    (docs / "slides.md").write_text("# Slides\ncontent", encoding="utf-8")
+    notion = tmp / "_notion"
+    notion.mkdir()
+    (notion / "notes.md").write_text("# Notes\ncontent", encoding="utf-8")
+    dest = tmp / "external-export"
+
+    response = c.post("/api/export/all", json={
+        "course": "COMPX234", "combined": False, "output_dir": str(dest),
+    })
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["combined"] is None
+    assert data["files"]
+    assert (dest / "slides.md").is_file()
+    assert (dest / "notes.md").is_file()
+    assert any(path.suffix == ".md" for path in dest.iterdir())
+
+
 def test_course_archive_export_route(client):
     c, tmp = client
     _seed(tmp)

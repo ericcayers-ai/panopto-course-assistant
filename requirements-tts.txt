@@ -1,18 +1,20 @@
-# VibeVoice text-to-speech (Voice TTS tab).
+# Kokoro-82M text-to-speech (Speech tab).
 #
 #   pip install -r requirements-tts.txt
 #
-# This installs Microsoft VibeVoice (Realtime-0.5B streaming TTS) and all of its
-# dependencies (torch, transformers, diffusers, librosa, …) straight from GitHub
-# — the package is not published on PyPI. The [streamingtts] extra pins the
-# transformers version the streaming model needs.
+# Installs hexgrad/Kokoro (Apache-2.0, ~82M params) with English G2P and WAV I/O.
+# The model downloads from Hugging Face on first generation (~300 MB). Voices are
+# bundled with the package.
 #
-# The ~1 GB model is downloaded from Hugging Face on first generation, and the
-# small per-voice preset files are fetched on demand — no manual repo clone or
-# voice download is required.
+# CPU works well (often faster than real-time on modern machines). A CUDA GPU is
+# used automatically when available for extra speed.
 #
-# A CUDA GPU is strongly recommended. For best speed, optionally also install
-# flash-attention (`pip install flash-attn --no-build-isolation`); without it
-# the app automatically falls back to PyTorch SDPA attention.
+# Optional: install espeak-ng for better out-of-vocabulary / non-English fallback
+# pronunciation — English narration works without it via misaki[en].
+#   Windows: https://github.com/espeak-ng/espeak-ng/releases (msi installer)
+#   macOS:   brew install espeak-ng
+#   Linux:   apt/yum install espeak-ng
 
-vibevoice[streamingtts] @ git+https://github.com/microsoft/VibeVoice.git
+kokoro>=0.9.4
+soundfile>=0.12.1
+misaki[en]>=0.9.4

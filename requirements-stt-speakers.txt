@@ -1,0 +1,15 @@
+# STT speakers pack — offline pyannote diarization (Community-1).
+# Install with:
+#   pip install -r requirements-stt-speakers.txt
+#
+# Hugging Face access token is required once to download gated weights.
+# Accept the model license on Hugging Face, then store the token via the app
+# secrets UI (never commit tokens). After the first download, diarization is
+# fully offline.
+#
+#   export HF_TOKEN=…   # or store under secret name "huggingface" / "hf_token"
+#
+# Package (uncomment when you need speaker diarization):
+# pyannote.audio>=3.1
+
+-r requirements-stt-base.txt

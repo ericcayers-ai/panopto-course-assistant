@@ -458,6 +458,8 @@ details.card[open] > summary { margin-bottom: var(--space-3); }
 .link-btn:hover { background: none; color: var(--brand-d); }
 
 .row { display: flex; gap: var(--space-2); align-items: center; margin: var(--space-3) 0; flex-wrap: wrap; }
+.gap { gap: var(--space-3); }
+.wrap { flex-wrap: wrap; }
 input[type=text], input[type=number] {
   flex: 1; min-width: 180px; padding: 9px 11px; border: 1px solid var(--border);
   border-radius: var(--radius-sm); font: inherit; background: var(--surface); color: var(--ink);
@@ -486,6 +488,12 @@ button.tag {
   background: var(--brand-soft); color: var(--brand-d); border-color: transparent;
 }
 button.tag:hover { background: var(--brand); color: var(--on-brand); }
+a.tag {
+  display: inline-flex; align-items: center; min-height: 30px; padding: 5px 11px;
+  border: 1px solid transparent; border-radius: var(--radius-sm); background: var(--brand-soft);
+  color: var(--brand-d); font-size: var(--text-xs); font-weight: 500; text-decoration: none;
+}
+a.tag:hover { background: var(--brand); color: var(--on-brand); }
 button.danger { background: var(--err); border-color: var(--err); color: var(--on-err); }
 button.danger:hover { background: var(--err); border-color: var(--err); filter: brightness(.9); }
 button.primary { padding: 10px 20px; font-size: var(--text-base); font-weight: 600; }
@@ -503,6 +511,7 @@ details.adv-settings[open] > summary { margin-bottom: var(--space-2); }
 
 .banner { padding: var(--space-3); border-radius: var(--radius-sm); font-size: var(--text-sm); margin: var(--space-2) 0; }
 .banner.warn { background: var(--warn-soft); border: 1px solid var(--warn); color: var(--warn); }
+.banner.ok { background: var(--ok-soft); border: 1px solid var(--ok); color: var(--ok); }
 .pill {
   font-size: var(--text-xs); background: var(--brand-soft); color: var(--brand-d);
   border-radius: var(--radius-pill); padding: 2px 9px; vertical-align: middle;
@@ -517,6 +526,22 @@ details.adv-settings[open] > summary { margin-bottom: var(--space-2); }
 .toggles { display: flex; flex-wrap: wrap; gap: var(--space-4); margin: var(--space-3) 0; }
 .toggle { font-size: var(--text-sm); }
 .toolbar { display: flex; gap: var(--space-2); align-items: center; flex-wrap: wrap; margin: var(--space-3) 0; }
+.export-bundle-grid {
+  display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--space-2);
+  margin-top: var(--space-3);
+}
+.export-bundle {
+  min-height: 82px; flex-direction: column; align-items: flex-start; text-align: left;
+  background: var(--surface); color: var(--ink); border-color: var(--border);
+}
+.export-bundle span { color: var(--muted); font-size: var(--text-xs); font-weight: 400; }
+.export-bundle:hover, .export-bundle.active {
+  background: var(--brand-soft); color: var(--brand-d); border-color: var(--brand);
+}
+.format-checks { display: flex; flex-wrap: wrap; gap: var(--space-2) var(--space-3); margin-top: var(--space-3); }
+.format-checks label { font-size: var(--text-sm); }
+.artifact-preview { margin: var(--space-2) 0; padding-left: var(--space-5); color: var(--muted); }
+.export-links { align-items: stretch; }
 
 /* ---- import segmented switch --------------------------------------------- */
 .import-switch {
@@ -532,6 +557,7 @@ details.adv-settings[open] > summary { margin-bottom: var(--space-2); }
 .import-switch .seg.active { background: var(--brand); color: var(--on-brand); }
 .import-pane { display: none; }
 .import-pane.active { display: block; animation: fade var(--dur-base) var(--ease); }
+.row > .import-switch { margin: 0; }
 
 /* ---- lectures ------------------------------------------------------------ */
 .lecture { display: flex; align-items: center; gap: var(--space-3); padding: var(--space-3) var(--space-4); }
@@ -623,6 +649,9 @@ details.adv-settings[open] > summary { margin-bottom: var(--space-2); }
 @media (max-width: 760px) {
   .sidebar { position: fixed; z-index: 30; transform: translateX(-100%); transition: transform var(--dur-base) var(--ease); }
   .app.menu-open .sidebar { transform: translateX(0); }
+  .app.menu-open::after {
+    content: ""; position: fixed; inset: 0; z-index: 20; background: rgba(0, 0, 0, .38);
+  }
   #menu-toggle { display: inline-flex; }
   main { padding: var(--space-4); }
   .topbar { flex-wrap: wrap; }
@@ -633,6 +662,8 @@ details.adv-settings[open] > summary { margin-bottom: var(--space-2); }
   .status-bar { display: none; }
   .nav .tab { min-height: 44px; padding-top: 11px; padding-bottom: 11px; }
   button, .import-switch .seg { min-height: 44px; }
+  .export-bundle-grid { grid-template-columns: 1fr; }
+  a.tag { min-height: 44px; }
 }
 
 /* ---- Moodle connect / guided import --------------------------------------- */
@@ -794,44 +825,58 @@ details.sub > summary { cursor: pointer; color: var(--brand); font-size: var(--t
 .collection-cell .k { color: var(--muted); font-size: var(--text-xs); }
 .collection-cell.empty-cell { opacity: .55; font-style: normal; }
 
-/* ---- semester planner (Waikato trimester timeline) ------------------------- */
+/* ---- semester planner ----------------------------------------------------- */
 .semester-layout {
   display: grid;
-  grid-template-columns: 3.5rem 1fr;
+  grid-template-columns: 1fr;
   gap: var(--space-4);
   align-items: start;
-}
-.semester-rail {
-  position: relative;
-  min-height: 12rem;
-  padding-top: var(--space-2);
-}
-.semester-rail-line {
-  position: absolute;
-  left: 50%;
-  top: 0;
-  bottom: 0;
-  width: 3px;
-  transform: translateX(-50%);
-  background: linear-gradient(180deg, #be0403 0%, var(--brand) 45%, var(--border) 100%);
-  border-radius: var(--radius-pill);
-}
-.semester-rail-label {
-  position: sticky;
-  top: 5rem;
-  display: block;
-  writing-mode: vertical-rl;
-  transform: rotate(180deg);
-  font-family: var(--font-display);
-  font-size: var(--text-xs);
-  letter-spacing: .12em;
-  text-transform: uppercase;
-  color: var(--muted);
-  margin: 0 auto;
 }
 .semester-main { display: grid; gap: var(--space-4); }
 .semester-card { position: relative; }
 .semester-hero { border-left: 3px solid var(--copper, #A8530A); }
+.semester-advanced-stack { display: grid; gap: var(--space-4); margin-top: var(--space-3); }
+.semester-subcard {
+  padding: var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface-2);
+}
+.paper-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin: var(--space-2) 0 var(--space-3);
+  min-height: 2rem;
+}
+.paper-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 0.25rem 0.55rem;
+  background: var(--surface);
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+  cursor: pointer;
+}
+.paper-chip[aria-pressed="true"] {
+  border-color: var(--copper, #A8530A);
+  background: color-mix(in srgb, var(--copper, #A8530A) 16%, var(--surface));
+}
+.paper-chip .chip-x {
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 1rem;
+  line-height: 1;
+  padding: 0 0.1rem;
+}
+.paper-add-row { margin-bottom: var(--space-3); }
+.paper-add-row input { max-width: 14rem; }
+.export-more-stack { display: grid; gap: var(--space-4); }
 .outline-preview {
   margin-top: var(--space-3);
   padding: var(--space-3);
@@ -882,9 +927,32 @@ details.sub > summary { cursor: pointer; color: var(--brand); font-size: var(--t
 }
 .announcement-item h4 { margin: 0 0 var(--space-1); font-size: var(--text-md); }
 .announcement-item .meta { font-size: var(--text-xs); color: var(--muted); margin-bottom: var(--space-2); }
+
+.mq-capability-matrix { margin-top: var(--space-3); overflow-x: auto; }
+.mq-cap-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--text-sm);
+}
+.mq-cap-table th, .mq-cap-table td {
+  text-align: left;
+  padding: var(--space-2);
+  border-bottom: 1px solid var(--border, #ddd);
+  vertical-align: top;
+}
+.mq-cap-table th { color: var(--muted); font-weight: 600; }
+.mq-cap-table th.mq-cap-active,
+.mq-cap-table td.mq-cap-active {
+  background: color-mix(in srgb, var(--accent, #be0403) 8%, transparent);
+  font-weight: 600;
+}
+.suite-dest-grid { margin-top: var(--space-3); gap: var(--space-3); }
+.suite-last-sync { margin-top: var(--space-2); }
+.sem-export-details { margin: 0; }
+.sem-export-details > summary { cursor: pointer; list-style: disclosure-closed; }
+
 @media (max-width: 640px) {
   .semester-layout { grid-template-columns: 1fr; }
-  .semester-rail { display: none; }
 }
 
 /* ---- reduced motion: honour the OS setting (§14/§15) ------------------------ */

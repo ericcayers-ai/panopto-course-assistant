@@ -55,8 +55,14 @@ def api_organize(req: OrganizeRequest) -> Dict[str, Any]:
 
 
 @router.get("/api/jobs")
-def api_jobs() -> Dict[str, Any]:
-    return {"jobs": manager.list()}
+def api_jobs(status: str = "", type: str = "") -> Dict[str, Any]:
+    jobs = manager.list()
+    if status:
+        wanted = {s.strip() for s in status.split(",") if s.strip()}
+        jobs = [j for j in jobs if j.get("status") in wanted]
+    if type:
+        jobs = [j for j in jobs if j.get("type") == type]
+    return {"jobs": jobs}
 
 
 @router.get("/api/jobs/{job_id}")

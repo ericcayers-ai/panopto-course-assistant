@@ -18,8 +18,8 @@ class FeedRequest(BaseModel):
 
 class TranscribeRequest(BaseModel):
     lecture: Dict[str, Any]          # a lecture dict as returned by /api/feed
-    engine: str = "faster-whisper"
-    model: str = "small"
+    engine: str = "auto"             # auto | faster-whisper | whisper | granite | …
+    model: str = "auto"
     language: str = "en"
     device: str = "auto"
     organize: str = "auto"
@@ -34,6 +34,44 @@ class TranscribeRequest(BaseModel):
     force: bool = False
     cookies: str = ""
     course: str = ""
+    # Adaptive STT (4.0) — Auto profile + adaptive router are the defaults.
+    profile: str = "auto"            # auto | quality | fast | live | eco | legacy
+    code_switch: bool = False
+    word_timestamps: bool = True
+    diarization: str = "off"         # off | auto | on
+    speakers: Optional[int] = None
+    vocabulary: Optional[List[str]] = None
+    caption_first: bool = True
+    caption_url: str = ""
+    resume: bool = True
+    chunk_seconds: int = 180
+    compute: str = "auto"
+    hotwords: str = ""
+    initial_prompt: str = ""
+    use_adaptive: bool = True
+
+
+class STTRouteRequest(BaseModel):
+    profile: str = "auto"
+    language: str = "auto"
+    device: str = "auto"
+    code_switch: bool = False
+    engine: str = ""
+    model: str = ""
+    caption_first: bool = True
+    has_usable_captions: bool = False
+
+
+class STTLiveStartRequest(BaseModel):
+    course: str = ""
+    language: str = "en"
+    model: str = ""
+    save: bool = True
+
+
+class STTModelActionRequest(BaseModel):
+    engine: str
+    model_id: str = ""
 
 class OrganizeRequest(BaseModel):
     by: str = "week"                 # auto | none | date | week | lecture | module | topic
@@ -112,8 +150,9 @@ class PickFileRequest(BaseModel):
 
 class TtsGenerateRequest(BaseModel):
     md_path: str                           # absolute path to the source .md file
-    voice: str = "en-Carter_man"
+    voice: str = "af_heart"
     model_path: str = tts_mod.MODEL_ID
+    speed: float = 1.0                     # Kokoro speaking rate (1.0 = normal)
 
 class OllamaPullRequest(BaseModel):
     model: str = ""
@@ -128,6 +167,26 @@ class CheatsheetRequest(BaseModel):
     course: str = ""
     max_pages: int = 1                     # A4 page budget for the cheat sheet
     save_path: Optional[str] = None        # exact PDF path chosen via Save As
+
+class PracticeExamRequest(BaseModel):
+    """Practice pack (default n=100) or configurable exam builder.
+
+    ``n`` must be 10–150 (enforced by the practice-exam API route).
+    """
+    course: str = ""
+    n: int = 100
+    types: Optional[List[str]] = None      # mcq, short, long, cloze, truefalse
+    difficulty: str = "medium"             # easy | medium | hard | mixed
+    scope: str = "course"                  # lecture | week | topic | course
+    target: str = ""                       # path / week# / topic string
+    weights: Optional[Dict[str, float]] = None  # topic -> percent
+    seed: Optional[str] = None
+    include_answer_key: bool = True
+    time_minutes: Optional[int] = None
+    total_marks: Optional[int] = None
+    kind: str = "practice"                 # practice | exam
+    formats: Optional[List[str]] = None    # pdf, md
+    save_path: Optional[str] = None
 
 class CourseCreate(BaseModel):
     name: str
@@ -170,6 +229,15 @@ class QuizReq(BaseModel):
     types: Optional[List[str]] = None
     difficulty: str = "medium"
     n: int = 8
+    course: str = ""
+    weights: Optional[Dict[str, float]] = None
+    seed: Optional[str] = None
+    include_answer_key: bool = True
+    time_minutes: Optional[int] = None
+    total_marks: Optional[int] = None
+    kind: str = "quiz"                     # quiz | practice | exam
+    formats: Optional[List[str]] = None
+    save_path: Optional[str] = None
 
 class ChatReq(BaseModel):
     query: str
@@ -341,3 +409,37 @@ class SemesterSyncAllReq(BaseModel):
     moodle_announcements_url: str = ""
     moodle_cookies: str = ""
     calendar_url: str = ""
+
+class SuiteBuildReq(BaseModel):
+    format: str = "obsidian"          # obsidian | notion | onenote
+    output: str = "folder"            # folder | zip
+    plan_id: Optional[int] = None
+    title: str = ""
+    dest_dir: Optional[str] = None    # write folder here (defaults to OUTPUT/_suites)
+
+class SuiteSyncReq(BaseModel):
+    formats: Optional[List[str]] = None
+    plan_id: Optional[int] = None
+    paper_codes: Optional[List[str]] = None
+    course_id: Optional[int] = None
+    name: str = ""
+    push_live: bool = True
+    moodle_announcements_url: str = ""
+    moodle_cookies: str = ""
+    calendar_url: str = ""
+    class_schedule_id: Optional[int] = None
+    discover_panopto: bool = True
+    panopto_url: str = ""
+    use_browser: bool = False
+
+class SuiteSettingsReq(BaseModel):
+    destinations: Optional[Dict[str, str]] = None
+    enabled: Optional[List[str]] = None
+    auto_sync: Optional[bool] = None
+
+class PanoptoDiscoverReq(BaseModel):
+    moodle_html: str = ""
+    moodle_url: str = ""
+    panopto_url: str = ""
+    cookies: str = ""
+    use_playwright: bool = False
