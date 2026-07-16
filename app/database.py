@@ -255,7 +255,7 @@ _MIGRATIONS: List[tuple[int, List[str]]] = [
     (
         7,
         [
-            # afterhours: notes library folders, session attach, flashcard sets,
+            # v7 - notes library folders, session attach, flashcard sets,
             # assessment kinds, and essay-grade history.
             """CREATE TABLE IF NOT EXISTS note_folders (
                 id          INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -692,7 +692,7 @@ class Database:
     def clear_audit(self) -> int:
         return self.execute("DELETE FROM audit_log").rowcount
 
-    # -- notes & bookmarks DAO (v3 / afterhours) ---------------------------
+    # -- notes & bookmarks DAO (v3 / v7) -----------------------------------
 
     def add_note(self, path: str, body: str, *, course_id: Optional[int] = None,
                  timestamp_s: Optional[float] = None, bookmark: bool = False,

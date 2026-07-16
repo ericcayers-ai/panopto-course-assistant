@@ -951,7 +951,7 @@ details.sub > summary { cursor: pointer; color: var(--brand); font-size: var(--t
 .sem-export-details { margin: 0; }
 .sem-export-details > summary { cursor: pointer; list-style: disclosure-closed; }
 
-/* ---- afterhours: notes workspace + study modes --------------------------- */
+/* ---- notes workspace + study modes --------------------------------------- */
 .notes-layout {
   display: grid;
   grid-template-columns: minmax(220px, 280px) 1fr;

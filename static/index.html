@@ -98,9 +98,6 @@
           <svg class="ico" aria-hidden="true" id="theme-icon"><use href="#i-moon"/></svg>
           <span id="theme-label">Dark theme</span>
         </button>
-        <a href="/welcome" class="muted small">
-          afterhours <svg class="ico" aria-hidden="true"><use href="#i-external"/></svg>
-        </a>
         <a href="/docs" target="_blank" rel="noopener" class="muted small">
           API reference <svg class="ico" aria-hidden="true"><use href="#i-external"/></svg>
         </a>
@@ -163,7 +160,7 @@
               <li>Set your <strong>course name</strong> in the top bar — imports and exports are tagged to it.</li>
               <li><button type="button" class="link-btn" id="gs-goto-moodle">Import a Moodle course</button> to pull slides, documents, and lecture recordings.</li>
               <li>Paste the Panopto podcast link to transcribe recordings, then browse everything in <strong>Library</strong>.</li>
-              <li>Use <strong>Study</strong> and <strong>Export</strong> for quizzes, guides, NotebookLM packs, and Anki decks.</li>
+              <li>Use <strong>Notes</strong> for lecture/tutorial/lab notes, <strong>Study</strong> for recall and quizzes, and <strong>Export</strong> for NotebookLM packs and Anki decks.</li>
             </ol>
             <p class="hint">Press <kbd>?</kbd> for shortcuts · <kbd>Ctrl</kbd>+<kbd>K</kbd> opens the command palette.</p>
           </div>
@@ -184,15 +181,22 @@
               </span>
               <span class="stage-desc">One searchable index of everything imported.</span>
             </button>
-            <button class="stage" data-goto="study">
+            <button class="stage" data-goto="notes">
               <span class="stage-n">03</span>
+              <span class="stage-title">
+                <svg class="ico" aria-hidden="true"><use href="#i-notebook"/></svg> Notes
+              </span>
+              <span class="stage-desc">Course notes, folders, and flashcard sets.</span>
+            </button>
+            <button class="stage" data-goto="study">
+              <span class="stage-n">04</span>
               <span class="stage-title">
                 <svg class="ico" aria-hidden="true"><use href="#i-study"/></svg> Study
               </span>
-              <span class="stage-desc">Glossary, study guide, quiz, and review schedule.</span>
+              <span class="stage-desc">Recall, quiz, tracker, and essay feedback.</span>
             </button>
             <button class="stage" data-goto="export">
-              <span class="stage-n">04</span>
+              <span class="stage-n">05</span>
               <span class="stage-title">
                 <svg class="ico" aria-hidden="true"><use href="#i-export"/></svg> Export
               </span>
@@ -405,6 +409,7 @@
             <div id="item-notes" class="item-notes"></div>
             <div class="row">
               <button id="item-cite-go" class="ghost small">Show citations</button>
+              <button id="item-open-notes" class="ghost small" type="button">Open in Notes…</button>
             </div>
             <div id="item-citations" class="item-citations"></div>
           </div>
@@ -429,8 +434,8 @@
               <svg class="ico" aria-hidden="true"><use href="#i-refresh"/></svg> Refresh
             </button>
           </div>
-          <p class="panel-intro">Unlimited notes and folders for the active course. Attach a note to a lecture,
-            tutorial, or lab, import Word/PDF files, and turn a note into a flashcard set in one step.</p>
+          <p class="panel-intro">Notes and folders for the active course. Attach each note to a lecture,
+            tutorial, or lab path, import Word or PDF files, and build a flashcard set from a note.</p>
 
           <div class="notes-layout">
             <aside class="card notes-side">
@@ -473,7 +478,7 @@
               <div class="row gap wrap">
                 <button id="note-save" type="button" class="primary">Save note</button>
                 <button id="note-import" type="button" class="ghost">Import Word/PDF…</button>
-                <button id="note-to-cards" type="button" class="ghost">Notes → flashcards</button>
+                <button id="note-to-cards" type="button" class="ghost">Make flashcards…</button>
               </div>
               <div id="notes-library-list" class="notes-list"></div>
             </div>
@@ -489,14 +494,15 @@
               <svg class="ico" aria-hidden="true"><use href="#i-refresh"/></svg> Refresh
             </button>
           </div>
-          <p class="panel-intro">Practice, daily recall, slideshow, and focus modes over your review deck —
-            plus a course tracker, essay grader, and optional AI chat. Local modes need no AI model.</p>
+          <p class="panel-intro">Streak, due reviews, practice quiz, slideshow, focus timer, course tracker,
+            essay feedback, glossary, and study guide — derived from your library and review deck.
+            Local modes need no AI model.</p>
 
           <div class="study-modes-bar" role="toolbar" aria-label="Study modes">
             <button type="button" class="ghost small" id="mode-practice" data-mode="practice">Practice</button>
             <button type="button" class="ghost small" id="mode-recall" data-mode="recall">Daily recall</button>
             <button type="button" class="ghost small" id="mode-slideshow" data-mode="slideshow">Slideshow</button>
-            <button type="button" class="ghost small" id="mode-focus" data-mode="focus">Lock In</button>
+            <button type="button" class="ghost small" id="mode-focus" data-mode="focus">Focus</button>
           </div>
 
           <div class="study-grid">
@@ -571,8 +577,8 @@
           </div>
 
           <div class="card" id="focus-card">
-            <h3>Lock In · focus timer</h3>
-            <p class="hint">Optional focus mode. Logs minutes toward your study streak.</p>
+            <h3>Focus timer</h3>
+            <p class="hint">Logs minutes toward your study streak when you complete the session.</p>
             <div class="row gap wrap">
               <label for="focus-minutes">Minutes
                 <input type="number" id="focus-minutes" value="25" min="1" max="180" style="max-width:90px" />
@@ -601,8 +607,8 @@
           </div>
 
           <div class="card" id="ai-chat-card">
-            <h3>AI calls · ask the library</h3>
-            <p class="hint">RAG chat over your transcripts. Works extractively offline; richer with an LLM under Export → models.</p>
+            <h3>Ask the library</h3>
+            <p class="hint">Answers from your transcripts. Extractive offline; richer with an LLM under Export → models.</p>
             <label for="ai-chat-q" class="sr-only">Question</label>
             <div class="row gap wrap">
               <input id="ai-chat-q" type="text" placeholder="Ask a question about this course…" autocomplete="off" style="flex:1" />

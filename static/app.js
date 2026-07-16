@@ -307,6 +307,7 @@ const TAB_LABELS = {
   "moodle-quick": "Moodle import",
   import: "Import materials",
   library: "Library",
+  notes: "Notes",
   study: "Study",
   semester: "Semester plan",
   export: "Export",
@@ -1128,6 +1129,11 @@ $("item-tag-input").addEventListener("keydown", (e) => {
 $("note-add-go").addEventListener("click", () => { if (State.currentPath) addNote(State.currentPath); });
 $("note-body").addEventListener("keydown", (e) => { if (e.key === "Enter" && State.currentPath) addNote(State.currentPath); });
 $("item-cite-go").addEventListener("click", () => { if (State.currentPath) showCitations(State.currentPath); });
+$("item-open-notes")?.addEventListener("click", () => {
+  if (!State.currentPath) return;
+  State.notesAttachPath = State.currentPath;
+  showTab("notes");
+});
 
 // ---- Study tab ------------------------------------------------------------
 
@@ -1566,8 +1572,16 @@ async function gradeEssay() {
       el("div", {}, [el("strong", { text: `${Math.round(res.score)}%` }), el("span", { class: "muted small", text: " Essay grade" })]),
       el("div", {}, [el("strong", { text: `${Math.round(res.originality)}%` }), el("span", { class: "muted small", text: " Originality" })]),
     ]));
-    (res.strengths || []).forEach((s) => box.appendChild(el("p", { class: "essay-ok", text: "Did well · " + s })));
-    (res.improvements || []).forEach((s) => box.appendChild(el("p", { class: "essay-improve", text: "Improve · " + s })));
+    (res.strengths || []).forEach((s) => {
+      const text = String(s);
+      box.appendChild(el("p", { class: "essay-ok",
+        text: text.startsWith("Did well") ? text : "Did well · " + text }));
+    });
+    (res.improvements || []).forEach((s) => {
+      const text = String(s);
+      box.appendChild(el("p", { class: "essay-improve",
+        text: text.startsWith("Improve") ? text : "Improve · " + text }));
+    });
     if (res.summary) box.appendChild(el("p", { class: "hint", text: res.summary }));
     box.appendChild(el("p", { class: "muted small", text: `Generated: ${res.generated}` }));
   } catch (e) { box.textContent = errorText(e); }
@@ -1605,6 +1619,18 @@ async function loadNotesWorkspace() {
     renderNoteFolders(data.folders || []);
     renderFlashcardSets(data.flashcard_sets || []);
     renderNotesList(data.notes || []);
+    if (State.notesAttachPath && $("note-attach-path")) {
+      $("note-attach-path").value = State.notesAttachPath;
+      if ($("note-session-type") && !$("note-session-type").value) {
+        $("note-session-type").value = "lecture";
+      }
+      if (!$("note-title")?.value) {
+        const leaf = State.notesAttachPath.split("/").pop() || "";
+        $("note-title").value = leaf.replace(/\.[^.]+$/, "").replace(/[_-]+/g, " ");
+      }
+      State.notesAttachPath = null;
+      $("note-compose-body")?.focus();
+    }
   } catch (e) {
     toastError(e);
   }

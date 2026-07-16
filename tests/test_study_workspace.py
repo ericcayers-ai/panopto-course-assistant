@@ -1,4 +1,4 @@
-"""afterhours features: notes workspace, essay grader, study modes, tracker, marketing."""
+"""Study workspace features: notes folders/sets, essay grader, study modes, tracker."""
 from __future__ import annotations
 
 import importlib
@@ -24,9 +24,8 @@ def client(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     return TestClient(main.app), main, tmp_path
 
 
-def test_schema_version_includes_afterhours(db: Database):
+def test_schema_version_includes_notes_workspace(db: Database):
     assert db.schema_version() == SCHEMA_VERSION >= 7
-    # tables from migration 7 exist
     db.create_note_folder(None, "Week 3")
     assert db.list_note_folders()
 
@@ -88,9 +87,9 @@ def test_essay_grader_extractive():
 def test_study_modes_recall_slideshow_focus_tracker(db: Database):
     cid = db.create_course("STATS 108")
     db.add_review_item(cid, front="What is variance?", back="Spread of a distribution",
-                       due="2099-01-01")  # not due
+                       due="2099-01-01")
     db.add_review_item(cid, front="Define mean", back="Average of values",
-                       due="2020-01-01")  # overdue
+                       due="2020-01-01")
     recall = study_modes.daily_recall(db, cid)
     assert recall["count"] >= 1
     assert recall["items"][0]["front"] == "Define mean"
@@ -112,7 +111,7 @@ def test_study_modes_recall_slideshow_focus_tracker(db: Database):
     assert snap["weeks"]
 
 
-def test_api_afterhours_surface(client):
+def test_api_study_workspace_surface(client):
     c, main, tmp = client
     course = c.post("/api/courses", json={"name": "BIOL 101", "code": "BIOL101"}).json()
     cid = course["id"]
@@ -140,6 +139,11 @@ def test_api_afterhours_surface(client):
     cards = c.post("/api/flashcard-sets/from-note",
                    json={"note_id": note["id"], "name": "W3 set"}).json()
     assert cards["seeded"] >= 1
+
+    # Clear folder via PATCH null
+    assert c.patch(f"/api/notes/{note['id']}", json={"folder_id": None}).status_code == 200
+    cleared = c.get("/api/notes", params={"course": cid}).json()["notes"]
+    assert any(n["id"] == note["id"] and n["folder_id"] is None for n in cleared)
 
     recall = c.get("/api/study/daily-recall").json()
     assert recall["mode"] == "daily_recall"
@@ -172,20 +176,21 @@ def test_api_afterhours_surface(client):
     assert grade["generated"] in ("extractive", "ai")
     assert c.get("/api/essay/grades").json()["grades"]
 
-    # Marketing pages
+    # Marketing routes must not exist
     for path in ("/welcome", "/pricing", "/contact"):
-        r = c.get(path)
-        assert r.status_code == 200
-        assert b"afterhours" in r.content
-        assert b"Study smarter" in r.content or b"Pricing" in r.content or b"Contact" in r.content
+        assert c.get(path).status_code == 404
 
 
-def test_marketing_assets_exist():
-    root = Path(__file__).resolve().parents[1] / "static" / "marketing"
-    assert (root / "index.html").is_file()
-    assert (root / "style.css").is_file()
-    assert (root / "app.js").is_file()
-    html = (root / "index.html").read_text(encoding="utf-8")
-    assert "Essay grader" in html
-    assert "$19.99" in html
-    assert "hello@afterhours.study" in html
+def test_static_tree_has_no_marketing_site():
+    static = Path(__file__).resolve().parents[1] / "static"
+    assert not (static / "marketing").exists()
+    # Guard against accidental reintroduction of external product branding.
+    forbidden = ("afterhours",)
+    for path in static.rglob("*"):
+        if not path.is_file():
+            continue
+        if path.suffix.lower() not in {".html", ".js", ".css", ".md"}:
+            continue
+        text = path.read_text(encoding="utf-8", errors="ignore").lower()
+        for token in forbidden:
+            assert token not in text, f"{token!r} found in {path}"

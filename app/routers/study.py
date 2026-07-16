@@ -213,7 +213,7 @@ def api_notes_create(req: NoteReq) -> Dict[str, Any]:
 
 @router.patch("/api/notes/{note_id}")
 def api_notes_update(note_id: int, req: NoteUpdate) -> Dict[str, Any]:
-    data = req.model_dump(exclude_none=True)
+    data = req.model_dump(exclude_unset=True)
     if "session_type" in data:
         st = (data["session_type"] or "").strip().lower()
         if st and st not in notes_workspace.SESSION_TYPES:

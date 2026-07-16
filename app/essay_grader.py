@@ -1,4 +1,4 @@
-"""essay_grader.py - rubric-aware essay feedback (afterhours).
+"""essay_grader.py - rubric-aware essay feedback.
 
 Grades a draft against a pasted rubric. Uses an LLM when configured; otherwise
 an extractive heuristic that still returns a score, originality proxy, and
@@ -102,7 +102,7 @@ def _extractive_grade(essay: str, rubric: str) -> Dict[str, Any]:
         if c["score"] / max(c["max"], 1) < 0.55:
             improvements.append(c["comment"])
         elif c["score"] / max(c["max"], 1) >= 0.75:
-            strengths.append(f"Did well · {c['criterion'][:80]}")
+            strengths.append(c["criterion"][:80])
     if not strengths:
         strengths.append("Structure is present; tighten links back to the question.")
     if not improvements:
