@@ -436,6 +436,7 @@
             <aside class="card notes-side">
               <h3>Folders</h3>
               <div class="row gap wrap">
+                <label for="note-folder-name" class="sr-only">New folder name</label>
                 <input id="note-folder-name" type="text" placeholder="New folder" autocomplete="off" />
                 <button id="note-folder-add" type="button" class="ghost small">Add folder</button>
               </div>
@@ -514,14 +515,18 @@
             <h3>Course tracker</h3>
             <p class="hint">Assignments, quizzes, and exams by week. Add items here; calendar export lives under Export.</p>
             <div class="row gap wrap">
+              <label for="tracker-name" class="sr-only">Assignment name</label>
               <input id="tracker-name" type="text" placeholder="Assignment name" autocomplete="off" />
+              <label for="tracker-due" class="sr-only">Due date</label>
               <input id="tracker-due" type="date" aria-label="Due date" />
+              <label for="tracker-kind" class="sr-only">Kind</label>
               <select id="tracker-kind" aria-label="Kind">
                 <option value="assignment">Assignment</option>
                 <option value="quiz">Quiz</option>
                 <option value="exam">Exam</option>
                 <option value="other">Other</option>
               </select>
+              <label for="tracker-week" class="sr-only">Week</label>
               <input id="tracker-week" type="number" min="1" max="52" placeholder="Week" style="max-width:90px" aria-label="Week" />
               <button id="tracker-add" type="button" class="primary">Add</button>
             </div>
