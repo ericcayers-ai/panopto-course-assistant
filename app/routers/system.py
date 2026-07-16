@@ -8,6 +8,8 @@ from pathlib import Path
 from typing import Any
 from typing import Dict
 from typing import List
+import subprocess
+import sys
 from .. import backup as backup_mod
 from .. import core
 from .. import imageextract
@@ -18,9 +20,25 @@ from .. import settings_store
 from .. import transcribe
 from .. import context
 from ..context import _safe_ai_config
-from ..schemas import PickFileRequest, PickFolderRequest, PickSaveRequest, RestoreReq, SettingsUpdate
+from ..jobs import manager
+from ..schemas import (
+    InstallExtrasReq,
+    PickFileRequest,
+    PickFolderRequest,
+    PickSaveRequest,
+    RestoreReq,
+    SettingsUpdate,
+)
 
 router = APIRouter()
+
+# Only these requirement files may be installed via the in-app extras endpoint.
+EXTRAS_PACKS: Dict[str, str] = {
+    "transcribe": "requirements-transcribe.txt",
+    "tts": "requirements-tts.txt",
+    "browser": "requirements-browser.txt",
+    "stt-quality": "requirements-stt-quality.txt",
+}
 
 
 def _output_writable(output_dir: Path) -> bool:
@@ -232,6 +250,65 @@ def api_setup_preflight() -> Dict[str, Any]:
         "secrets_backend": secrets.get("backend"),
         "remediations": remediations,
     }
+
+
+@router.post("/api/setup/install-extras")
+def api_setup_install_extras(req: InstallExtrasReq) -> Dict[str, Any]:
+    """Install an optional dependency pack into this runtime (job-backed).
+
+    Pack ids map to known requirements files under the app root — never user paths.
+    The ``browser`` pack also runs ``playwright install chromium``.
+    """
+    pack = (req.pack or "").strip().lower()
+    if pack not in EXTRAS_PACKS:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Unknown pack {pack!r}. Choose one of: {', '.join(sorted(EXTRAS_PACKS))}.",
+        )
+    req_file = context.BASE_DIR / EXTRAS_PACKS[pack]
+    if not req_file.is_file():
+        raise HTTPException(
+            status_code=404,
+            detail=f"Requirements file missing: {EXTRAS_PACKS[pack]}",
+        )
+
+    def work(progress):
+        progress("pip install", 0.1)
+        cmd = [sys.executable, "-m", "pip", "install", "-r", str(req_file)]
+        proc = subprocess.run(
+            cmd, capture_output=True, text=True, cwd=str(context.BASE_DIR),
+        )
+        log = ((proc.stdout or "") + (proc.stderr or "")).strip()
+        if proc.returncode != 0:
+            raise RuntimeError(
+                f"pip install failed for {pack} (exit {proc.returncode}).\n{log[-2000:]}"
+            )
+        playwright_ok = None
+        if pack == "browser":
+            progress("playwright chromium", 0.7)
+            pw = subprocess.run(
+                [sys.executable, "-m", "playwright", "install", "chromium"],
+                capture_output=True, text=True, cwd=str(context.BASE_DIR),
+            )
+            playwright_ok = pw.returncode == 0
+            log += "\n" + ((pw.stdout or "") + (pw.stderr or "")).strip()
+            if pw.returncode != 0:
+                raise RuntimeError(
+                    f"playwright install chromium failed (exit {pw.returncode}).\n{log[-2000:]}"
+                )
+        progress("done", 1.0)
+        return {
+            "ok": True,
+            "pack": pack,
+            "requirements": EXTRAS_PACKS[pack],
+            "playwright_chromium": playwright_ok,
+            "log_tail": log[-4000:],
+        }
+
+    job = manager.submit(
+        f"Install extras: {pack}", work, type="install_extras", payload={"pack": pack},
+    )
+    return job.to_dict()
 
 
 @router.post("/api/diagnostics/bundle")

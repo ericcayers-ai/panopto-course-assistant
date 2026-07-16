@@ -183,7 +183,7 @@ def test_health_and_preflight(client):
     h = c.get("/api/health")
     assert h.status_code == 200
     assert h.json()["ok"] is True
-    assert h.json()["version"] == "4.0.0"
+    assert h.json()["version"] == "4.1.0"
 
     p = c.get("/api/setup/preflight")
     assert p.status_code == 200

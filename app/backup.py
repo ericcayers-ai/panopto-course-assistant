@@ -54,6 +54,8 @@ def environment_report(output_dir: Path) -> Dict[str, Any]:
         "secret keyring": "keyring",
         "encryption (cryptography)": "cryptography",
         "GPU (torch)": "torch",
+        "tts (kokoro)": "kokoro",
+        "browser (playwright)": "playwright",
     }.items()}
     missing = [k for k, v in optional.items() if not v]
     return {

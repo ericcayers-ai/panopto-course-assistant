@@ -73,8 +73,26 @@ def build_release(output_dir: Path | None = None) -> Path:
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--output-dir", type=Path, help="Directory for the release ZIP")
+    parser.add_argument(
+        "--portable", action="store_true",
+        help="Also build the Windows portable onedir ZIP (CourseAssistant.exe + runtime)",
+    )
+    parser.add_argument(
+        "--portable-skip-pip", action="store_true",
+        help="With --portable: skip venv install (layout smoke only)",
+    )
     args = parser.parse_args()
-    print(build_release(args.output_dir))
+    archive = build_release(args.output_dir)
+    print(archive)
+    if args.portable:
+        # Import sibling module when invoked as ``python scripts/build_release.py``.
+        import importlib.util
+        portable_path = Path(__file__).resolve().parent / "build_windows_portable.py"
+        spec = importlib.util.spec_from_file_location("build_windows_portable", portable_path)
+        mod = importlib.util.module_from_spec(spec)
+        assert spec and spec.loader
+        spec.loader.exec_module(mod)
+        print(mod.build_portable_zip(args.output_dir, skip_pip=args.portable_skip_pip))
 
 
 if __name__ == "__main__":

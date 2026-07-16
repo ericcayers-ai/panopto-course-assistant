@@ -86,10 +86,21 @@ def _extract_title(raw: str) -> str:
     return ""
 
 
+def _strip_campus_markers(text: str) -> str:
+    t = re.sub(r"\([^)]+\)", " ", text or "")
+    t = re.sub(r"\s*&\s*", " ", t)
+    return re.sub(r"\s+", " ", t).strip()
+
+
 def _extract_course_code(title: str) -> str:
-    # e.g. "COMPX201-26A", "MATHS135-25B", "DATAX121-25A"
-    m = re.search(r"\b([A-Z]{3,6}\d{2,3}(?:-\d{2}[A-Z])?)\b", title or "")
-    return m.group(1) if m else ""
+    # e.g. "COMPX201-26A", "COMPX225-26B (HAM) & (TGA) - …"
+    pat = re.compile(r"\b([A-Z]{3,6}\d{2,3}(?:-\d{2}[A-Z])?)\b")
+    raw = (title or "").upper()
+    for candidate in (_strip_campus_markers(raw), raw):
+        m = pat.search(candidate)
+        if m:
+            return m.group(1)
+    return ""
 
 
 def _extract_sections(raw: str) -> List[str]:

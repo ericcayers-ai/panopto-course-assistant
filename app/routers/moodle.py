@@ -18,16 +18,15 @@ from typing import List
 from urllib.parse import urlparse
 from .. import core
 from .. import courses
-from .. import secrets as secret_store
-from .. import settings_store
 from .. import sources
 from .. import sso_protocol
 from ..imports import moodle_api
 from ..imports import moodle_resources
-from ..imports import moodle_sso
 from ..imports import moodle_web
 from .. import context
-from ..context import _MOODLE_PASSPORT, _audit, _moodle_token_name, _save_api_outline, _sso_provider_label
+from ..context import _MOODLE_PASSPORT, _audit
+from ..jobs import manager
+from .. import moodle_jobs
 from ..schemas import DecodeLaunchTokenReq, FeedRequest, MoodleApiImportReq, MoodleConnectReq, MoodleFetchReq, MoodleRequest, MoodleUrlReq, PanoptoDiscoverReq, SsoCallbackReq
 
 router = APIRouter()
@@ -201,142 +200,39 @@ def api_moodle_sso_poll(request: _Request) -> Dict[str, Any]:
 
 @router.post("/api/moodle/connect")
 def api_moodle_connect(req: MoodleConnectReq) -> Dict[str, Any]:
-    """Connect to a Moodle site through its official mobile web-service API and
-    list the courses you're enrolled in. Authenticate by username+password (where
-    the site allows the token grant) or by pasting a web-service token (SSO sites).
+    """Connect to Moodle via the web-service API and list enrolled courses.
 
-    The token is stored in the local encrypted secrets store keyed by host, so the
-    follow-up import never has to round-trip credentials. Replaces the old
-    browser-cookie / HTML-scraping path with exact, typed course data."""
+    Runs as a background job so progress and logs appear in the Jobs panel.
+    """
+    payload = req.model_dump()
+    host_hint = ""
     try:
-        base = moodle_api.normalize_base_url(req.url)
-    except moodle_api.MoodleApiError as e:
-        raise HTTPException(status_code=400, detail=str(e))
-    host = urlparse(base).hostname or ""
-    token = req.token.strip()
-    try:
-        if not token:
-            if not (req.username and req.password):
-                raise HTTPException(
-                    status_code=400,
-                    detail="Enter your Moodle username and password, or paste a "
-                           "web-service token from the Moodle mobile app.")
-            try:
-                token = moodle_api.fetch_token(base, req.username, req.password)
-            except moodle_api.MoodleApiError:
-                # A generic "invalid login" on an SSO-fronted site usually means
-                # the password grant is disabled, not a wrong password. Detect the
-                # external IdP and steer the user to the browser token flow.
-                provider = moodle_sso.detect_sso(base)
-                if provider:
-                    raise moodle_api.MoodleApiError(
-                        "SSO_REJECTED: This site signs in through "
-                        f"{_sso_provider_label(provider)} - username/password can't be "
-                        "used here. Use ‘Sign in via browser’ below to get your token."
-                    ) from None
-                raise
-        client = moodle_api.MoodleClient(base, token)
-        info = client.site_info()
-        courses_list = client.list_courses(info.get("userid"))
-    except moodle_api.MoodleApiError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        host_hint = urlparse(moodle_api.normalize_base_url(req.url)).hostname or ""
+    except moodle_api.MoodleApiError:
+        pass
+    title = f"Moodle connect{f' ({host_hint})' if host_hint else ''}"
 
-    secret_store.set_secret(_moodle_token_name(host), token, root=context.OUTPUT_DIR)
-    _audit("moodle.connect", target=host, feature="moodle_import_url")
-    from .. import suites
-    paper_codes = suites.detect_paper_codes_from_courses(courses_list)
-    if paper_codes:
-        settings_store.set(context.db, "semester.paper_codes", paper_codes)
-    return {
-        "host": host,
-        "base_url": base,
-        "sitename": info.get("sitename", ""),
-        "fullname": info.get("fullname", ""),
-        "courses": courses_list,
-        "paper_codes": paper_codes,
-    }
+    def work(progress):
+        return moodle_jobs.run_moodle_connect(payload, progress)
+
+    job = manager.submit(title, work, type="moodle_connect", payload=payload)
+    return job.to_dict()
 
 
 @router.post("/api/moodle/api-import")
 def api_moodle_api_import(req: MoodleApiImportReq) -> Dict[str, Any]:
-    """Import one course through the web-service API: fetch the typed content tree,
-    label every item (lecture / document / link / activity) with 100% fidelity,
-    download document files under their exact names, convert them to Markdown, save
-    the outline, and surface lecture feeds for transcription. Requires a prior
-    ``/api/moodle/connect``."""
-    try:
-        base = moodle_api.normalize_base_url(req.url)
-    except moodle_api.MoodleApiError as e:
-        raise HTTPException(status_code=400, detail=str(e))
-    host = urlparse(base).hostname or ""
-    token = secret_store.get_secret(_moodle_token_name(host), root=context.OUTPUT_DIR)
-    if not token:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Not connected to {host or 'this Moodle site'} yet - connect first.")
+    """Import one Moodle course (browser scrape preferred, API fallback).
 
-    client = moodle_api.MoodleClient(base, token)
-    try:
-        model = moodle_api.import_course(client, req.course_id)
-    except moodle_api.MoodleApiError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+    Runs as a background job with staged logs for connect/import progress.
+    """
+    payload = req.model_dump()
+    title = f"Moodle import (course {req.course_id})"
 
-    outline_rel = _save_api_outline(model)
+    def work(progress):
+        return moodle_jobs.run_moodle_import(payload, progress)
 
-    downloaded = {"downloaded": 0, "files": [], "errors": []}
-    converted = None
-    if req.grab_docs and model["documents"]:
-        res_dir = context.OUTPUT_DIR / "_resources"
-        try:
-            downloaded = moodle_api.download_documents(client, model["documents"], res_dir)
-        except moodle_api.MoodleApiError as e:
-            raise HTTPException(status_code=502, detail=f"Document download failed: {e}")
-        if req.convert and downloaded["downloaded"]:
-            converted = core.convert_documents(
-                res_dir, context.OUTPUT_DIR, target="ai", combined=True, keep_images=req.keep_images)
-
-    course_rec = None
-    if req.create_course and (model["course"]["fullname"] or model["course"]["code"]):
-        course_rec = courses.create_course(
-            context.db, name=model["course"]["fullname"] or model["course"]["code"],
-            code=model["course"]["code"])
-        courses.set_active(context.db, course_rec["id"])
-
-    exported = None
-    code = model["course"]["code"]
-    if req.export == "notebooklm":
-        exported = core.export_notebooklm(context.OUTPUT_DIR, combined=True, course=code)
-    elif req.export == "all":
-        exported = core.export_all_sources(context.OUTPUT_DIR, combined=True, course=code)
-
-    _audit("moodle.api_import", target=code or host,
-           detail=f"docs={downloaded['downloaded']} lectures={model['counts']['lectures']}",
-           feature="moodle_import_url")
-
-    from .. import suites
-    paper_codes = suites.detect_paper_codes_from_courses([model["course"]])
-    if paper_codes:
-        existing = settings_store.get(context.db, "semester.paper_codes", []) or []
-        if not isinstance(existing, list):
-            existing = []
-        merged = list(dict.fromkeys([*existing, *paper_codes]))
-        settings_store.set(context.db, "semester.paper_codes", merged)
-
-    return {
-        "course": {**model["course"], "local_course": course_rec},
-        "counts": model["counts"],
-        "panopto_feeds": model["panopto_feeds"] if req.grab_lectures else [],
-        "lectures": model["lectures"] if req.grab_lectures else [],
-        "documents": model["documents"],
-        "links": model["links"],
-        "activities": model["activities"],
-        "resources": downloaded,
-        "converted": converted,
-        "exported": exported,
-        "outline": outline_rel,
-        "keep_images": req.keep_images,
-        "paper_codes": paper_codes,
-    }
+    job = manager.submit(title, work, type="moodle_import", payload=payload)
+    return job.to_dict()
 
 
 @router.get("/api/moodle/capabilities")

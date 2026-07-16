@@ -235,8 +235,8 @@ body {
   padding: var(--space-3) var(--space-5); background: var(--surface);
   border-bottom: 1px solid var(--border); position: sticky; top: 0; z-index: 5;
 }
-.topbar-left { display: flex; align-items: center; gap: var(--space-3); flex: 1; min-width: 0; }
-.topbar-center { flex: 1 1 auto; min-width: 0; display: flex; justify-content: center; }
+.topbar-left { display: flex; align-items: center; gap: var(--space-3); flex: 1; min-width: 0; overflow: hidden; }
+.topbar-center { flex: 1 1 auto; min-width: 0; display: flex; justify-content: center; overflow: hidden; }
 .topbar-right { display: flex; align-items: center; gap: var(--space-3); flex-shrink: 0; }
 .panel-context {
   font-family: var(--font-display); font-size: var(--text-sm); font-weight: 600;
@@ -250,28 +250,47 @@ body {
 .course-switcher {
   font: inherit; font-weight: 600; color: var(--ink); background: var(--surface-2);
   border: 1px solid var(--border); border-radius: var(--radius-pill);
-  padding: 6px 10px; max-width: 220px;
+  padding: 6px 10px; max-width: 220px; min-width: 0; flex-shrink: 1;
 }
 .course-field {
   display: inline-flex; align-items: center; gap: var(--space-2); background: var(--surface-2);
   border: 1px solid var(--border); border-radius: var(--radius-pill); padding: 4px 6px 4px 12px;
+  min-width: 0; flex-shrink: 1; max-width: 100%; overflow: hidden;
 }
+.topbar-left.switcher-visible .course-field { display: none; }
 .course-field:focus-within { box-shadow: var(--focus); }
 .course-label {
   font-size: var(--text-xs); color: var(--muted); white-space: nowrap;
   display: inline-flex; align-items: center; gap: 5px;
 }
 .course-field input {
-  border: none; background: transparent; padding: 4px var(--space-2); min-width: 160px;
+  border: none; background: transparent; padding: 4px var(--space-2); min-width: 0; max-width: 140px;
   font-weight: 600; color: var(--ink); font: inherit;
+  overflow: hidden; text-overflow: ellipsis;
 }
 /* the wrapper shows the ring (see :focus-within) - a second one would double up */
 .course-field input:focus-visible { box-shadow: none; }
 
-.status-bar { font-size: var(--text-xs); color: var(--muted); text-align: right; word-break: break-word; }
+.status-bar {
+  font-size: var(--text-xs); color: var(--muted); text-align: right;
+  display: inline-flex; align-items: center; gap: 6px; max-width: 220px;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
 .status-bar.ok { color: var(--ok); }
 .status-bar.warn { color: var(--warn); }
 .status-bar .ico { width: 13px; height: 13px; vertical-align: -2px; }
+.status-dot {
+  width: 8px; height: 8px; border-radius: 50%; background: var(--muted); flex: none;
+}
+.status-bar.ok .status-dot { background: var(--ok); }
+.status-bar.warn .status-dot { background: var(--warn); }
+.env-card { margin-bottom: var(--space-4); }
+.env-packs { display: flex; flex-wrap: wrap; gap: var(--space-2); margin-top: var(--space-2); }
+.env-pack {
+  display: inline-flex; align-items: center; gap: var(--space-2);
+  background: var(--surface-2); border: 1px solid var(--border);
+  border-radius: var(--radius-sm); padding: 6px 10px; font-size: var(--text-sm);
+}
 
 main { padding: var(--space-5); max-width: 1080px; width: 100%; margin: 0 auto; }
 .panel { display: none; animation: fade var(--dur-base) var(--ease); }
@@ -655,15 +674,37 @@ details.adv-settings[open] > summary { margin-bottom: var(--space-2); }
   #menu-toggle { display: inline-flex; }
   main { padding: var(--space-4); }
   .topbar { flex-wrap: wrap; }
+  .topbar-left { flex-basis: 100%; }
+  .topbar-left.switcher-visible .course-switcher { flex: 1; max-width: none; width: 100%; }
   .topbar-center { order: 3; flex-basis: 100%; justify-content: flex-start; padding-top: var(--space-1); }
   .panel-context { font-size: var(--text-xs); }
   .course-field input { min-width: 110px; }
   .course-label { display: none; }
-  .status-bar { display: none; }
+  .status-bar { max-width: 140px; }
   .nav .tab { min-height: 44px; padding-top: 11px; padding-bottom: 11px; }
   button, .import-switch .seg { min-height: 44px; }
   .export-bundle-grid { grid-template-columns: 1fr; }
   a.tag { min-height: 44px; }
+  .mq-capability-matrix .mq-cap-table { display: none; }
+  .mq-capability-matrix::after {
+    content: "Capability details are listed as cards in Advanced mode on wider screens.";
+    display: block; font-size: var(--text-xs); color: var(--muted);
+  }
+}
+@media (max-width: 640px) {
+  .mq-capability-matrix .mq-cap-table thead { display: none; }
+  .mq-capability-matrix .mq-cap-table,
+  .mq-capability-matrix .mq-cap-table tbody,
+  .mq-capability-matrix .mq-cap-table tr,
+  .mq-capability-matrix .mq-cap-table td {
+    display: block; width: 100%;
+  }
+  .mq-capability-matrix .mq-cap-table tr {
+    border: 1px solid var(--border); border-radius: var(--radius-sm);
+    margin-bottom: var(--space-2); padding: var(--space-2);
+    background: var(--surface-2);
+  }
+  .mq-capability-matrix .mq-cap-table td { padding: 2px 0; }
 }
 
 /* ---- Moodle connect / guided import --------------------------------------- */

@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import importlib
 import json
+import time
 from pathlib import Path
 
 import pytest
@@ -48,6 +49,16 @@ def _fake_get(url):
     return 200, b"%PDF-1.4 fake", "intro.pdf", "application/pdf"
 
 
+def _wait_job(c: TestClient, job_id: str, *, timeout_s: float = 10.0) -> dict:
+    deadline = time.time() + timeout_s
+    while time.time() < deadline:
+        j = c.get(f"/api/jobs/{job_id}").json()
+        if j["status"] in ("done", "error", "failed", "interrupted"):
+            return j
+        time.sleep(0.05)
+    raise AssertionError(f"job {job_id} did not finish in {timeout_s}s")
+
+
 @pytest.fixture()
 def client(tmp_path, monkeypatch):
     monkeypatch.setenv("PANOPTO_OUTPUT", str(tmp_path))
@@ -65,7 +76,9 @@ def test_connect_lists_courses_and_stores_token(client):
         "url": "https://elearn.test/course/view.php?id=77",
         "username": "stu", "password": "pw"})
     assert r.status_code == 200, r.text
-    body = r.json()
+    job = _wait_job(c, r.json()["id"])
+    assert job["status"] == "done", job
+    body = job["result"]
     assert body["host"] == "elearn.test"
     assert body["sitename"] == "Test Uni"
     assert [cc["id"] for cc in body["courses"]] == [77]
@@ -74,9 +87,11 @@ def test_connect_lists_courses_and_stores_token(client):
 def test_import_without_connect_is_rejected(client):
     c, _ = client
     r = c.post("/api/moodle/api-import", json={
-        "url": "https://never.connected/", "course_id": 1})
-    assert r.status_code == 400
-    assert "connect first" in r.json()["detail"].lower()
+        "url": "https://never.connected/", "course_id": 1, "use_browser": False})
+    assert r.status_code == 200
+    job = _wait_job(c, r.json()["id"])
+    assert job["status"] == "error"
+    assert "connect first" in (job.get("error") or "").lower()
 
 
 def test_full_connect_then_import(client):
@@ -85,13 +100,18 @@ def test_full_connect_then_import(client):
     r = c.post("/api/moodle/connect", json={
         "url": "https://elearn.test/", "token": "PASTED"})
     assert r.status_code == 200, r.text
+    connect_job = _wait_job(c, r.json()["id"])
+    assert connect_job["status"] == "done"
 
     # import course 77 - download docs, no markitdown convert (kept hermetic)
     r = c.post("/api/moodle/api-import", json={
         "url": "https://elearn.test/", "course_id": 77,
-        "grab_docs": True, "convert": False, "grab_lectures": True})
+        "grab_docs": True, "convert": False, "grab_lectures": True,
+        "use_browser": False})
     assert r.status_code == 200, r.text
-    body = r.json()
+    job = _wait_job(c, r.json()["id"])
+    assert job["status"] == "done", job
+    body = job["result"]
 
     # labelling fidelity
     assert body["course"]["code"] == "COMPX234"
@@ -115,13 +135,32 @@ def test_full_connect_then_import(client):
 
 def test_create_course_flag_activates_local_course(client):
     c, tmp = client
-    c.post("/api/moodle/connect", json={"url": "https://elearn.test/", "token": "T"})
+    connect = _wait_job(c, c.post("/api/moodle/connect", json={
+        "url": "https://elearn.test/", "token": "T"}).json()["id"])
+    assert connect["status"] == "done"
     r = c.post("/api/moodle/api-import", json={
         "url": "https://elearn.test/", "course_id": 77,
-        "grab_docs": False, "create_course": True})
-    assert r.status_code == 200, r.text
-    local = r.json()["course"]["local_course"]
+        "grab_docs": False, "create_course": True, "use_browser": False})
+    job = _wait_job(c, r.json()["id"])
+    assert job["status"] == "done"
+    local = job["result"]["course"]["local_course"]
     assert local and local["name"].startswith("COMPX234")
     # it is now the active course
     courses_body = c.get("/api/courses").json()
     assert courses_body["active_course"] == local["id"]
+
+
+def test_import_defaults_to_creating_local_course(client):
+    """create_course defaults to True so Moodle import always binds Active course."""
+    c, _ = client
+    connect = _wait_job(c, c.post("/api/moodle/connect", json={
+        "url": "https://elearn.test/", "token": "T"}).json()["id"])
+    assert connect["status"] == "done"
+    r = c.post("/api/moodle/api-import", json={
+        "url": "https://elearn.test/", "course_id": 77,
+        "grab_docs": False, "use_browser": False})
+    job = _wait_job(c, r.json()["id"])
+    assert job["status"] == "done", job
+    local = job["result"]["course"]["local_course"]
+    assert local and local.get("code") == "COMPX234"
+    assert c.get("/api/courses").json()["active_course"] == local["id"]

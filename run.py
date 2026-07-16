@@ -2,7 +2,9 @@
 """Convenience launcher: ``python run.py`` -> http://127.0.0.1:8000
 
 Works regardless of the current working directory (chdirs to its own folder so
-the ``app`` package imports cleanly).
+the ``app`` package imports cleanly). Portable ZIP layouts set ``CA_ROOT`` /
+``CA_PORTABLE`` so the library directory resolves beside the EXE or under
+``%LOCALAPPDATA%\\CourseAssistant``.
 """
 import os
 import socket
@@ -10,8 +12,11 @@ import sys
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
-os.chdir(str(HERE))
-sys.path.insert(0, str(HERE))
+# Portable onedir: launcher may set CA_ROOT to the ZIP root (EXE + runtime + app).
+ROOT = Path(os.environ.get("CA_ROOT", HERE)).expanduser().resolve()
+os.chdir(str(ROOT))
+sys.path.insert(0, str(ROOT))
+os.environ.setdefault("CA_ROOT", str(ROOT))
 
 import uvicorn  # noqa: E402  (after sys.path setup)
 

@@ -32,7 +32,37 @@ from .integrations import state as sync_state
 from .jobs import manager
 from .schemas import AnkiSyncReq, NotionSyncReq
 
-BASE_DIR = Path(__file__).resolve().parent.parent
+def _detect_base_dir() -> Path:
+    """Resolve the application root for source and portable/frozen layouts."""
+    env_root = os.environ.get("CA_ROOT", "").strip()
+    if env_root:
+        return Path(env_root).expanduser().resolve()
+    # Portable ZIP: runtime\\python.exe runs run.py with cwd = ZIP root.
+    here = Path(__file__).resolve().parent.parent
+    if (here / "app").is_dir() and (here / "static").is_dir():
+        return here
+    return here
+
+
+def _default_output_dir(base: Path) -> Path:
+    """Writable library directory: beside the app, else LOCALAPPDATA."""
+    if os.environ.get("PANOPTO_OUTPUT"):
+        return Path(os.environ["PANOPTO_OUTPUT"]).expanduser().resolve()
+    candidate = (base / "transcripts").resolve()
+    try:
+        candidate.mkdir(parents=True, exist_ok=True)
+        probe = candidate / ".write_probe"
+        probe.write_text("ok", encoding="utf-8")
+        probe.unlink(missing_ok=True)
+        return candidate
+    except Exception:
+        pass
+    local = os.environ.get("LOCALAPPDATA") or os.environ.get("HOME") or str(base)
+    fallback = Path(local) / "CourseAssistant" / "transcripts"
+    return fallback.resolve()
+
+
+BASE_DIR = _detect_base_dir()
 
 # Single version source — keep in sync with app/__init__.py only via import.
 from . import __version__ as APP_VERSION  # noqa: E402
@@ -45,9 +75,10 @@ db: Any = None
 
 def init() -> None:
     """(Re)bind app-wide state from the environment. Idempotent."""
-    global STATIC_DIR, OUTPUT_DIR, db
-    STATIC_DIR = Path(os.environ.get("CA_STATIC_DIR", BASE_DIR / "static"))
-    OUTPUT_DIR = Path(os.environ.get("PANOPTO_OUTPUT", BASE_DIR / "transcripts")).resolve()
+    global BASE_DIR, STATIC_DIR, OUTPUT_DIR, db
+    BASE_DIR = _detect_base_dir()
+    STATIC_DIR = Path(os.environ.get("CA_STATIC_DIR", BASE_DIR / "static")).resolve()
+    OUTPUT_DIR = _default_output_dir(BASE_DIR)
     core.ensure_dir(OUTPUT_DIR)
     # Durable SQLite store lives alongside the library. Re-initialised on reload
     # so the tests can rebind everything to a fresh output directory.

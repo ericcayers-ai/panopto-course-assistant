@@ -74,7 +74,7 @@
         <button class="tab" data-tab="study">
           <svg class="ico" aria-hidden="true"><use href="#i-study"/></svg> Study
         </button>
-        <button class="tab" data-tab="semester">
+        <button class="tab" data-tab="semester" data-adv-only>
           <svg class="ico" aria-hidden="true"><use href="#i-cap"/></svg> Semester
         </button>
         <button class="tab" data-tab="export">
@@ -119,14 +119,14 @@
             <svg class="ico" aria-hidden="true"><use href="#i-plus"/></svg>
             <span class="sr-only">Create a new course</span>
           </button>
-          <label class="course-field" for="course-input">
+          <label class="course-field" for="course-input" id="course-field-wrap" data-adv-only>
             <span class="course-label">
-              <svg class="ico" aria-hidden="true"><use href="#i-cap"/></svg> Course
+              <svg class="ico" aria-hidden="true"><use href="#i-cap"/></svg> Course tag
             </span>
-            <input type="text" id="course-input" placeholder="Course name" autocomplete="off"
+            <input type="text" id="course-input" placeholder="Legacy tag" autocomplete="off"
                    aria-describedby="course-help" />
           </label>
-          <span id="course-help" class="sr-only">Imports and exports are stored against this course.</span>
+          <span id="course-help" class="sr-only">Active course is chosen from the switcher. Legacy free-text tag is Advanced-only.</span>
         </div>
         <div class="topbar-center">
           <div id="panel-context" class="panel-context" aria-live="polite"></div>
@@ -135,7 +135,10 @@
           <button id="shortcuts-help" class="ghost small icon-only" type="button" aria-label="Keyboard shortcuts">
             <svg class="ico" aria-hidden="true"><use href="#i-info"/></svg>
           </button>
-          <div id="status-bar" class="status-bar" role="status">Checking environment…</div>
+          <div id="status-bar" class="status-bar" role="status" title="Environment status">
+            <span class="status-dot off" aria-hidden="true"></span>
+            <span id="status-bar-text">Checking…</span>
+          </div>
         </div>
       </header>
 
@@ -144,12 +147,18 @@
         <section id="home" class="panel active" aria-labelledby="home-h">
           <div class="hero">
             <h1 id="home-h">Course workspace</h1>
-            <p class="lead">Import lecture recordings, slides, documents, and Moodle or Notion exports.
-              They are transcribed or converted to text, indexed into one searchable library, and exported
-              as study material for NotebookLM, Anki, or Notion.</p>
+            <p class="lead">Connect Moodle, transcribe lectures in Speech, then study and export from one library.</p>
           </div>
 
-          <div id="dash-env" class="env-strip"></div>
+          <div id="dash-env" class="env-strip" aria-label="Environment"></div>
+          <div id="env-card" class="card env-card" aria-labelledby="env-card-h">
+            <div class="getting-started-head">
+              <h2 id="env-card-h">Environment</h2>
+              <button type="button" id="copy-diagnostics-home" class="ghost small">Copy diagnostics</button>
+            </div>
+            <p class="hint">Optional packs install into this app’s Python runtime. Speech and Moodle share the same status.</p>
+            <div id="env-packs" class="env-packs"></div>
+          </div>
 
           <div id="getting-started" class="card getting-started hidden" aria-labelledby="gs-h">
             <div class="getting-started-head">
@@ -157,22 +166,22 @@
               <button id="getting-started-dismiss" class="ghost small" type="button">Dismiss</button>
             </div>
             <ol class="getting-started-steps">
-              <li>Set your <strong>course name</strong> in the top bar — imports and exports are tagged to it.</li>
-              <li><button type="button" class="link-btn" id="gs-goto-moodle">Import a Moodle course</button> to pull slides, documents, and lecture recordings.</li>
-              <li>Paste the Panopto podcast link to transcribe recordings, then browse everything in <strong>Library</strong>.</li>
-              <li>Use <strong>Notes</strong> for lecture/tutorial/lab notes, <strong>Study</strong> for recall and quizzes, and <strong>Export</strong> for NotebookLM packs and Anki decks.</li>
+              <li>Create or pick an <strong>active course</strong> in the top bar (optional paper code).</li>
+              <li><button type="button" class="link-btn" id="gs-goto-moodle">Import a Moodle course</button> for slides, documents, and lecture feeds.</li>
+              <li>Open <strong>Speech</strong> to transcribe recordings, then browse everything in <strong>Library</strong>.</li>
+              <li>Use <strong>Notes</strong>, <strong>Study</strong>, and <strong>Export</strong> for packs and Anki decks.</li>
             </ol>
             <p class="hint">Press <kbd>?</kbd> for shortcuts · <kbd>Ctrl</kbd>+<kbd>K</kbd> opens the command palette.</p>
           </div>
 
           <h2 class="section-title">How material moves through the app</h2>
           <div class="pipeline">
-            <button class="stage" data-goto="import">
+            <button class="stage" data-goto="moodle-quick">
               <span class="stage-n">01</span>
               <span class="stage-title">
-                <svg class="ico" aria-hidden="true"><use href="#i-import"/></svg> Import
+                <svg class="ico" aria-hidden="true"><use href="#i-book"/></svg> Moodle
               </span>
-              <span class="stage-desc">Recordings, documents, and course exports.</span>
+              <span class="stage-desc">Connect, import the course, load lecture feeds.</span>
             </button>
             <button class="stage" data-goto="library">
               <span class="stage-n">02</span>
@@ -220,8 +229,8 @@
             <svg class="ico ico-lg" aria-hidden="true"><use href="#i-import"/></svg>
             <h2 id="import-h">Import materials</h2>
           </div>
-          <p class="panel-intro">Everything imported here lands in the <strong>Library</strong> and becomes
-            available to every export and study tool. Choose a source.</p>
+          <p class="panel-intro">Documents and Notion exports land in the <strong>Library</strong>. For Moodle
+            course feeds use <strong>Moodle</strong>; for lecture transcription use <strong>Speech</strong>.</p>
 
           <div class="import-switch" role="tablist" aria-label="Import source">
             <button class="seg active" data-import="documents" role="tab" aria-selected="true" aria-controls="import-documents">Documents</button>
@@ -229,8 +238,7 @@
             <button class="seg" data-import="browse" role="tab" aria-selected="false" aria-controls="import-browse">Browse files</button>
           </div>
 
-          <p class="hint">Lecture recordings arrive with the course. Use <strong>Moodle</strong> in the sidebar
-            to detect and transcribe them alongside the course documents.</p>
+          <p class="hint">This panel is for documents. Moodle pulls course materials and feeds; Speech runs STT.</p>
 
           <!-- DOCUMENTS -->
           <div id="import-documents" class="import-pane active" role="tabpanel">
@@ -710,7 +718,7 @@
                 <h3 class="section-title">Paper outlines</h3>
                 <div class="row gap">
                   <label class="sr-only" for="sem-paper-q">Paper code</label>
-                  <input id="sem-paper-q" class="grow" type="search" placeholder="Paper code, e.g. COMPX202"
+                  <input id="sem-paper-q" class="grow" type="search" placeholder="Paper code"
                          autocomplete="off" aria-describedby="sem-paper-help" />
                   <button id="sem-paper-search" class="primary" type="button">Search</button>
                   <button id="sem-paper-fetch" class="ghost" type="button">Fetch outline</button>
@@ -741,7 +749,7 @@
                 <h3 class="section-title">Moodle announcements</h3>
                 <p class="hint">Downloads forum and news posts only. Not added to your task schedule.</p>
                 <label for="sem-moodle-url">Moodle course URL</label>
-                <input id="sem-moodle-url" type="url" placeholder="https://elearn.waikato.ac.nz/course/view.php?id=…" />
+                <input id="sem-moodle-url" type="url" placeholder="https://moodle.example.edu/course/view.php?id=…" />
                 <label for="sem-moodle-cookies">Session cookies</label>
                 <textarea id="sem-moodle-cookies" rows="2" placeholder="Paste browser cookies"></textarea>
                 <button id="sem-moodle-fetch" class="ghost" type="button">Download announcements</button>
@@ -811,7 +819,7 @@
             <div id="suite-results" class="results" role="status" aria-live="polite"></div>
           </div>
 
-          <details class="card feature-card" id="export-more-tools">
+          <details class="card feature-card" id="export-more-tools" data-adv-only>
             <summary><strong>More export tools</strong> — AI packs, flashcards, bundles, assessment calendar</summary>
             <div style="margin-top:12px" class="export-more-stack">
 
@@ -1111,7 +1119,7 @@
                 <button type="button" id="stt-transcribe" class="primary">Transcribe</button>
               </div>
 
-              <div class="mq-grab" role="group" aria-labelledby="stt-live-label" style="margin-top:12px">
+              <div class="mq-grab" role="group" aria-labelledby="stt-live-label" style="margin-top:12px" data-adv-only>
                 <span class="toggles-label" id="stt-live-label">Live mic:</span>
                 <button type="button" id="stt-live-start" class="ghost small">Start</button>
                 <button type="button" id="stt-live-pause" class="ghost small" disabled>Pause</button>
@@ -1202,18 +1210,19 @@
             <svg class="ico ico-lg" aria-hidden="true"><use href="#i-book"/></svg>
             <h2 id="mq-h">Import a Moodle course</h2>
           </div>
-          <p class="panel-intro">Connect to your Moodle site and pick a course. Choose <strong>API</strong>
-            (recommended) for exact web-service data, or <strong>Browser scrape</strong> when you need forums,
-            announcements, and Panopto pages the API cannot reach.</p>
+          <p class="panel-intro">Connect to your Moodle site and pick a course. Choose <strong>Browser scrape</strong>
+            (recommended) for forums, announcements, Panopto pages, and calendar discovery, or <strong>API</strong>
+            for exact web-service data when scrape is not needed.</p>
 
           <div class="card mq-mode-card">
             <div class="row" role="group" aria-label="Moodle import mode">
-              <button type="button" class="export-bundle active" id="mq-mode-api" data-mq-mode="api"
-                      aria-pressed="true"><strong>API</strong><span>Recommended</span></button>
-              <button type="button" class="export-bundle" id="mq-mode-browser" data-mq-mode="browser"
-                      aria-pressed="false"><strong>Browser scrape</strong><span>Complete coverage</span></button>
+              <button type="button" class="export-bundle active" id="mq-mode-browser" data-mq-mode="browser"
+                      aria-pressed="true"><strong>Browser scrape</strong><span>Recommended</span></button>
+              <button type="button" class="export-bundle" id="mq-mode-api" data-mq-mode="api"
+                      aria-pressed="false"><strong>API</strong><span>Web-service fallback</span></button>
             </div>
-            <div id="mq-capability-matrix" class="mq-capability-matrix" role="region" aria-label="Capability matrix"></div>
+            <div id="mq-capability-matrix" class="mq-capability-matrix" role="region" aria-label="Capability matrix"
+                 data-adv-only></div>
           </div>
 
           <!-- STEP 1 - CONNECT -->
@@ -1221,8 +1230,15 @@
             <div class="mq-step-head"><span class="mq-num" aria-hidden="true">1</span><h3>Connect to Moodle</h3></div>
             <p class="hint" id="mq-url-help">Enter your Moodle site, or any course link on it.</p>
             <label class="sr-only" for="mq-url">Moodle site URL</label>
-            <input type="text" id="mq-url" placeholder="https://elearn.waikato.ac.nz" autocomplete="off"
+            <input type="text" id="mq-url" placeholder="https://moodle.example.edu" autocomplete="off"
                    aria-describedby="mq-url-help" />
+
+            <details class="mq-advanced-cookies" data-adv-only>
+              <summary class="hint">Session cookies (for browser scrape)</summary>
+              <label for="mq-cookies">Paste browser cookies</label>
+              <textarea id="mq-cookies" rows="2" placeholder="MoodleSession=… or full Cookie header"></textarea>
+              <p class="hint">Optional but recommended for browser mode. Copy from your browser dev tools while logged in.</p>
+            </details>
 
             <button id="mq-launch-sso" class="primary mq-sso-btn" type="button">
               Sign in with Moodle <svg class="ico" aria-hidden="true"><use href="#i-external"/></svg>
@@ -1239,10 +1255,11 @@
             <div id="mq-course-pick" class="hidden">
               <label class="mq-course-field" for="mq-course-select">
                 <span class="course-label">
-                  <svg class="ico" aria-hidden="true"><use href="#i-cap"/></svg> Course
+                  <svg class="ico" aria-hidden="true"><use href="#i-book"/></svg> Moodle course
                 </span>
                 <select id="mq-course-select"></select>
               </label>
+              <p class="hint">Import creates or activates the matching <strong>Active course</strong> in the top bar (with paper code when detected).</p>
 
               <div class="mq-grab" role="group" aria-labelledby="mq-include-label">
                 <span class="toggles-label" id="mq-include-label">Include:</span>
@@ -1256,15 +1273,14 @@
             <div id="mq-import-result" class="results"></div>
           </div>
 
-          <!-- STEP 2 - LECTURE RECORDINGS -->
+          <!-- STEP 2 - LECTURE RECORDINGS (thin handoff to Speech) -->
           <div class="card mq-step hidden" id="mq-step-transcribe">
             <div class="mq-step-head"><span class="mq-num" aria-hidden="true">2</span><h3>Lecture recordings</h3></div>
-            <p class="hint" id="mq-recommend" role="status">Determining the recommended transcription settings for this computer…</p>
+            <p class="hint" id="mq-recommend" role="status">Load the Panopto feed, then transcribe in Speech (one settings home).</p>
 
             <div class="mq-panopto">
-              <p class="hint" id="mq-panopto-help">Recordings live in the course's <strong>Panopto block</strong>,
-                which the Moodle API cannot read. In that block, under <strong>Podcast feeds</strong>, right-click
-                <strong>Video podcast</strong>, choose <em>Copy link address</em>, and paste it below.</p>
+              <p class="hint" id="mq-panopto-help">Recordings live in the course's <strong>Panopto block</strong>.
+                Under <strong>Podcast feeds</strong>, copy the <strong>Video podcast</strong> link and paste it below.</p>
               <div class="row">
                 <label class="sr-only" for="mq-panopto-url">Panopto podcast RSS link</label>
                 <input type="text" id="mq-panopto-url" autocomplete="off" aria-describedby="mq-panopto-help"
@@ -1275,42 +1291,14 @@
 
             <div id="mq-feeds" class="results"></div>
 
-            <div class="mq-grab" role="group" aria-labelledby="mq-transcribe-label">
-              <span class="toggles-label" id="mq-transcribe-label">When transcribing:</span>
-              <label class="toggle"><input type="checkbox" id="mq-make-transcript" checked /> Produce a transcript for each recording</label>
-              <label class="toggle"><input type="checkbox" id="mq-overwrite" /> Overwrite existing transcripts</label>
-            </div>
-
-            <details class="adv-settings">
-              <summary>Advanced transcription settings</summary>
-              <p class="hint">Leave a field on "Recommended" to use the settings detected for this computer.</p>
-              <div class="grid">
-                <label for="mq-adv-engine">Engine <select id="mq-adv-engine"></select></label>
-                <label for="mq-adv-model">Model
-                  <select id="mq-adv-model">
-                    <option value="">Recommended</option>
-                    <option value="tiny">tiny (fastest)</option>
-                    <option value="base">base</option>
-                    <option value="small">small</option>
-                    <option value="medium">medium</option>
-                    <option value="large">large (most accurate)</option>
-                  </select>
-                </label>
-                <label for="mq-adv-language">Language <input type="text" id="mq-adv-language" placeholder="Recommended (en)" /></label>
-                <label for="mq-adv-device">Device
-                  <select id="mq-adv-device">
-                    <option value="">Recommended</option>
-                    <option value="auto">Automatic</option>
-                    <option value="cpu">CPU</option>
-                    <option value="cuda">GPU (CUDA)</option>
-                  </select>
-                </label>
-              </div>
-            </details>
+            <label class="toggle" data-adv-only>
+              <input type="checkbox" id="mq-overwrite" /> Overwrite existing transcripts when queueing
+            </label>
+            <p class="hint" data-adv-only>Queue now uses Speech’s current profile, language, and caption-first settings.</p>
 
             <div class="row">
-              <button id="mq-autotranscribe" class="primary">Transcribe all recordings</button>
-              <span class="muted small">Downloads audio only; video is fetched later if you export subtitles.</span>
+              <button id="mq-open-speech" class="primary" type="button">Transcribe in Speech…</button>
+              <button id="mq-autotranscribe" class="ghost" type="button">Queue now</button>
             </div>
           </div>
 

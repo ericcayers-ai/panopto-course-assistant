@@ -384,6 +384,7 @@ class MoodleConnectReq(BaseModel):
     username: str = ""                 # for login/token.php token grant
     password: str = ""
     token: str = ""                    # …or paste a mobile web-service token (SSO sites)
+    cookies: str = ""                  # optional browser cookies for calendar discovery
 
 class MoodleApiImportReq(BaseModel):
     url: str                           # site or course URL (host -> stored token)
@@ -392,8 +393,15 @@ class MoodleApiImportReq(BaseModel):
     grab_docs: bool = True             # download + convert document files
     convert: bool = True               # convert downloaded files to Markdown
     keep_images: bool = True           # attach images to converted docs
-    create_course: bool = False        # create + activate a local course from the title
+    create_course: bool = True         # create/activate a local course from Moodle title+code
     export: str = ""                   # ""|"notebooklm"|"all" - also export after
+    use_browser: bool = True           # prefer browser/cookie scrape; API fallback
+    cookies: str = ""                  # browser session cookies for scrape path
+
+
+class InstallExtrasReq(BaseModel):
+    """Install an optional dependency pack into the running Python environment."""
+    pack: str = ""  # transcribe | tts | browser | stt-quality
 
 class FolderImportReq(BaseModel):
     path: str

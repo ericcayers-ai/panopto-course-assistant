@@ -12,7 +12,17 @@ A **Python / FastAPI** backend with a plain **HTML + JavaScript** frontend (no
 build step), light/dark themes, and everything under your control on
 `127.0.0.1` — **no lecture audio leaves your machine**.
 
-Current release: **v4.0.0**.
+Current release: **v4.1.0**.
+
+## What's new in v4.1.0
+
+**Navigation, courses, Speech home, one-click Windows EXE.** Simple mode hides
+Semester and advanced STT/export chrome. Home pipeline starts with Moodle.
+Active course is switcher-first (Moodle import creates/activates a DB course with
+paper code). Transcription settings live only in **Speech**; Moodle step 2 is a
+thin handoff. Home **Environment** installs optional packs via
+`POST /api/setup/install-extras`. Windows release ZIP includes a portable onedir
+`CourseAssistant.exe` + embedded runtime (extras install into that runtime).
 
 ## What's new in v4.0.0
 
@@ -31,6 +41,7 @@ panel is **Transcribe | Read aloud** (Kokoro TTS).
 | Speakers (pyannote) | `pip install -r requirements-stt-speakers.txt` |
 | Live (Moonshine) | `pip install -r requirements-stt-live.txt` |
 | Specialist (FireRed / Omnilingual) | `pip install -r requirements-stt-specialist.txt` |
+| In-app (any pack) | Home → Environment → Install |
 
 Model weights stay in a local cache — never in git or release ZIPs. Details:
 [docs/STT.md](docs/STT.md). Health: `GET /api/health`; setup:

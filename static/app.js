@@ -296,7 +296,12 @@ function initLevel() {
   $("level-toggle")?.addEventListener("click", () => {
     const next = document.body.dataset.level === "simple" ? "advanced" : "simple";
     applyLevel(next);
-    toast(next === "advanced" ? "Advanced mode on — Semester and extra options are visible." : "Simple mode on — advanced panels are hidden.", "info");
+    toast(
+      next === "advanced"
+        ? "Advanced mode on — Semester, capability matrix, cookies, and STT extras are visible."
+        : "Simple mode on — Semester and advanced STT/export options are hidden.",
+      "info",
+    );
   });
 }
 
@@ -318,9 +323,9 @@ const TAB_LABELS = {
 function updatePanelContext(name) {
   const ctx = $("panel-context");
   if (!ctx) return;
-  const course = currentCourse();
   const section = TAB_LABELS[name] || name;
-  ctx.textContent = course ? `${section} · ${course}` : section;
+  ctx.textContent = section;
+  const course = currentCourse();
   document.title = course ? `${section} — ${course}` : `${section} — Course Assistant`;
 }
 
@@ -490,13 +495,14 @@ async function loadDashboard() {
     const STATE_ICON = { on: "check", off: "x", warn: "alert" };
     const pill = (label, state) => el("span", { class: "env-pill" }, [
       icon(STATE_ICON[state] || "info", { cls: "state-ico " + state }), label]);
-    const engines = Object.entries(s.engines).filter(([, v]) => v).map(([k]) => k);
+    const engines = Object.entries(s.engines || {}).filter(([, v]) => v).map(([k]) => k);
     env.appendChild(pill(engines.length ? `Transcription: ${engines.join(", ")}` : "Transcription: not installed",
       engines.length ? "on" : "off"));
     env.appendChild(pill(s.cuda ? "GPU: CUDA" : "GPU: CPU only", s.cuda ? "on" : "warn"));
     env.appendChild(pill(s.markitdown ? "Documents: ready" : "Documents: install markitdown",
       s.markitdown ? "on" : "off"));
   }
+  await renderEnvPacks();
   if (stats) {
     try {
       const data = await api("/api/transcripts");
@@ -507,7 +513,7 @@ async function loadDashboard() {
         el("div", { class: "num", text: String(num) }), el("div", { class: "lbl", text: lbl })]);
       stats.appendChild(tile(data.items.length, "transcripts"));
       stats.appendChild(tile(fmtCount, "output files"));
-      stats.appendChild(tile(State.lectures.length, "lectures loaded"));
+      stats.appendChild(tile(State.lectures.length || (State.mqRecordings || []).length, "lectures loaded"));
       const gs = $("getting-started");
       if (gs) {
         const show = !recall("gs-dismissed") && data.items.length === 0;
@@ -517,39 +523,101 @@ async function loadDashboard() {
   }
 }
 
+const ENV_PACK_DEFS = [
+  { id: "transcribe", label: "Transcription", hint: "faster-whisper + markitdown" },
+  { id: "tts", label: "Read aloud (TTS)", hint: "Kokoro TTS" },
+  { id: "browser", label: "Browser scrape", hint: "Playwright Chromium" },
+  { id: "stt-quality", label: "STT quality", hint: "Granite / Qwen engines" },
+];
+
+async function renderEnvPacks() {
+  const host = $("env-packs");
+  if (!host) return;
+  clear(host);
+  let preflight = null;
+  let env = null;
+  try { preflight = await api("/api/setup/preflight"); } catch (_) { /* optional */ }
+  try { env = await api("/api/environment"); } catch (_) { /* optional */ }
+  const s = State.status || {};
+  const packs = (preflight && preflight.packs) || {};
+  const opt = (env && env.optional) || {};
+  const optVal = (substr) => {
+    for (const [k, v] of Object.entries(opt)) {
+      if (k.toLowerCase().includes(substr)) return !!v;
+    }
+    return false;
+  };
+  const readyMap = {
+    transcribe: !!s.any_engine || !!packs.base,
+    tts: optVal("kokoro") || optVal("tts"),
+    browser: optVal("playwright") || optVal("browser"),
+    "stt-quality": !!packs.quality,
+  };
+
+  for (const def of ENV_PACK_DEFS) {
+    const ok = !!readyMap[def.id];
+    const row = el("div", { class: "env-pack" }, [
+      icon(ok ? "check" : "alert", { cls: "state-ico " + (ok ? "on" : "off") }),
+      el("span", { text: def.label + (ok ? " · ready" : " · missing") }),
+    ]);
+    if (!ok) {
+      row.appendChild(el("button", {
+        class: "small", type: "button", text: "Install",
+        title: def.hint,
+        onclick: () => installExtrasPack(def.id),
+      }));
+    }
+    host.appendChild(row);
+  }
+}
+
+async function installExtrasPack(pack) {
+  try {
+    const job = await postJSON("/api/setup/install-extras", { pack });
+    toast(`Installing ${pack}… track progress in Jobs.`, "ok");
+    showTab("jobs");
+    startJobsPolling();
+    return job;
+  } catch (e) {
+    toastError(e);
+  }
+}
+
+$("copy-diagnostics-home")?.addEventListener("click", async () => {
+  try {
+    const bundle = await postJSON("/api/diagnostics/bundle", {});
+    await navigator.clipboard.writeText(bundle.text || JSON.stringify(bundle, null, 2));
+    toast("Diagnostics copied", "ok");
+  } catch (err) {
+    toast("Could not copy diagnostics: " + errorText(err), "err");
+  }
+});
+
 // ---- environment status ---------------------------------------------------
 
 async function loadStatus() {
   const bar = $("status-bar");
+  const barText = $("status-bar-text");
   try {
     const s = await api("/api/status");
     State.status = s;
-    const engines = Object.entries(s.engines).filter(([, v]) => v).map(([k]) => k);
-    const parts = [
-      engines.length ? `engines: ${engines.join(", ")}` : "no transcription engine installed",
-      s.cuda ? "GPU: CUDA" : "GPU: none (CPU)",
-      s.markitdown ? "PDF→MD: ready" : "PDF→MD: install markitdown",
-      `output → ${s.output_dir}`,
-    ];
-    bar.textContent = parts.join("   •   ");
-    bar.className = "status-bar " + (s.any_engine ? "ok" : "warn");
-    // Attach a one-shot "Copy diagnostics" affordance without cluttering the bar forever.
-    if (!$("copy-diagnostics-btn")) {
-      const btn = el("button", {
-        id: "copy-diagnostics-btn", class: "ghost small",
-        text: "Copy diagnostics", title: "Copy local setup info (no secrets)",
-      });
-      btn.addEventListener("click", async () => {
-        try {
-          const bundle = await postJSON("/api/diagnostics/bundle", {});
-          const text = bundle.text || JSON.stringify(bundle, null, 2);
-          await navigator.clipboard.writeText(text);
-          toast("Diagnostics copied", "ok");
-        } catch (err) {
-          toast("Could not copy diagnostics: " + errorText(err), "err");
-        }
-      });
-      bar.parentElement?.appendChild(btn);
+    const engines = Object.entries(s.engines || {}).filter(([, v]) => v).map(([k]) => k);
+    const short = s.any_engine
+      ? (engines[0] || "STT ready") + (s.cuda ? " · GPU" : " · CPU")
+      : "STT missing";
+    if (barText) barText.textContent = short;
+    else if (bar) bar.textContent = short;
+    if (bar) {
+      bar.className = "status-bar " + (s.any_engine ? "ok" : "warn");
+      bar.title = [
+        engines.length ? `engines: ${engines.join(", ")}` : "no transcription engine",
+        s.cuda ? "GPU: CUDA" : "GPU: CPU",
+        s.markitdown ? "docs: ready" : "docs: markitdown missing",
+        `output → ${s.output_dir}`,
+      ].join(" · ");
+      if (!bar.querySelector(".status-dot")) {
+        bar.insertBefore(el("span", { class: "status-dot", "aria-hidden": "true" }), bar.firstChild);
+      }
     }
 
     // engine dropdown (only present in the legacy manual-transcribe UI, if any)
@@ -671,6 +739,7 @@ const Courses = { list: [], active: null };
 
 async function loadCourses() {
   const sel = $("course-switcher");
+  const topbarLeft = document.querySelector(".topbar-left");
   if (!sel) return;
   let data;
   try { data = await api("/api/courses"); } catch (_) { return; }
@@ -679,9 +748,16 @@ async function loadCourses() {
   clear(sel);
   if (!Courses.list.length) {
     sel.classList.add("hidden");
+    topbarLeft?.classList.remove("switcher-visible");
+    if (!recall("course-first-run-asked")) {
+      remember("course-first-run-asked", "1");
+      // First-run: offer to create an Active course (name + optional paper code).
+      setTimeout(() => createCourse({ firstRun: true }), 400);
+    }
     return;
   }
   sel.classList.remove("hidden");
+  topbarLeft?.classList.add("switcher-visible");
   for (const c of Courses.list) {
     const label = (c.code ? c.code + " - " : "") + c.name + (c.archived ? " (archived)" : "");
     sel.appendChild(el("option", { value: String(c.id), text: label }));
@@ -706,11 +782,58 @@ async function activateCourse(id) {
   } catch (e) { toastError(e); }
 }
 
-async function createCourse() {
-  const name = await promptModal("New course name:", "e.g. COMPX234 - Networks");
-  if (!name) return;
+function createCourseModal({ firstRun = false } = {}) {
+  return new Promise((resolve) => {
+    openModal((box, close) => {
+      const nameInp = el("input", {
+        type: "text", class: "modal-input", autocomplete: "off",
+        placeholder: "e.g. Networks — Spring 2026",
+      });
+      const codeInp = el("input", {
+        type: "text", class: "modal-input", autocomplete: "off",
+        placeholder: "Optional paper code (e.g. COMPX234-26B)",
+      });
+      const commit = () => {
+        const name = nameInp.value.trim();
+        if (!name) { toast("Enter a course name.", "warn"); return; }
+        close();
+        resolve({ name, code: codeInp.value.trim() });
+      };
+      nameInp.addEventListener("keydown", (e) => { if (e.key === "Enter") codeInp.focus(); });
+      codeInp.addEventListener("keydown", (e) => { if (e.key === "Enter") commit(); });
+      box.append(
+        el("p", { class: "modal-label",
+          text: firstRun ? "Create your first course" : "New course" }),
+        el("p", { class: "hint",
+          text: "The Active course tags imports, Speech jobs, and exports. Paper codes feed Semester sync." }),
+        nameInp,
+        codeInp,
+        el("div", { class: "modal-actions" }, [
+          el("button", { text: "Create", onclick: commit }),
+          el("button", { class: "ghost", text: firstRun ? "Skip for now" : "Cancel",
+            onclick: () => { close(); resolve(null); } }),
+        ]),
+      );
+      setTimeout(() => nameInp.focus(), 0);
+    }, { onDismiss: () => resolve(null) });
+  });
+}
+
+async function createCourse(opts = {}) {
+  const values = await createCourseModal(opts);
+  if (!values) return;
   try {
-    const c = await postJSON("/api/courses", { name });
+    const c = await postJSON("/api/courses", { name: values.name, code: values.code || "" });
+    if (values.code) {
+      applyDetectedPaperCodes([values.code]);
+      try {
+        const prefs = await api("/api/settings");
+        const existing = Array.isArray(prefs?.["semester.paper_codes"])
+          ? prefs["semester.paper_codes"] : [];
+        const merged = [...new Set([...existing, values.code])];
+        await postJSON("/api/settings", { values: { "semester.paper_codes": merged } }, "PUT");
+      } catch (_) { /* best-effort */ }
+    }
     await loadCourses();
     await activateCourse(c.id);
   } catch (e) { toastError(e); }
@@ -3139,7 +3262,7 @@ $("mq-launch-sso")?.addEventListener("click", () => {
   try {
     base = new URL(/^https?:\/\//i.test(raw) ? raw : "https://" + raw);
   } catch (_) {
-    toast("Enter a valid Moodle URL first (e.g. https://elearn.waikato.ac.nz).", "warn");
+    toast("Enter a valid Moodle URL first (e.g. https://moodle.example.edu).", "warn");
     return;
   }
   // urlscheme=courseassistant: our OS handler intercepts courseassistant://token=…
@@ -3153,12 +3276,41 @@ $("mq-launch-sso")?.addEventListener("click", () => {
   _startSsoPoll();
 });
 
+async function _waitMoodleJob(jobId, { onTick } = {}) {
+  for (let i = 0; i < 300; i++) {
+    const job = await api(`/api/jobs/${jobId}`);
+    if (onTick) onTick(job);
+    if (job.status === "done") return job;
+    if (job.status === "error" || job.status === "failed") {
+      const err = new Error(job.error || "Moodle job failed");
+      err.job = job;
+      throw err;
+    }
+    await new Promise((r) => setTimeout(r, 500));
+  }
+  throw new Error("Moodle job timed out — check the Jobs panel for progress.");
+}
+
+function _moodleCookies() {
+  return ($("mq-cookies")?.value || $("sem-moodle-cookies")?.value || "").trim();
+}
+
 async function _moodleConnect(url, token) {
   if (!url) { toast("Enter your Moodle site link first.", "warn"); return; }
   if (!token) { toast("No token received. Try signing in again.", "warn"); return; }
   setConnectStatus("warn", "Connecting to Moodle…");
   try {
-    const d = await postJSON("/api/moodle/connect", { url, token });
+    const queued = await postJSON("/api/moodle/connect", {
+      url, token, cookies: _moodleCookies(),
+    });
+    showTab("jobs");
+    startJobsPolling();
+    const job = await _waitMoodleJob(queued.id, {
+      onTick(j) {
+        if (j.stage) setConnectStatus("warn", `Connecting… (${j.stage})`);
+      },
+    });
+    const d = job.result || {};
     const courses = d.courses || [];
     const sel = $("mq-course-select"); clear(sel);
     if (!courses.length) {
@@ -3174,6 +3326,9 @@ async function _moodleConnect(url, token) {
     _mqConnected = true;
     _mqBaseUrl = d.base_url || url;
     applyDetectedPaperCodes(d.paper_codes || []);
+    if (d.calendar_discovered && $("sem-calendar-masked")) {
+      $("sem-calendar-masked").textContent = `Calendar URL discovered: ${d.calendar_url}`;
+    }
     toast("Connected to Moodle.", "ok");
   } catch (e) {
     const msg = e.message || "";
@@ -3189,7 +3344,13 @@ let _mqBaseUrl = "";
 function renderMqImport(data, { grabLectures = true, grabTranscripts = true, grabDocs = true } = {}) {
   const out = $("mq-import-result"); clear(out);
   const c = data.course || {};
-  if (c.code || c.fullname) setCourse(c.code || c.fullname);
+  const local = c.local_course;
+  if (local) {
+    setCourse(local.code || local.name || c.code || c.fullname);
+    loadCourses();
+  } else if (c.code || c.fullname) {
+    setCourse(c.code || c.fullname);
+  }
   const counts = data.counts || {};
   const res = data.resources || {};
   const conv = data.converted || {};
@@ -3197,6 +3358,7 @@ function renderMqImport(data, { grabLectures = true, grabTranscripts = true, gra
   const feeds = data.panopto_feeds || [];
 
   const bits = [`Imported <strong>${c.fullname || c.code || "course"}</strong> - ${counts.sections || 0} section(s)`];
+  if (local) bits.push(`Active course set to ${local.code || local.name}`);
   if (grabDocs)
     bits.push(`${res.downloaded || 0} of ${counts.documents || 0} document(s) downloaded, ${conv.count || 0} converted to Markdown`
       + (imgs ? ` (${imgs} image(s) attached)` : ""));
@@ -3219,8 +3381,7 @@ function renderMqImport(data, { grabLectures = true, grabTranscripts = true, gra
   if (!feeds.length && (grabLectures || grabTranscripts) && (counts.lectures || 0) > 0)
     out.appendChild(el("p", { class: "muted small",
       text: `${counts.lectures} lecture link(s) were found, but no transcribable Panopto feed was `
-        + "detected for this course. You can paste a Panopto feed URL in the Full workspace to "
-        + "transcribe them." }));
+        + "detected. Paste the Video podcast RSS link below, then open Speech to transcribe." }));
 
   State.mqFeeds = feeds;
   State.mqRecordings = [];
@@ -3233,11 +3394,18 @@ function renderMqImport(data, { grabLectures = true, grabTranscripts = true, gra
     $("mq-panopto-url").value = feeds[0];
   $("mq-step-export").classList.remove("hidden");
   applyDetectedPaperCodes(data.paper_codes || []);
+  if (data.calendar_discovered && $("sem-calendar-masked")) {
+    $("sem-calendar-masked").textContent = `Calendar URL discovered: ${data.calendar_url}`;
+  }
+  if ((data.warnings || []).length) {
+    out.appendChild(el("div", { class: "warn-box",
+      text: data.warnings.join(" · ") }));
+  }
   // Browser mode: try auto Panopto discovery beyond Moodle-linked feeds
   if (mqImportMode === "browser" && !feeds.length) {
     postJSON("/api/panopto/discover", {
       moodle_url: _mqBaseUrl || ($("mq-url")?.value || ""),
-      cookies: "",
+      cookies: _moodleCookies(),
       use_playwright: true,
     }).then((d) => {
       if ((d.feeds || []).length && $("mq-panopto-url")) {
@@ -3272,15 +3440,35 @@ $("mq-import")?.addEventListener("click", async () => {
     " Reading the course from Moodle…",
   ]));
   try {
-    const data = await postJSON("/api/moodle/api-import", {
+    const queued = await postJSON("/api/moodle/api-import", {
       url: _mqBaseUrl, course_id: courseId,
       grab_lectures: grabLectures || grabTranscripts,
       grab_docs: grabDocs, convert: true, keep_images: keepImages,
+      create_course: true,
+      use_browser: mqImportMode === "browser",
+      cookies: _moodleCookies(),
     });
-    renderMqImport(data, { grabLectures, grabTranscripts, grabDocs });
+    showTab("jobs");
+    startJobsPolling();
+    const job = await _waitMoodleJob(queued.id, {
+      onTick(j) {
+        if (j.stage) {
+          const stage = j.stage.replace(/_/g, " ");
+          out.querySelector(".import-loading")?.replaceWith(
+            el("p", { class: "import-loading" }, [
+              el("span", { class: "mq-sso-spinner" }),
+              ` ${stage}…`,
+            ]),
+          );
+        }
+      },
+    });
+    renderMqImport(job.result || {}, { grabLectures, grabTranscripts, grabDocs });
   } catch (e) {
     clear(out);
-    out.appendChild(el("div", { class: "warn-box", text: "Import failed: " + e.message }));
+    const msg = e.job?.error || e.message || "Import failed";
+    out.appendChild(el("div", { class: "warn-box", text: "Import failed: " + msg }));
+    toast(msg, "err");
   } finally { btn.disabled = false; btn.textContent = "Import course"; }
 });
 
@@ -3324,59 +3512,85 @@ async function loadPanoptoRecordings() {
 }
 $("mq-panopto-load")?.addEventListener("click", loadPanoptoRecordings);
 
-async function autoTranscribeMq() {
+async function ensureMqRecordingsLoaded() {
   let recs = State.mqRecordings || [];
-  // If nothing loaded yet but a URL is pasted, load it first.
   if (!recs.length && $("mq-panopto-url")?.value.trim()) {
     await loadPanoptoRecordings();
     recs = State.mqRecordings || [];
   }
-  if (!recs.length) { toast("Paste the Panopto RSS link and load the recordings first.", "warn"); return; }
+  return recs;
+}
 
-  const makeTranscript = $("mq-make-transcript")?.checked !== false;
-  const overwrite = $("mq-overwrite")?.checked === true;
-
-  // "Recording without transcript" → just download the videos to a chosen folder.
-  if (!makeTranscript) {
-    const dest = await pickFolder("Choose a folder to save the recordings");
-    if (dest === null) return;
-    try {
-      const d = await postJSON("/api/panopto/download", { lectures: recs, output_dir: dest });
-      toast(`Downloaded ${d.downloaded} recording(s) to ${dest}.`, "ok");
-    } catch (e) { toastError(e); }
-    return;
+/** Shared STT enqueue used by Speech and Moodle “Queue now”. */
+async function enqueueLectureList(lectures, { force = false, resultsEl = null } = {}) {
+  if (!State.status || !State.status.any_engine) {
+    toast("No transcription engine installed. Use Home → Environment to install Transcription.", "warn");
+    return 0;
   }
-
-  // "Recording with transcript" → transcribe from audio (small download).
-  if (!mqRecommend || !mqRecommend.ready) { toast(mqRecommend?.reason || "No transcription engine is installed.", "warn"); return; }
-  // Start from the recommended settings, then apply any Advanced overrides.
-  const advEngine = $("mq-adv-engine")?.value.trim() || "";
-  const advModel = $("mq-adv-model")?.value.trim() || "";
-  const advLang = $("mq-adv-language")?.value.trim() || "";
-  const advDevice = $("mq-adv-device")?.value.trim() || "";
-  const settings = {
-    engine: advEngine || mqRecommend.engine,
-    model: advModel || mqRecommend.model,
-    device: advDevice || mqRecommend.device,
-    language: advLang || mqRecommend.language,
-    interval: mqRecommend.interval,
-    audio_only: true,                 // transcribe from audio; the video is fetched on SRT export
-    force: overwrite,                 // re-transcribe even if outputs exist
-    skip_existing: !overwrite,
-  };
+  if (!lectures.length) {
+    toast("No recordings to queue.", "warn");
+    return 0;
+  }
+  const settings = gatherSettings();
+  settings.audio_only = true;
+  if (force) {
+    settings.force = true;
+    settings.skip_existing = false;
+  }
+  remember("settings", JSON.stringify(settings));
   let queued = 0;
-  for (const lec of recs) {
+  const out = resultsEl || $("stt-results");
+  for (const lec of lectures) {
     try {
-      await postJSON("/api/transcribe", { ...settings, lecture: lec });
+      const job = await postJSON("/api/transcribe", { ...settings, lecture: lec });
       queued++;
-    } catch (e) { toast("Transcription failed: " + errorText(e), "err"); }
+      if (out && job?.id) {
+        out.appendChild(el("p", {
+          class: "ok-text",
+          text: `Queued “${lec.title || lec.safe_title || "recording"}” · job ${String(job.id).slice(0, 8)}…`,
+        }));
+      }
+    } catch (e) {
+      toast(`Could not queue "${lec.title || "recording"}": ${errorText(e)}`, "err");
+    }
   }
   if (queued) {
-    toast(`Queued ${queued} recording(s). Each transcription takes a few minutes and runs in the background; track it in Jobs.`, "ok");
-    showTab("jobs"); startJobsPolling();
+    toast(`Queued ${queued} recording(s). Track progress in Jobs.`, "ok");
+    showTab("jobs");
+    startJobsPolling();
   }
+  return queued;
+}
+
+async function openMqInSpeech() {
+  const recs = await ensureMqRecordingsLoaded();
+  if (!recs.length) {
+    toast("Paste the Panopto RSS link and load the recordings first.", "warn");
+    return;
+  }
+  // Preload Speech with the Moodle recording list (single STT settings home).
+  State.lectures = recs.slice();
+  const first = recs[0];
+  if ($("stt-media-url") && first) {
+    $("stt-media-url").value = first.url || first.video_url || "";
+  }
+  showTab("tts");
+  showSpeechMode("transcribe");
+  toast(`${recs.length} recording(s) ready in Speech. Adjust settings, then Transcribe.`, "ok");
+}
+
+async function autoTranscribeMq() {
+  const recs = await ensureMqRecordingsLoaded();
+  if (!recs.length) {
+    toast("Paste the Panopto RSS link and load the recordings first.", "warn");
+    return;
+  }
+  State.lectures = recs.slice();
+  const overwrite = $("mq-overwrite")?.checked === true;
+  await enqueueLectureList(recs, { force: overwrite });
 }
 $("mq-autotranscribe")?.addEventListener("click", autoTranscribeMq);
+$("mq-open-speech")?.addEventListener("click", openMqInSpeech);
 
 $("mq-export-suites")?.addEventListener("click", () => {
   showTab("export");
@@ -3400,7 +3614,7 @@ async function mqExport(kind) {
 }
 
 // ---- Moodle import mode + capability matrix ------------------------------
-let mqImportMode = "api";
+let mqImportMode = "browser";
 
 async function renderMqCapabilityMatrix(mode) {
   const host = $("mq-capability-matrix");
@@ -3430,12 +3644,16 @@ async function renderMqCapabilityMatrix(mode) {
     host.appendChild(table);
     if (data.playwright_available === false && mode === "browser") {
       host.appendChild(el("p", { class: "hint",
-        text: "Playwright is not installed. Browser mode still uses Moodle API/HTML first; "
-          + "for forums & Panopto-only pages run: pip install -r requirements-browser.txt "
-          + "&& playwright install chromium" }));
+        text: "Playwright is not installed. Browser mode uses cookie/HTML scrape first, "
+          + "then falls back to the API. For forums & Panopto-only pages run: "
+          + "pip install -r requirements-browser.txt && playwright install chromium" }));
     } else if (mode === "browser") {
       host.appendChild(el("p", { class: "hint",
-        text: "Browser mode prefers API/HTML, then falls back to Playwright for forums and Panopto pages." }));
+        text: "Browser mode (recommended) crawls Moodle with your session cookies, "
+          + "discovers calendar & Panopto feeds, and falls back to the API when needed." }));
+    } else {
+      host.appendChild(el("p", { class: "hint",
+        text: "API mode uses the Moodle web-service for exact course data when browser scrape is not needed." }));
     }
   } catch (e) {
     host.textContent = "Could not load capability matrix.";
@@ -3454,7 +3672,7 @@ function setMqImportMode(mode) {
 
 $("mq-mode-api")?.addEventListener("click", () => setMqImportMode("api"));
 $("mq-mode-browser")?.addEventListener("click", () => setMqImportMode("browser"));
-setMqImportMode("api");
+setMqImportMode("browser");
 
 function applyDetectedPaperCodes(codes) {
   if (!Array.isArray(codes) || !codes.length) return;
@@ -3646,80 +3864,32 @@ $("stt-caption-first")?.addEventListener("change", () => refreshSttRoute());
 $("stt-diarization")?.addEventListener("change", () => refreshSttRoute());
 
 async function enqueueSpeechTranscribe() {
-  if (!State.status || !State.status.any_engine) {
-    toast("No transcription engine installed. pip install -r requirements-transcribe.txt", "warn");
-    return;
-  }
-  const settings = gatherSettings();
-  remember("settings", JSON.stringify(settings));
   const out = $("stt-results");
+  if (out) clear(out);
   const indexes = typeof checkedIndexes === "function" ? checkedIndexes() : [];
   const media = ($("stt-media-url")?.value || "").trim();
+  const overwrite = $("mq-overwrite")?.checked === true;
 
-  let queued = 0;
-  clear(out);
-
+  // Prefer explicit lecture selection, then Moodle-preloaded lectures, then a media URL.
+  let lectures = [];
   if (indexes.length && State.lectures.length) {
-    for (const i of indexes) {
-      const lec = State.lectures[i];
-      if (!lec) continue;
-      try {
-        const job = await api("/api/transcribe", {
-          method: "POST", headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ ...settings, lecture: lec }),
-        });
-        queued++;
-        if (out && job?.id) {
-          out.appendChild(el("p", {
-            class: "ok-text",
-            text: `Queued “${lec.title}” · job ${String(job.id).slice(0, 8)}…`,
-          }));
-        }
-      } catch (e) {
-        toast(`Could not queue "${lec.title}": ${errorText(e)}`, "err");
-      }
-    }
-  } else if (media) {
-    const title = media.split(/[\\/]/).pop() || "media";
-    try {
-      const job = await api("/api/transcribe", {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          ...settings,
-          lecture: { title, url: media },
-        }),
-      });
-      queued++;
-      if (out && job?.id) {
-        out.appendChild(el("p", {
-          class: "ok-text",
-          text: `Queued “${title}” · job ${String(job.id).slice(0, 8)}…`,
-        }));
-        out.appendChild(el("button", {
-          class: "tag", text: "Watch in Jobs",
-          onclick: () => { showTab("jobs"); startJobsPolling(); },
-        }));
-      }
-    } catch (e) {
-      toastError(e);
-      if (out) out.appendChild(el("div", { class: "warn-box", text: errorText(e) }));
-      return;
-    }
-  } else {
-    toast("Enter a media URL / path, or load and select lectures (Moodle → podcast feed).", "warn");
+    lectures = indexes.map((i) => State.lectures[i]).filter(Boolean);
+  } else if ((State.mqRecordings || []).length && !media) {
+    lectures = State.mqRecordings.slice();
+  } else if (State.lectures.length && !media) {
+    lectures = State.lectures.slice();
+  }
+
+  if (lectures.length) {
+    await enqueueLectureList(lectures, { force: overwrite, resultsEl: out });
     return;
   }
-
-  if (queued) {
-    toast(`Queued ${queued} job(s). Track progress in Jobs.`, "ok");
-    if (out && !out.querySelector(".tag")) {
-      out.appendChild(el("button", {
-        class: "tag", text: "Watch in Jobs",
-        onclick: () => { showTab("jobs"); startJobsPolling(); },
-      }));
-    }
-    startJobsPolling();
+  if (media) {
+    const title = media.split(/[\\/]/).pop() || "media";
+    await enqueueLectureList([{ title, url: media }], { force: overwrite, resultsEl: out });
+    return;
   }
+  toast("Enter a media URL / path, or load recordings from Moodle → Transcribe in Speech.", "warn");
 }
 
 $("stt-transcribe")?.addEventListener("click", () => enqueueSpeechTranscribe());

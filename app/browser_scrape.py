@@ -13,6 +13,14 @@ from urllib.parse import urljoin
 from .errors import AppError
 
 _RSS_HREF_RE = re.compile(r'Podcast\.ashx[^"\']*', re.I)
+_CALENDAR_HREF_RE = re.compile(
+    r'href=["\']([^"\']*calendar/export(?:_execute)?\.php[^"\']*authtoken[^"\']*)["\']',
+    re.I,
+)
+_CALENDAR_HREF_FALLBACK_RE = re.compile(
+    r'(https?://[^"\'\s<>]+calendar/export(?:_execute)?\.php[^"\'\s<>]*authtoken=[^"\'\s<>&]+)',
+    re.I,
+)
 
 
 class BrowserScrapeError(AppError):
@@ -190,6 +198,90 @@ def scrape_moodle_announcements(
                 continue
         browser.close()
     return {"announcements": announcements, "count": len(announcements), "source": "playwright"}
+
+
+def _extract_calendar_urls(html: str, base_url: str) -> List[str]:
+    """Pull Moodle calendar ICS export links from page HTML."""
+    urls: List[str] = []
+    seen: set = set()
+    for m in _CALENDAR_HREF_RE.findall(html or ""):
+        full = urljoin(base_url, m.replace("&amp;", "&"))
+        if full not in seen:
+            seen.add(full)
+            urls.append(full)
+    if not urls:
+        for m in _CALENDAR_HREF_FALLBACK_RE.findall(html or ""):
+            full = m.replace("&amp;", "&")
+            if full not in seen:
+                seen.add(full)
+                urls.append(full)
+    return urls
+
+
+def discover_calendar_url(
+    moodle_base_url: str,
+    *,
+    cookies: str = "",
+    headless: bool = True,
+    timeout_ms: int = 45000,
+) -> Dict[str, Any]:
+    """Discover a Moodle calendar export URL containing an authtoken.
+
+    Tries cookie/HTML fetch first, then Playwright on calendar and home pages.
+    """
+    base = moodle_base_url.rstrip("/") + "/"
+    candidates = [
+        urljoin(base, "calendar/view.php"),
+        urljoin(base, "my/"),
+        base,
+    ]
+    found: List[str] = []
+
+    if cookies:
+        import requests
+        headers = {"User-Agent": "Mozilla/5.0 CourseAssistant", "Cookie": cookies}
+        for page_url in candidates:
+            try:
+                r = requests.get(page_url, headers=headers, timeout=30)
+                if r.status_code == 200:
+                    found.extend(_extract_calendar_urls(r.text, base))
+            except Exception:
+                continue
+        if found:
+            return {"url": found[0], "source": "html", "candidates": len(found)}
+
+    if not playwright_available():
+        return {"url": "", "source": "none", "candidates": 0}
+
+    sync_playwright = _require_playwright()
+    with sync_playwright() as p:
+        browser = p.chromium.launch(headless=headless)
+        context = browser.new_context()
+        if cookies:
+            try:
+                context.add_cookies(_cookie_header_to_playwright(cookies, base))
+            except Exception:
+                pass
+        page = context.new_page()
+        for page_url in candidates:
+            try:
+                _goto_settled(page, page_url, timeout_ms)
+                html = page.content()
+                found.extend(_extract_calendar_urls(html, base))
+                if found:
+                    break
+            except Exception:
+                continue
+        browser.close()
+
+    uniq: List[str] = []
+    seen: set = set()
+    for u in found:
+        if u not in seen:
+            seen.add(u)
+            uniq.append(u)
+    return {"url": uniq[0] if uniq else "", "source": "playwright" if uniq else "none",
+            "candidates": len(uniq)}
 
 
 def scrape_moodle_forums(

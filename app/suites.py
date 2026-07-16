@@ -1045,15 +1045,17 @@ def detect_paper_codes_from_courses(courses: Iterable[Dict[str, Any]]) -> List[s
     codes: List[str] = []
     seen: Set[str] = set()
     for c in courses:
-        for key in ("code", "shortname", "fullname", "name"):
+        for key in ("shortname", "fullname", "code", "name"):
             raw = c.get(key) or ""
             if not raw:
                 continue
-            found = _course_code(str(raw)) or _extract_course_code(str(raw).upper())
+            found = _course_code(str(raw)) or _extract_course_code(str(raw))
             if found:
-                base = found.upper().split("-")[0]
+                inst = found.upper()
+                base = inst.split("-")[0]
+                token = inst if "-" in inst else base
                 if base not in seen:
                     seen.add(base)
-                    codes.append(found.upper() if "-" in found.upper() else base)
+                    codes.append(token)
                 break
     return codes

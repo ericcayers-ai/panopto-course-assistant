@@ -573,9 +573,20 @@ def build_course_model(sections: List[Dict[str, Any]], course_meta: Dict[str, An
 _CODE_RE = re.compile(r"\b([A-Z]{3,6}\d{2,3}(?:-\d{2}[A-Z])?)\b")
 
 
+def _strip_campus_markers(text: str) -> str:
+    """Remove campus suffixes like ``(HAM) & (TGA)`` before code matching."""
+    t = re.sub(r"\([^)]+\)", " ", text or "")
+    t = re.sub(r"\s*&\s*", " ", t)
+    return re.sub(r"\s+", " ", t).strip()
+
+
 def _course_code(text: str) -> str:
-    m = _CODE_RE.search((text or "").upper())
-    return m.group(1) if m else ""
+    raw = (text or "").upper()
+    for candidate in (_strip_campus_markers(raw), raw):
+        m = _CODE_RE.search(candidate)
+        if m:
+            return m.group(1)
+    return ""
 
 
 def render_outline(model: Dict[str, Any]) -> str:
