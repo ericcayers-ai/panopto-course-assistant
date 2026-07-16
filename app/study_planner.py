@@ -37,9 +37,12 @@ STATUSES = ("not_started", "in_progress", "submitted", "graded")
 
 
 def _assessment_dict(row) -> Dict[str, Any]:
+    keys = row.keys() if hasattr(row, "keys") else []
     return {"id": row["id"], "course_id": row["course_id"], "name": row["name"],
             "due_date": row["due_date"], "weight": row["weight"],
-            "status": row["status"]}
+            "status": row["status"],
+            "kind": row["kind"] if "kind" in keys else "assignment",
+            "week": row["week"] if "week" in keys else None}
 
 
 def list_assessments(db: Database, course_id: Optional[int] = None) -> List[Dict[str, Any]]:
@@ -47,13 +50,17 @@ def list_assessments(db: Database, course_id: Optional[int] = None) -> List[Dict
 
 
 def create_assessment(db: Database, course_id: int, name: str, due_date: str = "",
-                     weight: Optional[float] = None, status: str = "not_started") -> Dict[str, Any]:
+                     weight: Optional[float] = None, status: str = "not_started",
+                     *, kind: str = "assignment",
+                     week: Optional[int] = None) -> Dict[str, Any]:
     name = (name or "").strip()
     if not name:
         raise ValueError("assessment name is required")
     if status not in STATUSES:
         raise ValueError(f"status must be one of {STATUSES}")
-    aid = db.create_assessment(course_id, name, due_date.strip(), weight, status)
+    kind = (kind or "assignment").strip().lower() or "assignment"
+    aid = db.create_assessment(course_id, name, due_date.strip(), weight, status,
+                               kind=kind, week=week)
     return _assessment_dict(db.get_assessment(aid))
 
 

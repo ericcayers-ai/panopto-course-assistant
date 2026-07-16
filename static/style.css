@@ -951,8 +951,66 @@ details.sub > summary { cursor: pointer; color: var(--brand); font-size: var(--t
 .sem-export-details { margin: 0; }
 .sem-export-details > summary { cursor: pointer; list-style: disclosure-closed; }
 
+/* ---- notes workspace + study modes --------------------------------------- */
+.notes-layout {
+  display: grid;
+  grid-template-columns: minmax(220px, 280px) 1fr;
+  gap: var(--space-4);
+}
+.notes-side h3, .notes-main h3 { margin-top: 0; }
+.notes-list { display: grid; gap: var(--space-2); margin-top: var(--space-3); }
+.notes-row {
+  display: flex; justify-content: space-between; gap: var(--space-2); align-items: flex-start;
+  padding: var(--space-2) 0; border-bottom: 1px solid var(--border);
+}
+.notes-main textarea {
+  width: 100%; min-height: 180px; margin: var(--space-3) 0;
+  font: inherit; padding: var(--space-3); border-radius: var(--radius);
+  border: 1px solid var(--border); background: var(--surface); color: var(--ink);
+}
+.study-modes-bar {
+  display: flex; flex-wrap: wrap; gap: var(--space-2); margin-bottom: var(--space-4);
+}
+.tracker-list { display: grid; gap: var(--space-2); margin-top: var(--space-3); }
+.tracker-item {
+  display: flex; flex-wrap: wrap; gap: var(--space-2); align-items: center;
+  padding: var(--space-2) 0; border-bottom: 1px solid var(--border);
+}
+.tracker-kind {
+  font-family: var(--font-mono); font-size: var(--text-xs);
+  text-transform: uppercase; color: var(--muted);
+  min-width: 5.5rem;
+}
+.flip-prompt, .flip-card {
+  font-family: var(--font-display);
+  font-size: var(--text-lg);
+  padding: var(--space-5);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface-2);
+  width: 100%;
+  text-align: center;
+  cursor: pointer;
+  margin: var(--space-3) 0;
+}
+.flip-card.flipped {
+  background: var(--sidebar);
+  color: var(--sidebar-ink);
+}
+.essay-scores {
+  display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-3);
+  margin: var(--space-3) 0;
+}
+.essay-scores strong {
+  display: block; font-family: var(--font-display); font-size: var(--text-xl);
+}
+.essay-ok { color: var(--ok, #2f6b3a); }
+.essay-improve { color: var(--brand); }
+.cite-list { padding-left: 1.2rem; }
+
 @media (max-width: 640px) {
   .semester-layout { grid-template-columns: 1fr; }
+  .notes-layout { grid-template-columns: 1fr; }
 }
 
 /* ---- reduced motion: honour the OS setting (§14/§15) ------------------------ */

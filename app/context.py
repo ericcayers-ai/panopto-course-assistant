@@ -202,7 +202,12 @@ def _active_course_name() -> str:
 
 
 def _note_dict(row) -> Dict[str, Any]:
-    return {"id": row["id"], "path": row["path"], "body": row["body"],
+    keys = row.keys() if hasattr(row, "keys") else []
+    return {"id": row["id"], "path": row["path"] or "", "body": row["body"],
+            "title": row["title"] if "title" in keys else "",
+            "folder_id": row["folder_id"] if "folder_id" in keys else None,
+            "session_type": row["session_type"] if "session_type" in keys else "",
+            "course_id": row["course_id"] if "course_id" in keys else None,
             "timestamp_s": row["timestamp_s"], "bookmark": bool(row["bookmark"]),
             "created_at": row["created_at"], "updated_at": row["updated_at"]}
 

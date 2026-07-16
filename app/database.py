@@ -252,6 +252,50 @@ _MIGRATIONS: List[tuple[int, List[str]]] = [
             "CREATE INDEX IF NOT EXISTS idx_moodle_ann_course ON moodle_announcements(course_id)",
         ],
     ),
+    (
+        7,
+        [
+            # v7 - notes library folders, session attach, flashcard sets,
+            # assessment kinds, and essay-grade history.
+            """CREATE TABLE IF NOT EXISTS note_folders (
+                id          INTEGER PRIMARY KEY AUTOINCREMENT,
+                course_id   INTEGER REFERENCES courses(id) ON DELETE CASCADE,
+                name        TEXT NOT NULL,
+                parent_id   INTEGER REFERENCES note_folders(id) ON DELETE CASCADE,
+                created_at  TEXT NOT NULL
+            )""",
+            "CREATE INDEX IF NOT EXISTS idx_note_folders_course ON note_folders(course_id)",
+            "ALTER TABLE notes ADD COLUMN title TEXT NOT NULL DEFAULT ''",
+            "ALTER TABLE notes ADD COLUMN folder_id INTEGER REFERENCES note_folders(id) ON DELETE SET NULL",
+            "ALTER TABLE notes ADD COLUMN session_type TEXT NOT NULL DEFAULT ''",
+            """CREATE TABLE IF NOT EXISTS flashcard_sets (
+                id            INTEGER PRIMARY KEY AUTOINCREMENT,
+                course_id     INTEGER REFERENCES courses(id) ON DELETE CASCADE,
+                name          TEXT NOT NULL DEFAULT '',
+                source_note_id INTEGER REFERENCES notes(id) ON DELETE SET NULL,
+                source_path   TEXT DEFAULT '',
+                card_count    INTEGER NOT NULL DEFAULT 0,
+                created_at    TEXT NOT NULL,
+                updated_at    TEXT NOT NULL
+            )""",
+            "CREATE INDEX IF NOT EXISTS idx_flashcard_sets_course ON flashcard_sets(course_id)",
+            "ALTER TABLE assessments ADD COLUMN kind TEXT NOT NULL DEFAULT 'assignment'",
+            "ALTER TABLE assessments ADD COLUMN week INTEGER",
+            """CREATE TABLE IF NOT EXISTS essay_grades (
+                id           INTEGER PRIMARY KEY AUTOINCREMENT,
+                course_id    INTEGER REFERENCES courses(id) ON DELETE CASCADE,
+                title        TEXT NOT NULL DEFAULT '',
+                essay_text   TEXT NOT NULL DEFAULT '',
+                rubric_text  TEXT NOT NULL DEFAULT '',
+                result_json  TEXT NOT NULL DEFAULT '{}',
+                score        REAL,
+                originality  REAL,
+                created_at   TEXT NOT NULL
+            )""",
+            "CREATE INDEX IF NOT EXISTS idx_essay_grades_course ON essay_grades(course_id)",
+            "CREATE INDEX IF NOT EXISTS idx_notes_folder ON notes(folder_id)",
+        ],
+    ),
 ]
 
 SCHEMA_VERSION = _MIGRATIONS[-1][0]
@@ -509,10 +553,13 @@ class Database:
     # -- assessments DAO (§6) ----------------------------------------------
 
     def create_assessment(self, course_id: int, name: str, due_date: str = "",
-                          weight: Optional[float] = None, status: str = "not_started") -> int:
+                          weight: Optional[float] = None, status: str = "not_started",
+                          *, kind: str = "assignment",
+                          week: Optional[int] = None) -> int:
         cur = self.execute(
-            "INSERT INTO assessments(course_id, name, due_date, weight, status) "
-            "VALUES(?, ?, ?, ?, ?)", (course_id, name, due_date, weight, status))
+            "INSERT INTO assessments(course_id, name, due_date, weight, status, kind, week) "
+            "VALUES(?, ?, ?, ?, ?, ?, ?)",
+            (course_id, name, due_date, weight, status, kind or "assignment", week))
         return int(cur.lastrowid)
 
     def list_assessments(self, course_id: Optional[int] = None) -> List[sqlite3.Row]:
@@ -525,7 +572,7 @@ class Database:
         return self.query_one("SELECT * FROM assessments WHERE id=?", (id,))
 
     def update_assessment(self, id: int, **fields: Any) -> bool:
-        allowed = {"name", "due_date", "weight", "status"}
+        allowed = {"name", "due_date", "weight", "status", "kind", "week"}
         sets = {k: v for k, v in fields.items() if k in allowed and v is not None}
         if not sets:
             return False
@@ -645,24 +692,34 @@ class Database:
     def clear_audit(self) -> int:
         return self.execute("DELETE FROM audit_log").rowcount
 
-    # -- notes & bookmarks DAO (v3) ----------------------------------------
+    # -- notes & bookmarks DAO (v3 / v7) -----------------------------------
 
     def add_note(self, path: str, body: str, *, course_id: Optional[int] = None,
-                 timestamp_s: Optional[float] = None, bookmark: bool = False) -> int:
+                 timestamp_s: Optional[float] = None, bookmark: bool = False,
+                 title: str = "", folder_id: Optional[int] = None,
+                 session_type: str = "") -> int:
         ts = now_iso()
         cur = self.execute(
             "INSERT INTO notes(course_id, path, body, timestamp_s, bookmark, "
-            "created_at, updated_at) VALUES(?, ?, ?, ?, ?, ?, ?)",
-            (course_id, path, body, timestamp_s, 1 if bookmark else 0, ts, ts))
+            "title, folder_id, session_type, created_at, updated_at) "
+            "VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (course_id, path or "", body, timestamp_s, 1 if bookmark else 0,
+             title or "", folder_id, session_type or "", ts, ts))
         return int(cur.lastrowid)
 
     def list_notes(self, path: Optional[str] = None,
-                   course_id: Optional[int] = None) -> List[sqlite3.Row]:
+                   course_id: Optional[int] = None, *,
+                   folder_id: Optional[int] = None,
+                   session_type: Optional[str] = None) -> List[sqlite3.Row]:
         clauses, params = [], []
         if path is not None:
             clauses.append("path=?"); params.append(path)
         if course_id is not None:
             clauses.append("course_id=?"); params.append(course_id)
+        if folder_id is not None:
+            clauses.append("folder_id=?"); params.append(folder_id)
+        if session_type is not None:
+            clauses.append("session_type=?"); params.append(session_type)
         sql = "SELECT * FROM notes"
         if clauses:
             sql += " WHERE " + " AND ".join(clauses)
@@ -670,8 +727,12 @@ class Database:
         sql += " ORDER BY bookmark DESC, timestamp_s IS NULL, timestamp_s, created_at DESC"
         return self.query(sql, tuple(params))
 
+    def get_note(self, id: int) -> Optional[sqlite3.Row]:
+        return self.query_one("SELECT * FROM notes WHERE id=?", (id,))
+
     def update_note(self, id: int, **fields: Any) -> bool:
-        allowed = {"body", "timestamp_s", "bookmark"}
+        allowed = {"body", "timestamp_s", "bookmark", "title", "folder_id",
+                   "session_type", "path"}
         sets = {k: v for k, v in fields.items() if k in allowed}
         if not sets:
             return False
@@ -690,6 +751,100 @@ class Database:
             return int(self.query_one("SELECT COUNT(*) AS n FROM notes")["n"])
         return int(self.query_one(
             "SELECT COUNT(*) AS n FROM notes WHERE course_id=?", (course_id,))["n"])
+
+    # -- note folders -------------------------------------------------------
+
+    def create_note_folder(self, course_id: Optional[int], name: str,
+                           parent_id: Optional[int] = None) -> int:
+        cur = self.execute(
+            "INSERT INTO note_folders(course_id, name, parent_id, created_at) "
+            "VALUES(?, ?, ?, ?)",
+            (course_id, (name or "").strip(), parent_id, now_iso()))
+        return int(cur.lastrowid)
+
+    def list_note_folders(self, course_id: Optional[int] = None) -> List[sqlite3.Row]:
+        if course_id is None:
+            return self.query("SELECT * FROM note_folders ORDER BY name COLLATE NOCASE")
+        return self.query(
+            "SELECT * FROM note_folders WHERE course_id=? ORDER BY name COLLATE NOCASE",
+            (course_id,))
+
+    def get_note_folder(self, id: int) -> Optional[sqlite3.Row]:
+        return self.query_one("SELECT * FROM note_folders WHERE id=?", (id,))
+
+    def rename_note_folder(self, id: int, name: str) -> bool:
+        name = (name or "").strip()
+        if not name:
+            return False
+        return self.execute("UPDATE note_folders SET name=? WHERE id=?",
+                            (name, id)).rowcount > 0
+
+    def delete_note_folder(self, id: int) -> bool:
+        # Detach notes first so ON DELETE SET NULL is explicit even on older SQLite.
+        self.execute("UPDATE notes SET folder_id=NULL WHERE folder_id=?", (id,))
+        return self.execute("DELETE FROM note_folders WHERE id=?", (id,)).rowcount > 0
+
+    # -- flashcard sets -----------------------------------------------------
+
+    def create_flashcard_set(self, course_id: Optional[int], name: str, *,
+                             source_note_id: Optional[int] = None,
+                             source_path: str = "",
+                             card_count: int = 0) -> int:
+        ts = now_iso()
+        cur = self.execute(
+            "INSERT INTO flashcard_sets(course_id, name, source_note_id, source_path, "
+            "card_count, created_at, updated_at) VALUES(?, ?, ?, ?, ?, ?, ?)",
+            (course_id, (name or "").strip() or "Untitled set", source_note_id,
+             source_path or "", card_count, ts, ts))
+        return int(cur.lastrowid)
+
+    def list_flashcard_sets(self, course_id: Optional[int] = None) -> List[sqlite3.Row]:
+        if course_id is None:
+            return self.query("SELECT * FROM flashcard_sets ORDER BY updated_at DESC")
+        return self.query(
+            "SELECT * FROM flashcard_sets WHERE course_id=? ORDER BY updated_at DESC",
+            (course_id,))
+
+    def get_flashcard_set(self, id: int) -> Optional[sqlite3.Row]:
+        return self.query_one("SELECT * FROM flashcard_sets WHERE id=?", (id,))
+
+    def update_flashcard_set(self, id: int, **fields: Any) -> bool:
+        allowed = {"name", "card_count", "source_note_id", "source_path"}
+        sets = {k: v for k, v in fields.items() if k in allowed}
+        if not sets:
+            return False
+        sets["updated_at"] = now_iso()
+        cols = ", ".join(f"{k}=?" for k in sets)
+        return self.execute(f"UPDATE flashcard_sets SET {cols} WHERE id=?",
+                            (*sets.values(), id)).rowcount > 0
+
+    def delete_flashcard_set(self, id: int) -> bool:
+        return self.execute("DELETE FROM flashcard_sets WHERE id=?", (id,)).rowcount > 0
+
+    # -- essay grades -------------------------------------------------------
+
+    def add_essay_grade(self, course_id: Optional[int], title: str, essay_text: str,
+                        rubric_text: str, result_json: str, *,
+                        score: Optional[float] = None,
+                        originality: Optional[float] = None) -> int:
+        cur = self.execute(
+            "INSERT INTO essay_grades(course_id, title, essay_text, rubric_text, "
+            "result_json, score, originality, created_at) VALUES(?, ?, ?, ?, ?, ?, ?, ?)",
+            (course_id, title or "", essay_text or "", rubric_text or "",
+             result_json or "{}", score, originality, now_iso()))
+        return int(cur.lastrowid)
+
+    def list_essay_grades(self, course_id: Optional[int] = None,
+                          limit: int = 50) -> List[sqlite3.Row]:
+        if course_id is None:
+            return self.query(
+                "SELECT * FROM essay_grades ORDER BY created_at DESC LIMIT ?", (limit,))
+        return self.query(
+            "SELECT * FROM essay_grades WHERE course_id=? ORDER BY created_at DESC LIMIT ?",
+            (course_id, limit))
+
+    def get_essay_grade(self, id: int) -> Optional[sqlite3.Row]:
+        return self.query_one("SELECT * FROM essay_grades WHERE id=?", (id,))
 
     # -- tags DAO (v3) ------------------------------------------------------
 

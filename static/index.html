@@ -68,6 +68,9 @@
         <button class="tab" data-tab="library">
           <svg class="ico" aria-hidden="true"><use href="#i-library"/></svg> Library
         </button>
+        <button class="tab" data-tab="notes">
+          <svg class="ico" aria-hidden="true"><use href="#i-notebook"/></svg> Notes
+        </button>
         <button class="tab" data-tab="study">
           <svg class="ico" aria-hidden="true"><use href="#i-study"/></svg> Study
         </button>
@@ -157,7 +160,7 @@
               <li>Set your <strong>course name</strong> in the top bar — imports and exports are tagged to it.</li>
               <li><button type="button" class="link-btn" id="gs-goto-moodle">Import a Moodle course</button> to pull slides, documents, and lecture recordings.</li>
               <li>Paste the Panopto podcast link to transcribe recordings, then browse everything in <strong>Library</strong>.</li>
-              <li>Use <strong>Study</strong> and <strong>Export</strong> for quizzes, guides, NotebookLM packs, and Anki decks.</li>
+              <li>Use <strong>Notes</strong> for lecture/tutorial/lab notes, <strong>Study</strong> for recall and quizzes, and <strong>Export</strong> for NotebookLM packs and Anki decks.</li>
             </ol>
             <p class="hint">Press <kbd>?</kbd> for shortcuts · <kbd>Ctrl</kbd>+<kbd>K</kbd> opens the command palette.</p>
           </div>
@@ -178,15 +181,22 @@
               </span>
               <span class="stage-desc">One searchable index of everything imported.</span>
             </button>
-            <button class="stage" data-goto="study">
+            <button class="stage" data-goto="notes">
               <span class="stage-n">03</span>
+              <span class="stage-title">
+                <svg class="ico" aria-hidden="true"><use href="#i-notebook"/></svg> Notes
+              </span>
+              <span class="stage-desc">Course notes, folders, and flashcard sets.</span>
+            </button>
+            <button class="stage" data-goto="study">
+              <span class="stage-n">04</span>
               <span class="stage-title">
                 <svg class="ico" aria-hidden="true"><use href="#i-study"/></svg> Study
               </span>
-              <span class="stage-desc">Glossary, study guide, quiz, and review schedule.</span>
+              <span class="stage-desc">Recall, quiz, tracker, and essay feedback.</span>
             </button>
             <button class="stage" data-goto="export">
-              <span class="stage-n">04</span>
+              <span class="stage-n">05</span>
               <span class="stage-title">
                 <svg class="ico" aria-hidden="true"><use href="#i-export"/></svg> Export
               </span>
@@ -399,6 +409,7 @@
             <div id="item-notes" class="item-notes"></div>
             <div class="row">
               <button id="item-cite-go" class="ghost small">Show citations</button>
+              <button id="item-open-notes" class="ghost small" type="button">Open in Notes…</button>
             </div>
             <div id="item-citations" class="item-citations"></div>
           </div>
@@ -413,6 +424,67 @@
         </section>
 
         <!-- STUDY -->
+        <!-- NOTES WORKSPACE -->
+        <section id="notes" class="panel" aria-labelledby="notes-h">
+          <div class="panel-head">
+            <svg class="ico ico-lg" aria-hidden="true"><use href="#i-notebook"/></svg>
+            <h2 id="notes-h">Notes</h2>
+            <span class="spacer"></span>
+            <button id="notes-refresh" class="small ghost" type="button">
+              <svg class="ico" aria-hidden="true"><use href="#i-refresh"/></svg> Refresh
+            </button>
+          </div>
+          <p class="panel-intro">Notes and folders for the active course. Attach each note to a lecture,
+            tutorial, or lab path, import Word or PDF files, and build a flashcard set from a note.</p>
+
+          <div class="notes-layout">
+            <aside class="card notes-side">
+              <h3>Folders</h3>
+              <div class="row gap wrap">
+                <label for="note-folder-name" class="sr-only">New folder name</label>
+                <input id="note-folder-name" type="text" placeholder="New folder" autocomplete="off" />
+                <button id="note-folder-add" type="button" class="ghost small">Add folder</button>
+              </div>
+              <div id="note-folders-list" class="notes-list"></div>
+              <h3>Flashcard sets</h3>
+              <div id="flashcard-sets-list" class="notes-list"></div>
+            </aside>
+            <div class="card notes-main">
+              <h3>Compose</h3>
+              <div class="row gap wrap">
+                <label for="note-title">Title
+                  <input id="note-title" type="text" placeholder="Lecture note title" autocomplete="off" />
+                </label>
+                <label for="note-session-type">Attach as
+                  <select id="note-session-type">
+                    <option value="">Unfiled</option>
+                    <option value="lecture">Lecture</option>
+                    <option value="tutorial">Tutorial</option>
+                    <option value="lab">Lab</option>
+                    <option value="other">Other</option>
+                  </select>
+                </label>
+                <label for="note-folder-select">Folder
+                  <select id="note-folder-select">
+                    <option value="">No folder</option>
+                  </select>
+                </label>
+                <label for="note-attach-path">Library path
+                  <input id="note-attach-path" type="text" placeholder="optional week/lecture path" autocomplete="off" />
+                </label>
+              </div>
+              <label for="note-compose-body" class="sr-only">Note body</label>
+              <textarea id="note-compose-body" rows="10" placeholder="Write your note…"></textarea>
+              <div class="row gap wrap">
+                <button id="note-save" type="button" class="primary">Save note</button>
+                <button id="note-import" type="button" class="ghost">Import Word/PDF…</button>
+                <button id="note-to-cards" type="button" class="ghost">Make flashcards…</button>
+              </div>
+              <div id="notes-library-list" class="notes-list"></div>
+            </div>
+          </div>
+        </section>
+
         <section id="study" class="panel" aria-labelledby="study-h">
           <div class="panel-head">
             <svg class="ico ico-lg" aria-hidden="true"><use href="#i-study"/></svg>
@@ -422,8 +494,16 @@
               <svg class="ico" aria-hidden="true"><use href="#i-refresh"/></svg> Refresh
             </button>
           </div>
-          <p class="panel-intro">Streak, next actions, workload, a glossary, a study guide, and a practice quiz —
-            each derived from the transcripts already in your library. These run locally and need no AI model.</p>
+          <p class="panel-intro">Streak, due reviews, practice quiz, slideshow, focus timer, course tracker,
+            essay feedback, glossary, and study guide — derived from your library and review deck.
+            Local modes need no AI model.</p>
+
+          <div class="study-modes-bar" role="toolbar" aria-label="Study modes">
+            <button type="button" class="ghost small" id="mode-practice" data-mode="practice">Practice</button>
+            <button type="button" class="ghost small" id="mode-recall" data-mode="recall">Daily recall</button>
+            <button type="button" class="ghost small" id="mode-slideshow" data-mode="slideshow">Slideshow</button>
+            <button type="button" class="ghost small" id="mode-focus" data-mode="focus">Focus</button>
+          </div>
 
           <div class="study-grid">
             <div class="card" id="streak-card">
@@ -437,6 +517,28 @@
             </div>
           </div>
 
+          <div class="card" id="tracker-card">
+            <h3>Course tracker</h3>
+            <p class="hint">Assignments, quizzes, and exams by week. Add items here; calendar export lives under Export.</p>
+            <div class="row gap wrap">
+              <label for="tracker-name" class="sr-only">Assignment name</label>
+              <input id="tracker-name" type="text" placeholder="Assignment name" autocomplete="off" />
+              <label for="tracker-due" class="sr-only">Due date</label>
+              <input id="tracker-due" type="date" aria-label="Due date" />
+              <label for="tracker-kind" class="sr-only">Kind</label>
+              <select id="tracker-kind" aria-label="Kind">
+                <option value="assignment">Assignment</option>
+                <option value="quiz">Quiz</option>
+                <option value="exam">Exam</option>
+                <option value="other">Other</option>
+              </select>
+              <label for="tracker-week" class="sr-only">Week</label>
+              <input id="tracker-week" type="number" min="1" max="52" placeholder="Week" style="max-width:90px" aria-label="Week" />
+              <button id="tracker-add" type="button" class="primary">Add</button>
+            </div>
+            <div id="tracker-body">Loading…</div>
+          </div>
+
           <div class="card" id="workload-card">
             <h3>Study workload</h3>
             <p class="hint">Reading and active-review time estimated from each lecture's length.</p>
@@ -446,7 +548,7 @@
           <div class="card" id="practice-card">
             <h3>Practice quiz</h3>
             <p class="hint">Multiple-choice questions built from your spaced-repetition cards. Generate
-              flashcards under Export to seed the deck, or grade reviews to add more.</p>
+              flashcards under Export or Notes to seed the deck.</p>
             <div class="row">
               <label for="practice-count">Questions
                 <input type="number" id="practice-count" value="10" min="1" max="50" style="max-width:90px" />
@@ -454,6 +556,70 @@
               <button id="practice-start" class="primary">Start quiz</button>
             </div>
             <div id="practice-body"></div>
+          </div>
+
+          <div class="card" id="recall-card">
+            <h3>Daily recall</h3>
+            <p class="hint">Spaced-repetition cards due today. Grade 0–5 after you answer.</p>
+            <div class="row">
+              <button id="recall-start" type="button" class="primary">Start recall</button>
+            </div>
+            <div id="recall-body"></div>
+          </div>
+
+          <div class="card" id="slideshow-card">
+            <h3>Slideshow</h3>
+            <p class="hint">Flip through a flashcard set. Tap the card to reveal the answer.</p>
+            <div class="row">
+              <button id="slideshow-start" type="button" class="primary">Start slideshow</button>
+            </div>
+            <div id="slideshow-body"></div>
+          </div>
+
+          <div class="card" id="focus-card">
+            <h3>Focus timer</h3>
+            <p class="hint">Logs minutes toward your study streak when you complete the session.</p>
+            <div class="row gap wrap">
+              <label for="focus-minutes">Minutes
+                <input type="number" id="focus-minutes" value="25" min="1" max="180" style="max-width:90px" />
+              </label>
+              <button id="focus-start" type="button" class="primary">Start focus</button>
+              <button id="focus-stop" type="button" class="ghost" hidden>Complete session</button>
+            </div>
+            <div id="focus-body" class="hint"></div>
+          </div>
+
+          <div class="card" id="essay-card">
+            <h3>Essay grader</h3>
+            <p class="hint">Paste a draft and rubric for a mark, originality proxy, and criterion feedback.
+              Uses AI when configured; otherwise a local heuristic.</p>
+            <label for="essay-title">Title
+              <input id="essay-title" type="text" placeholder="Essay draft 2" autocomplete="off" />
+            </label>
+            <label for="essay-rubric">Rubric
+              <textarea id="essay-rubric" rows="4" placeholder="Paste the marking rubric…"></textarea>
+            </label>
+            <label for="essay-body">Draft
+              <textarea id="essay-body" rows="8" placeholder="Paste your essay draft…"></textarea>
+            </label>
+            <button id="essay-grade" type="button" class="primary">Grade essay</button>
+            <div id="essay-result"></div>
+          </div>
+
+          <div class="card" id="ai-chat-card">
+            <h3>Ask the library</h3>
+            <p class="hint">Answers from your transcripts. Extractive offline; richer with an LLM under Export → models.</p>
+            <label for="ai-chat-q" class="sr-only">Question</label>
+            <div class="row gap wrap">
+              <input id="ai-chat-q" type="text" placeholder="Ask a question about this course…" autocomplete="off" style="flex:1" />
+              <button id="ai-chat-ask" type="button" class="primary">Ask</button>
+            </div>
+            <div id="ai-chat-body"></div>
+            <p class="derived-from">
+              <svg class="ico" aria-hidden="true"><use href="#i-link"/></svg>
+              Exam packs live under
+              <button type="button" class="link-btn" data-goto-tab="export">Export → Practice exam</button>.
+            </p>
           </div>
 
           <div class="study-grid">

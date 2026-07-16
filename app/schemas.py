@@ -263,6 +263,8 @@ class AssessmentReq(BaseModel):
     due_date: str = ""
     weight: Optional[float] = None
     status: str = "not_started"
+    kind: str = "assignment"           # assignment | exam | quiz | other
+    week: Optional[int] = None
     course_id: Optional[int] = None    # defaults to the active course
 
 class AssessmentUpdate(BaseModel):
@@ -270,6 +272,8 @@ class AssessmentUpdate(BaseModel):
     due_date: Optional[str] = None
     weight: Optional[float] = None
     status: Optional[str] = None
+    kind: Optional[str] = None
+    week: Optional[int] = None
 
 class StudySessionReq(BaseModel):
     duration: int                      # minutes
@@ -287,16 +291,62 @@ class GradeReq(BaseModel):
     quality: int                       # 0–5 recall score (SM-2)
 
 class NoteReq(BaseModel):
-    path: str
+    path: str = ""
     body: str
     course_id: Optional[int] = None
     timestamp_s: Optional[float] = None
     bookmark: bool = False
+    title: str = ""
+    folder_id: Optional[int] = None
+    session_type: str = ""             # lecture | tutorial | lab | other
 
 class NoteUpdate(BaseModel):
     body: Optional[str] = None
     timestamp_s: Optional[float] = None
     bookmark: Optional[bool] = None
+    title: Optional[str] = None
+    folder_id: Optional[int] = None
+    session_type: Optional[str] = None
+    path: Optional[str] = None
+
+class NoteFolderReq(BaseModel):
+    name: str
+    parent_id: Optional[int] = None
+    course_id: Optional[int] = None
+
+class NoteFolderRename(BaseModel):
+    name: str
+
+class NoteImportReq(BaseModel):
+    path: str                          # filesystem path to Word/PDF/text
+    title: str = ""
+    folder_id: Optional[int] = None
+    session_type: str = ""
+    attach_path: str = ""              # optional library lecture path
+    course_id: Optional[int] = None
+
+class FlashcardSetFromNoteReq(BaseModel):
+    note_id: int
+    name: str = ""
+    max_cards: int = 40
+
+class EssayGradeReq(BaseModel):
+    essay: str
+    rubric: str
+    title: str = ""
+    course_id: Optional[int] = None
+    save: bool = True
+
+class FocusStartReq(BaseModel):
+    minutes: int = 25
+    activity_type: str = "focus"
+    course_id: Optional[int] = None
+
+class FocusCompleteReq(BaseModel):
+    minutes: int
+    activity_type: str = "focus"
+    started_at: str = ""
+    course_id: Optional[int] = None
 
 class ItemTagReq(BaseModel):
     path: str

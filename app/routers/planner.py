@@ -28,8 +28,9 @@ def api_assessments_list(course: Optional[int] = None) -> Dict[str, Any]:
 def api_assessments_create(req: AssessmentReq) -> Dict[str, Any]:
     cid = _course_or_active(req.course_id)
     try:
-        return study_planner.create_assessment(context.db, cid, req.name, req.due_date,
-                                               req.weight, req.status)
+        return study_planner.create_assessment(
+            context.db, cid, req.name, req.due_date, req.weight, req.status,
+            kind=req.kind, week=req.week)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
 

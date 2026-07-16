@@ -192,6 +192,14 @@ async function pickSaveFile(title = "Save as", defaultName = "", ext = "") {
   } catch (_) { return askPathFallback(title, defaultName); }
 }
 
+async function pickFile(title = "Choose a file", ext = "") {
+  try {
+    const d = await postJSON("/api/pick-file", { title, ext });
+    if (d.available === false) return askPathFallback(title);
+    return d.path || null;
+  } catch (_) { return askPathFallback(title); }
+}
+
 // Fallback for hosts with no desktop dialog (e.g. headless): a typed-path modal.
 function askPathFallback(title = "Where should this be saved?", defaultValue = "") {
   return new Promise((resolve) => {
@@ -299,6 +307,7 @@ const TAB_LABELS = {
   "moodle-quick": "Moodle import",
   import: "Import materials",
   library: "Library",
+  notes: "Notes",
   study: "Study",
   semester: "Semester plan",
   export: "Export",
@@ -384,6 +393,7 @@ function showTab(name) {
   if (name === "home") loadDashboard();
   if (name === "library") loadTranscripts();
   if (name === "jobs") loadJobs();
+  if (name === "notes") loadNotesWorkspace();
   if (name === "study") loadStudy();
   if (name === "semester") loadSemester();
   if (name === "export") loadExportHub();
@@ -1119,6 +1129,11 @@ $("item-tag-input").addEventListener("keydown", (e) => {
 $("note-add-go").addEventListener("click", () => { if (State.currentPath) addNote(State.currentPath); });
 $("note-body").addEventListener("keydown", (e) => { if (e.key === "Enter" && State.currentPath) addNote(State.currentPath); });
 $("item-cite-go").addEventListener("click", () => { if (State.currentPath) showCitations(State.currentPath); });
+$("item-open-notes")?.addEventListener("click", () => {
+  if (!State.currentPath) return;
+  State.notesAttachPath = State.currentPath;
+  showTab("notes");
+});
 
 // ---- Study tab ------------------------------------------------------------
 
@@ -1126,6 +1141,57 @@ async function loadStudy() {
   loadStreak();
   loadNextUp();
   loadWorkload();
+  loadTracker();
+}
+
+async function loadTracker() {
+  const box = $("tracker-body");
+  if (!box) return;
+  try {
+    const data = await api("/api/study/tracker");
+    clear(box);
+    const upcoming = data.upcoming || [];
+    if (!upcoming.length && !(data.assessments || []).length) {
+      box.appendChild(el("p", { class: "muted small", text: "No assignments yet. Add one above." }));
+      return;
+    }
+    const list = el("div", { class: "tracker-list" });
+    (data.assessments || []).forEach((a) => {
+      list.appendChild(el("div", { class: "tracker-item" }, [
+        el("span", { class: "tracker-kind", text: a.kind || "assignment" }),
+        el("strong", { text: a.name }),
+        a.week != null ? el("span", { class: "muted small", text: `W${a.week}` }) : null,
+        el("span", { class: "muted small", text: a.due_date || "no due date" }),
+        el("select", {
+          class: "small",
+          onchange: async (e) => {
+            try {
+              await postJSON(`/api/assessments/${a.id}`, { status: e.target.value }, "PATCH");
+              toast("Assessment updated.", "ok");
+              loadTracker();
+            } catch (err) { toastError(err); }
+          },
+        }, ["not_started", "in_progress", "submitted", "graded"].map((s) =>
+          el("option", { value: s, text: s.replace("_", " "), selected: a.status === s || null }))),
+      ]));
+    });
+    box.appendChild(list);
+  } catch (e) { box.textContent = errorText(e); }
+}
+
+async function addTrackerItem() {
+  const name = ($("tracker-name")?.value || "").trim();
+  if (!name) { toast("Enter an assignment name.", "warn"); return; }
+  const due = $("tracker-due")?.value || "";
+  const kind = $("tracker-kind")?.value || "assignment";
+  const weekRaw = $("tracker-week")?.value;
+  const week = weekRaw ? parseInt(weekRaw, 10) : null;
+  try {
+    await postJSON("/api/assessments", { name, due_date: due, kind, week });
+    $("tracker-name").value = "";
+    toast("Assessment added.", "ok");
+    loadTracker();
+  } catch (e) { toastError(e); }
 }
 
 async function loadStreak() {
@@ -1311,6 +1377,430 @@ $("practice-start").addEventListener("click", startPractice);
 $("glossary-view").addEventListener("click", showGlossary);
 $("glossary-export").addEventListener("click", exportGlossary);
 $("guide-export").addEventListener("click", exportGuide);
+$("tracker-add")?.addEventListener("click", addTrackerItem);
+$("recall-start")?.addEventListener("click", startDailyRecall);
+$("slideshow-start")?.addEventListener("click", startSlideshow);
+$("focus-start")?.addEventListener("click", startFocusMode);
+$("focus-stop")?.addEventListener("click", completeFocusMode);
+$("essay-grade")?.addEventListener("click", gradeEssay);
+$("ai-chat-ask")?.addEventListener("click", askLibrary);
+$("ai-chat-q")?.addEventListener("keydown", (e) => { if (e.key === "Enter") askLibrary(); });
+$("mode-practice")?.addEventListener("click", () => { focusCard("practice-card"); startPractice(); });
+$("mode-recall")?.addEventListener("click", () => { focusCard("recall-card"); startDailyRecall(); });
+$("mode-slideshow")?.addEventListener("click", () => { focusCard("slideshow-card"); startSlideshow(); });
+$("mode-focus")?.addEventListener("click", () => { focusCard("focus-card"); startFocusMode(); });
+document.querySelectorAll("[data-goto-tab]").forEach((b) =>
+  b.addEventListener("click", () => showTab(b.dataset.gotoTab)));
+
+// -- daily recall -----------------------------------------------------------
+
+async function startDailyRecall() {
+  const box = $("recall-body");
+  box.textContent = "Loading due cards…";
+  try {
+    const data = await api("/api/study/daily-recall?limit=20");
+    clear(box);
+    if (!data.count) {
+      box.appendChild(emptyState("Nothing due today. Generate flashcards from Notes or Export to seed the deck.", [
+        { label: "Open Notes", primary: true, run: () => showTab("notes") },
+        { label: "Generate flashcards", run: () => { showTab("export"); $("export-more-tools")?.setAttribute("open", ""); } },
+      ]));
+      return;
+    }
+    State.recallItems = data.items;
+    State.recallIndex = 0;
+    renderRecall();
+  } catch (e) { box.textContent = errorText(e); }
+}
+
+function renderRecall() {
+  const box = $("recall-body");
+  const items = State.recallItems || [];
+  const i = State.recallIndex || 0;
+  clear(box);
+  if (!items.length) return;
+  const item = items[i];
+  box.appendChild(el("div", { class: "hint", text: `${i + 1} / ${items.length} · due ${item.due || "today"}` }));
+  box.appendChild(el("div", { class: "flip-prompt", text: item.front }));
+  const answer = el("div", { class: "flip-answer muted", hidden: true, text: item.back });
+  box.appendChild(answer);
+  box.appendChild(el("button", { class: "ghost small", text: "Show answer", type: "button",
+    onclick: () => answer.removeAttribute("hidden") }));
+  const grades = el("div", { class: "row gap wrap", style: "margin-top:10px" });
+  [0, 1, 2, 3, 4, 5].forEach((q) => {
+    grades.appendChild(el("button", {
+      class: "ghost small", type: "button", text: String(q),
+      title: "SM-2 quality " + q,
+      onclick: () => gradeRecallItem(item.id, q),
+    }));
+  });
+  box.appendChild(el("p", { class: "hint", text: "Grade recall: 0 again · 3 hard · 5 easy" }));
+  box.appendChild(grades);
+}
+
+async function gradeRecallItem(id, quality) {
+  try {
+    await postJSON(`/api/reviews/${id}/grade`, { quality });
+    State.recallIndex = (State.recallIndex || 0) + 1;
+    if (State.recallIndex >= (State.recallItems || []).length) {
+      $("recall-body").textContent = "Recall session complete.";
+      loadStreak();
+      return;
+    }
+    renderRecall();
+  } catch (e) { toastError(e); }
+}
+
+// -- slideshow --------------------------------------------------------------
+
+async function startSlideshow() {
+  const box = $("slideshow-body");
+  box.textContent = "Loading deck…";
+  try {
+    const data = await api("/api/study/slideshow?limit=40");
+    clear(box);
+    if (!data.count) {
+      box.appendChild(emptyState("No cards yet. Create a flashcard set from a note first.", [
+        { label: "Open Notes", primary: true, run: () => showTab("notes") },
+      ]));
+      return;
+    }
+    State.slideshow = data.cards;
+    State.slideshowIndex = 0;
+    State.slideshowFlipped = false;
+    renderSlideshow();
+  } catch (e) { box.textContent = errorText(e); }
+}
+
+function renderSlideshow() {
+  const box = $("slideshow-body");
+  const cards = State.slideshow || [];
+  const i = State.slideshowIndex || 0;
+  clear(box);
+  if (!cards.length) return;
+  const card = cards[i];
+  const flipped = !!State.slideshowFlipped;
+  box.appendChild(el("div", { class: "hint", text: `${i + 1} / ${cards.length}` }));
+  box.appendChild(el("button", {
+    type: "button",
+    class: "flip-card" + (flipped ? " flipped" : ""),
+    text: flipped ? card.back : card.front,
+    onclick: () => { State.slideshowFlipped = !flipped; renderSlideshow(); },
+  }));
+  box.appendChild(el("div", { class: "row gap wrap", style: "margin-top:10px" }, [
+    el("button", { class: "ghost small", type: "button", text: "← Prev",
+      onclick: () => {
+        State.slideshowIndex = (i - 1 + cards.length) % cards.length;
+        State.slideshowFlipped = false;
+        renderSlideshow();
+      } }),
+    el("button", { class: "ghost small", type: "button", text: "Next →",
+      onclick: () => {
+        State.slideshowIndex = (i + 1) % cards.length;
+        State.slideshowFlipped = false;
+        renderSlideshow();
+      } }),
+  ]));
+}
+
+// -- focus / Lock In --------------------------------------------------------
+
+async function startFocusMode() {
+  const minutes = parseInt($("focus-minutes")?.value, 10) || 25;
+  try {
+    const ticket = await postJSON("/api/study/focus/start", { minutes, activity_type: "focus" });
+    State.focusTicket = ticket;
+    State.focusEndsAt = Date.now() + minutes * 60 * 1000;
+    $("focus-stop").hidden = false;
+    $("focus-start").disabled = true;
+    tickFocus();
+    State.focusTimer = setInterval(tickFocus, 1000);
+  } catch (e) { toastError(e); }
+}
+
+function tickFocus() {
+  const box = $("focus-body");
+  if (!State.focusEndsAt) return;
+  const left = Math.max(0, State.focusEndsAt - Date.now());
+  const m = Math.floor(left / 60000);
+  const s = Math.floor((left % 60000) / 1000);
+  box.textContent = left === 0
+    ? "Time is up. Complete the session to log it."
+    : `Focus · ${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")} remaining`;
+  if (left === 0 && State.focusTimer) {
+    clearInterval(State.focusTimer);
+    State.focusTimer = null;
+  }
+}
+
+async function completeFocusMode() {
+  const ticket = State.focusTicket;
+  if (!ticket) return;
+  const planned = ticket.minutes || 25;
+  const elapsed = planned; // credit the planned block when completing
+  try {
+    await postJSON("/api/study/focus/complete", {
+      minutes: elapsed,
+      activity_type: "focus",
+      started_at: ticket.started_at || "",
+    });
+    toast(`Focus session logged: ${elapsed} min.`, "ok");
+    $("focus-body").textContent = `Logged ${elapsed} minutes.`;
+    $("focus-stop").hidden = true;
+    $("focus-start").disabled = false;
+    if (State.focusTimer) clearInterval(State.focusTimer);
+    State.focusTicket = null;
+    State.focusEndsAt = null;
+    loadStreak();
+  } catch (e) { toastError(e); }
+}
+
+// -- essay grader -----------------------------------------------------------
+
+async function gradeEssay() {
+  const box = $("essay-result");
+  box.textContent = "Grading…";
+  try {
+    const res = await postJSON("/api/essay/grade", {
+      title: ($("essay-title")?.value || "").trim(),
+      rubric: ($("essay-rubric")?.value || "").trim(),
+      essay: ($("essay-body")?.value || "").trim(),
+      save: true,
+    });
+    clear(box);
+    box.appendChild(el("div", { class: "essay-scores" }, [
+      el("div", {}, [el("strong", { text: `${Math.round(res.score)}%` }), el("span", { class: "muted small", text: " Essay grade" })]),
+      el("div", {}, [el("strong", { text: `${Math.round(res.originality)}%` }), el("span", { class: "muted small", text: " Originality" })]),
+    ]));
+    (res.strengths || []).forEach((s) => {
+      const text = String(s);
+      box.appendChild(el("p", { class: "essay-ok",
+        text: text.startsWith("Did well") ? text : "Did well · " + text }));
+    });
+    (res.improvements || []).forEach((s) => {
+      const text = String(s);
+      box.appendChild(el("p", { class: "essay-improve",
+        text: text.startsWith("Improve") ? text : "Improve · " + text }));
+    });
+    if (res.summary) box.appendChild(el("p", { class: "hint", text: res.summary }));
+    box.appendChild(el("p", { class: "muted small", text: `Generated: ${res.generated}` }));
+  } catch (e) { box.textContent = errorText(e); }
+}
+
+// -- AI chat ----------------------------------------------------------------
+
+async function askLibrary() {
+  const q = ($("ai-chat-q")?.value || "").trim();
+  if (!q) { toast("Ask a question first.", "warn"); return; }
+  const box = $("ai-chat-body");
+  box.textContent = "Searching the library…";
+  try {
+    const res = await postJSON("/api/llm/chat", { query: q });
+    clear(box);
+    box.appendChild(el("p", { text: res.answer || "" }));
+    if ((res.citations || []).length) {
+      const ul = el("ul", { class: "cite-list" });
+      res.citations.forEach((c) => {
+        ul.appendChild(el("li", { class: "muted small",
+          text: `[${c.n}] ${c.lecture}: ${c.snippet || ""}` }));
+      });
+      box.appendChild(ul);
+    }
+    box.appendChild(el("p", { class: "muted small", text: `Generated: ${res.generated} · confidence ${res.confidence}` }));
+  } catch (e) { box.textContent = errorText(e); }
+}
+
+// -- notes workspace --------------------------------------------------------
+
+async function loadNotesWorkspace() {
+  try {
+    const data = await api("/api/notes/workspace");
+    State.notesWorkspace = data;
+    renderNoteFolders(data.folders || []);
+    renderFlashcardSets(data.flashcard_sets || []);
+    renderNotesList(data.notes || []);
+    if (State.notesAttachPath && $("note-attach-path")) {
+      $("note-attach-path").value = State.notesAttachPath;
+      if ($("note-session-type") && !$("note-session-type").value) {
+        $("note-session-type").value = "lecture";
+      }
+      if (!$("note-title")?.value) {
+        const leaf = State.notesAttachPath.split("/").pop() || "";
+        $("note-title").value = leaf.replace(/\.[^.]+$/, "").replace(/[_-]+/g, " ");
+      }
+      State.notesAttachPath = null;
+      $("note-compose-body")?.focus();
+    }
+  } catch (e) {
+    toastError(e);
+  }
+}
+
+function renderNoteFolders(folders) {
+  const list = $("note-folders-list");
+  const sel = $("note-folder-select");
+  if (!list || !sel) return;
+  clear(list);
+  clear(sel);
+  sel.appendChild(el("option", { value: "", text: "No folder" }));
+  folders.forEach((f) => {
+    list.appendChild(el("div", { class: "notes-row" }, [
+      el("span", { text: f.name }),
+      el("button", { class: "ghost small", type: "button", text: "Delete",
+        onclick: async () => {
+          try {
+            await api(`/api/note-folders/${f.id}`, { method: "DELETE" });
+            loadNotesWorkspace();
+          } catch (e) { toastError(e); }
+        } }),
+    ]));
+    sel.appendChild(el("option", { value: String(f.id), text: f.name }));
+  });
+  if (!folders.length) list.appendChild(el("p", { class: "muted small", text: "No folders yet." }));
+}
+
+function renderFlashcardSets(sets) {
+  const list = $("flashcard-sets-list");
+  if (!list) return;
+  clear(list);
+  if (!sets.length) {
+    list.appendChild(el("p", { class: "muted small", text: "No flashcard sets yet." }));
+    return;
+  }
+  sets.forEach((s) => {
+    list.appendChild(el("div", { class: "notes-row" }, [
+      el("div", {}, [
+        el("strong", { text: s.name }),
+        el("div", { class: "muted small", text: `${s.card_count} cards` }),
+      ]),
+      el("button", { class: "ghost small", type: "button", text: "Slideshow",
+        onclick: async () => {
+          showTab("study");
+          const box = $("slideshow-body");
+          try {
+            const data = await api(`/api/study/slideshow?set_id=${s.id}`);
+            State.slideshow = data.cards;
+            State.slideshowIndex = 0;
+            State.slideshowFlipped = false;
+            focusCard("slideshow-card");
+            renderSlideshow();
+          } catch (e) { box.textContent = errorText(e); }
+        } }),
+    ]));
+  });
+}
+
+function renderNotesList(notes) {
+  const list = $("notes-library-list");
+  if (!list) return;
+  clear(list);
+  list.appendChild(el("h3", { text: `Library (${notes.length})` }));
+  if (!notes.length) {
+    list.appendChild(el("p", { class: "muted small", text: "No notes yet. Save one or import a Word/PDF file." }));
+    return;
+  }
+  notes.forEach((n) => {
+    const title = n.title || (n.body || "").slice(0, 48) || `Note ${n.id}`;
+    list.appendChild(el("div", { class: "notes-row" }, [
+      el("div", {}, [
+        el("strong", { text: title }),
+        el("div", { class: "muted small",
+          text: [n.session_type, n.path].filter(Boolean).join(" · ") || "unfiled" }),
+      ]),
+      el("div", { class: "row gap" }, [
+        el("button", { class: "ghost small", type: "button", text: "Open",
+          onclick: () => {
+            $("note-title").value = n.title || "";
+            $("note-compose-body").value = n.body || "";
+            $("note-session-type").value = n.session_type || "";
+            $("note-attach-path").value = n.path || "";
+            $("note-folder-select").value = n.folder_id != null ? String(n.folder_id) : "";
+            State.editingNoteId = n.id;
+          } }),
+        el("button", { class: "ghost small", type: "button", text: "→ Cards",
+          onclick: () => noteToCards(n.id) }),
+        el("button", { class: "ghost small", type: "button", text: "Delete",
+          onclick: async () => {
+            try {
+              await api(`/api/notes/${n.id}`, { method: "DELETE" });
+              if (State.editingNoteId === n.id) State.editingNoteId = null;
+              loadNotesWorkspace();
+            } catch (e) { toastError(e); }
+          } }),
+      ]),
+    ]));
+  });
+}
+
+async function saveComposedNote() {
+  const body = ($("note-compose-body")?.value || "").trim();
+  if (!body) { toast("Write a note body first.", "warn"); return; }
+  const title = ($("note-title")?.value || "").trim();
+  const session_type = $("note-session-type")?.value || "";
+  const path = ($("note-attach-path")?.value || "").trim();
+  const folderRaw = $("note-folder-select")?.value;
+  const folder_id = folderRaw ? parseInt(folderRaw, 10) : null;
+  try {
+    if (State.editingNoteId) {
+      await postJSON(`/api/notes/${State.editingNoteId}`, {
+        body, title, session_type, path, folder_id,
+      }, "PATCH");
+      toast("Note updated.", "ok");
+    } else {
+      await postJSON("/api/notes", {
+        body, title, session_type, path, folder_id, bookmark: false,
+      });
+      toast("Note saved.", "ok");
+    }
+    State.editingNoteId = null;
+    $("note-compose-body").value = "";
+    $("note-title").value = "";
+    loadNotesWorkspace();
+  } catch (e) { toastError(e); }
+}
+
+async function addNoteFolder() {
+  const name = ($("note-folder-name")?.value || "").trim();
+  if (!name) { toast("Enter a folder name.", "warn"); return; }
+  try {
+    await postJSON("/api/note-folders", { name });
+    $("note-folder-name").value = "";
+    loadNotesWorkspace();
+  } catch (e) { toastError(e); }
+}
+
+async function importNoteFile() {
+  const path = await pickFile("Choose a Word or PDF file", ".pdf;.docx;.doc;.txt;.md");
+  if (!path) return;
+  const session_type = $("note-session-type")?.value || "";
+  const folderRaw = $("note-folder-select")?.value;
+  const folder_id = folderRaw ? parseInt(folderRaw, 10) : null;
+  const attach_path = ($("note-attach-path")?.value || "").trim();
+  try {
+    await postJSON("/api/notes/import", {
+      path, session_type, folder_id, attach_path,
+      title: ($("note-title")?.value || "").trim(),
+    });
+    toast("Imported into notes.", "ok");
+    loadNotesWorkspace();
+  } catch (e) { toastError(e); }
+}
+
+async function noteToCards(noteId) {
+  const id = noteId || State.editingNoteId;
+  if (!id) { toast("Open or save a note first.", "warn"); return; }
+  try {
+    const res = await postJSON("/api/flashcard-sets/from-note", { note_id: id });
+    toast(`Created ${res.seeded} cards.`, "ok");
+    loadNotesWorkspace();
+  } catch (e) { toastError(e); }
+}
+
+$("notes-refresh")?.addEventListener("click", loadNotesWorkspace);
+$("note-folder-add")?.addEventListener("click", addNoteFolder);
+$("note-save")?.addEventListener("click", saveComposedNote);
+$("note-import")?.addEventListener("click", importNoteFile);
+$("note-to-cards")?.addEventListener("click", () => noteToCards());
 
 // ---- command palette (Ctrl/Cmd+K) -----------------------------------------
 
@@ -1319,6 +1809,7 @@ const PALETTE_ACTIONS = [
   { label: "Go to Moodle import", run: () => showTab("moodle-quick") },
   { label: "Go to Import", run: () => showTab("import") },
   { label: "Go to Library", run: () => showTab("library") },
+  { label: "Go to Notes", run: () => showTab("notes") },
   { label: "Go to Study", run: () => showTab("study") },
   { label: "Go to Export", run: () => showTab("export") },
   { label: "Go to Jobs", run: () => showTab("jobs") },
@@ -1327,6 +1818,7 @@ const PALETTE_ACTIONS = [
   { label: "Search the library", run: () => { showTab("library"); const q = $("search-q"); if (q) q.focus(); } },
   { label: "Show keyboard shortcuts", run: () => showShortcuts() },
   { label: "Start a practice quiz", run: () => { showTab("study"); startPractice(); } },
+  { label: "Start daily recall", run: () => { showTab("study"); startDailyRecall(); } },
   { label: "Show glossary", run: () => { showTab("study"); showGlossary(); } },
   { label: "Toggle theme", run: () => $("theme-toggle").click() },
 ];
