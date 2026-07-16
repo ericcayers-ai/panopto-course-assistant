@@ -289,6 +289,25 @@ function applyLevel(level) {
   const btn = $("level-toggle");
   if (label) label.textContent = simple ? "Advanced mode" : "Simple mode";
   if (btn) btn.setAttribute("aria-pressed", String(!simple));
+  if (simple) {
+    // Leave Advanced-only panels (e.g. Semester) so the user is not stranded
+    // with a visible panel and a hidden nav tab.
+    const active = document.querySelector(".panel.active");
+    if (active) {
+      const tab = document.querySelector(`.tab[data-tab="${active.id}"]`);
+      if (tab?.hasAttribute("data-adv-only")) showTab("home");
+    }
+    // Hidden Quality/Live/Eco profiles must not keep driving gatherSettings().
+    const activeProf = document.querySelector("#stt-profiles .seg.active");
+    if (activeProf?.hasAttribute("data-adv-only")) {
+      document.querySelectorAll("#stt-profiles .seg[data-profile]").forEach((b) => {
+        const on = b.dataset.profile === "auto";
+        b.classList.toggle("active", on);
+        b.setAttribute("aria-selected", String(on));
+      });
+      if (typeof refreshSttRoute === "function") refreshSttRoute();
+    }
+  }
 }
 
 function initLevel() {
@@ -707,6 +726,7 @@ function gatherSettings() {
     profile: sttProfile(),
     diarization: val("stt-diarization", "off") || "off",
     caption_first: checked("stt-caption-first", true),
+    force: checked("stt-overwrite") || checked("mq-overwrite"),
     use_adaptive: true,
   };
 }
@@ -1937,7 +1957,7 @@ const PALETTE_ACTIONS = [
   { label: "Go to Export", run: () => showTab("export") },
   { label: "Go to Jobs", run: () => showTab("jobs") },
   { label: "Go to Speech", run: () => showTab("tts") },
-  { label: "Go to Semester plan", run: () => showTab("semester") },
+  { label: "Go to Semester plan", run: () => showTab("semester"), advOnly: true },
   { label: "Search the library", run: () => { showTab("library"); const q = $("search-q"); if (q) q.focus(); } },
   { label: "Show keyboard shortcuts", run: () => showShortcuts() },
   { label: "Start a practice quiz", run: () => { showTab("study"); startPractice(); } },
@@ -1947,6 +1967,10 @@ const PALETTE_ACTIONS = [
 ];
 
 let paletteOpen = false;
+function paletteActions() {
+  const simple = document.body.dataset.level === "simple";
+  return PALETTE_ACTIONS.filter((a) => !(simple && a.advOnly));
+}
 function openPalette() {
   if (paletteOpen) return;
   paletteOpen = true;
@@ -1955,7 +1979,7 @@ function openPalette() {
     "aria-controls": "palette-list", "aria-autocomplete": "list" });
   const list = el("div", { id: "palette-list", class: "palette-list", role: "listbox",
     "aria-label": "Commands" });
-  let filtered = PALETTE_ACTIONS.slice();
+  let filtered = paletteActions();
   let active = 0;
 
   openModal((box, close) => {
@@ -1974,7 +1998,7 @@ function openPalette() {
     }
     input.addEventListener("input", () => {
       const q = input.value.toLowerCase();
-      filtered = PALETTE_ACTIONS.filter((a) => a.label.toLowerCase().includes(q));
+      filtered = paletteActions().filter((a) => a.label.toLowerCase().includes(q));
       active = 0; render();
     });
     input.addEventListener("keydown", (e) => {
@@ -3159,6 +3183,22 @@ function restore() {
     if (s.device && $("opt-device")) $("opt-device").value = s.device;
     if (typeof s.audio_only === "boolean" && $("opt-audio")) $("opt-audio").checked = s.audio_only;
     if (typeof s.skip_existing === "boolean" && $("opt-skip")) $("opt-skip").checked = s.skip_existing;
+    // Speech panel is the STT settings home — restore into those controls.
+    if (s.language && $("stt-language")) $("stt-language").value = s.language;
+    if (typeof s.caption_first === "boolean" && $("stt-caption-first")) {
+      $("stt-caption-first").checked = s.caption_first;
+    }
+    if (s.diarization && $("stt-diarization")) $("stt-diarization").value = s.diarization;
+    if (typeof s.force === "boolean" && $("stt-overwrite")) $("stt-overwrite").checked = s.force;
+    if (s.profile) {
+      const simple = document.body.dataset.level === "simple";
+      const want = (simple && ["quality", "live", "eco"].includes(s.profile)) ? "auto" : s.profile;
+      document.querySelectorAll("#stt-profiles .seg[data-profile]").forEach((b) => {
+        const on = b.dataset.profile === want;
+        b.classList.toggle("active", on);
+        b.setAttribute("aria-selected", String(on));
+      });
+    }
   } catch (_) {}
 }
 
@@ -3190,22 +3230,13 @@ let _mqConnected = false;   // true once we have a stored token for the site
 
 async function initMoodleQuick() {
   if (mqInited) return; mqInited = true;
+  // Keep step 2 as a thin Speech handoff — do not overwrite #mq-recommend with
+  // a second STT settings stack or populate removed mq-adv-engine controls.
   try {
     mqRecommend = await api("/api/transcribe/recommend");
-    const r = $("mq-recommend");
-    if (r) r.textContent = mqRecommend.ready
-      ? `Recommended settings: ${mqRecommend.rationale}`
-      : `Transcription is unavailable: ${mqRecommend.reason} Documents can still be imported.`;
-    // Populate the advanced-settings engine dropdown from what is installed.
-    const sel = $("mq-adv-engine");
-    if (sel) {
-      clear(sel);
-      sel.appendChild(el("option", { value: "", text: "Recommended" }));
-      const engines = (State.status && State.status.engines)
-        ? Object.entries(State.status.engines).filter(([, v]) => v).map(([k]) => k) : [];
-      engines.forEach((eng) => sel.appendChild(el("option", { value: eng, text: eng })));
-    }
-  } catch (_) {}
+  } catch (_) {
+    mqRecommend = null;
+  }
 }
 
 // ---- connect helper (Moodle web-service API) ------------------------------
@@ -3586,7 +3617,8 @@ async function autoTranscribeMq() {
     return;
   }
   State.lectures = recs.slice();
-  const overwrite = $("mq-overwrite")?.checked === true;
+  const overwrite = $("stt-overwrite")?.checked === true
+    || $("mq-overwrite")?.checked === true;
   await enqueueLectureList(recs, { force: overwrite });
 }
 $("mq-autotranscribe")?.addEventListener("click", autoTranscribeMq);
@@ -3868,7 +3900,8 @@ async function enqueueSpeechTranscribe() {
   if (out) clear(out);
   const indexes = typeof checkedIndexes === "function" ? checkedIndexes() : [];
   const media = ($("stt-media-url")?.value || "").trim();
-  const overwrite = $("mq-overwrite")?.checked === true;
+  const overwrite = $("stt-overwrite")?.checked === true
+    || $("mq-overwrite")?.checked === true;
 
   // Prefer explicit lecture selection, then Moodle-preloaded lectures, then a media URL.
   let lectures = [];

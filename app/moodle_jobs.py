@@ -122,7 +122,7 @@ def _merge_paper_codes(codes: List[str]) -> List[str]:
         existing = []
     merged = list(dict.fromkeys([*existing, *codes]))
     settings_store.set(context.db, "semester.paper_codes", merged)
-    return codes
+    return merged
 
 
 def run_moodle_connect(payload: Dict[str, Any], progress: ProgressCb) -> Dict[str, Any]:
@@ -174,7 +174,8 @@ def run_moodle_connect(payload: Dict[str, Any], progress: ProgressCb) -> Dict[st
     from . import suites
     paper_codes = suites.detect_paper_codes_from_courses(courses_list)
     if paper_codes:
-        settings_store.set(context.db, "semester.paper_codes", paper_codes)
+        # Merge — never wipe codes already saved from other Moodle sites.
+        paper_codes = _merge_paper_codes(paper_codes)
 
     progress("discovering calendar", 0.85)
     calendar_url = ""

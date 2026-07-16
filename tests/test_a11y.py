@@ -328,3 +328,17 @@ def test_reduced_motion_is_honoured():
 
 def test_simple_mode_hides_advanced_only_markup():
     assert '[data-level="simple"] [data-adv-only]' in CSS
+    assert 'data-tab="semester" data-adv-only' in HTML
+    # Leaving an Advanced-only panel must navigate home in Simple mode.
+    assert 'tab?.hasAttribute("data-adv-only")' in JS or 'hasAttribute("data-adv-only")' in JS
+    assert 'showTab("home")' in JS
+    # Command palette hides Advanced-only actions in Simple mode.
+    assert "advOnly: true" in JS
+    assert "paletteActions()" in JS
+    # Moodle step 2 stays a thin Speech handoff (no recommend overwrite).
+    assert 'r.textContent = mqRecommend.ready' not in JS
+    assert 'id="stt-overwrite"' in HTML
+    assert 'id="mq-open-speech"' in HTML
+    # Mid-width topbar reflow before the mobile drawer breakpoint.
+    assert "@media (max-width: 1100px)" in CSS
+    assert "@media (max-width: 900px)" in CSS

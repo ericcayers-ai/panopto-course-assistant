@@ -134,13 +134,18 @@ def stage_portable(staging: Path, *, skip_pip: bool = False) -> None:
         _pip_install(py, "-r", str(req))
 
     _write_cmd_launcher(staging)
-    if not _build_exe_launcher(staging):
-        # Guarantee an entry point named like the product for structure tests.
-        # On non-Windows or without PyInstaller, the .cmd is the primary launcher.
-        marker = staging / "CourseAssistant.exe"
-        if not marker.is_file():
-            # Tiny stub so ZIP layout checks pass; real builds produce a true EXE.
-            marker.write_bytes(b"MZ-portable-stub\n")
+    built = _build_exe_launcher(staging)
+    if not built:
+        if skip_pip:
+            # Layout smoke only — a tiny marker satisfies structure tests.
+            marker = staging / "CourseAssistant.exe"
+            if not marker.is_file():
+                marker.write_bytes(b"MZ-portable-stub\n")
+        else:
+            raise RuntimeError(
+                "PyInstaller failed to build CourseAssistant.exe. "
+                "Install pyinstaller or use CourseAssistant.cmd as the launcher."
+            )
 
 
 def build_portable_zip(output_dir: Path | None = None, *, skip_pip: bool = False) -> Path:

@@ -44,19 +44,31 @@ def _detect_base_dir() -> Path:
     return here
 
 
-def _default_output_dir(base: Path) -> Path:
-    """Writable library directory: beside the app, else LOCALAPPDATA."""
-    if os.environ.get("PANOPTO_OUTPUT"):
-        return Path(os.environ["PANOPTO_OUTPUT"]).expanduser().resolve()
-    candidate = (base / "transcripts").resolve()
+def _probe_writable(candidate: Path) -> bool:
+    """True when we can create the directory and write a probe file."""
     try:
         candidate.mkdir(parents=True, exist_ok=True)
         probe = candidate / ".write_probe"
         probe.write_text("ok", encoding="utf-8")
         probe.unlink(missing_ok=True)
-        return candidate
+        return True
     except Exception:
-        pass
+        return False
+
+
+def _default_output_dir(base: Path) -> Path:
+    """Writable library directory: beside the app, else LOCALAPPDATA.
+
+    ``PANOPTO_OUTPUT`` is preferred when set *and writable*. Portable installs
+    on read-only media still fall back to ``%LOCALAPPDATA%\\CourseAssistant``.
+    """
+    candidates: list[Path] = []
+    if os.environ.get("PANOPTO_OUTPUT"):
+        candidates.append(Path(os.environ["PANOPTO_OUTPUT"]).expanduser().resolve())
+    candidates.append((base / "transcripts").resolve())
+    for candidate in candidates:
+        if _probe_writable(candidate):
+            return candidate
     local = os.environ.get("LOCALAPPDATA") or os.environ.get("HOME") or str(base)
     fallback = Path(local) / "CourseAssistant" / "transcripts"
     return fallback.resolve()

@@ -31,3 +31,17 @@ def test_discover_calendar_url_from_html():
     assert len(urls) == 1
     assert "authtoken=abc123" in urls[0]
     assert urls[0].startswith("https://moodle.test/calendar/export_execute.php")
+
+
+def test_merge_paper_codes_preserves_existing(tmp_path, monkeypatch):
+    """Connect/import must merge paper codes, not replace the saved list."""
+    monkeypatch.setenv("PANOPTO_OUTPUT", str(tmp_path))
+    import importlib
+    import app.main as main
+    importlib.reload(main)
+    from app import context, moodle_jobs, settings_store
+
+    settings_store.set(context.db, "semester.paper_codes", ["COMPX101-26A"])
+    merged = moodle_jobs._merge_paper_codes(["COMPX225-26B", "COMPX101-26A"])
+    assert merged == ["COMPX101-26A", "COMPX225-26B"]
+    assert settings_store.get(context.db, "semester.paper_codes") == merged
