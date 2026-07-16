@@ -1,8 +1,9 @@
-"""routers/pages.py - the two HTML pages the app serves (§17).
+"""routers/pages.py - the HTML pages the app serves (§17).
 
-`/` hands over the single-page frontend; `/docs` renders a self-contained API
-reference from /openapi.json (the stock Swagger UI pulls its JS+CSS from a CDN,
-so it is blank offline - this app is offline-first).
+`/` hands over the single-page frontend; `/welcome` is the afterhours marketing
+site (home / pricing / contact); `/docs` renders a self-contained API reference
+from /openapi.json (the stock Swagger UI pulls its JS+CSS from a CDN, so it is
+blank offline - this app is offline-first).
 """
 from __future__ import annotations
 
@@ -19,6 +20,15 @@ def index() -> FileResponse:
     # no-cache so a freshly updated index.html (and the assets it references) is
     # always picked up instead of a stale browser-cached copy.
     return FileResponse(context.STATIC_DIR / "index.html",
+                        headers={"Cache-Control": "no-cache"})
+
+
+@router.get("/welcome")
+@router.get("/pricing")
+@router.get("/contact")
+def marketing() -> FileResponse:
+    """afterhours marketing site — Home / Pricing / Contact live in one page."""
+    return FileResponse(context.STATIC_DIR / "marketing" / "index.html",
                         headers={"Cache-Control": "no-cache"})
 
 
