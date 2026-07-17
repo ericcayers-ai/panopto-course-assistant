@@ -342,3 +342,23 @@ def test_simple_mode_hides_advanced_only_markup():
     # Mid-width topbar reflow before the mobile drawer breakpoint.
     assert "@media (max-width: 1100px)" in CSS
     assert "@media (max-width: 900px)" in CSS
+
+
+def test_nav_groups_follow_material_then_work_flow():
+    """Sidebar IA: get material → work with it → system."""
+    assert ">Get material<" in HTML
+    assert ">Work with it<" in HTML
+    assert ">System<" in HTML
+    moodle = HTML.index('data-tab="moodle-quick"')
+    speech = HTML.index('data-tab="tts"')
+    library = HTML.index('data-tab="library"')
+    jobs = HTML.index('data-tab="jobs"')
+    assert moodle < speech < library < jobs
+
+
+def test_hash_routing_and_last_tab_restore_are_wired():
+    assert "function tabFromHash()" in JS
+    assert 'remember("last-tab"' in JS
+    assert "syncHash(name)" in JS
+    assert 'id="palette-launch"' in HTML
+    assert "openPalette" in JS
