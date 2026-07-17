@@ -343,9 +343,35 @@ function updatePanelContext(name) {
   const ctx = $("panel-context");
   if (!ctx) return;
   const section = TAB_LABELS[name] || name;
-  ctx.textContent = section;
   const course = currentCourse();
+  clear(ctx);
+  if (course) {
+    ctx.append(
+      el("span", { class: "ctx-course", text: course }),
+      el("span", { class: "ctx-sep", text: "›", "aria-hidden": "true" }),
+      el("span", { class: "ctx-section", text: section }),
+    );
+  } else {
+    ctx.appendChild(el("span", { class: "ctx-section", text: section }));
+  }
   document.title = course ? `${section} — ${course}` : `${section} — Course Assistant`;
+}
+
+function tabFromHash() {
+  const raw = (location.hash || "").replace(/^#/, "").trim();
+  if (!raw) return null;
+  const name = decodeURIComponent(raw).split(/[?/]/)[0];
+  return TAB_LABELS[name] ? name : null;
+}
+
+function syncHash(name) {
+  const next = "#" + name;
+  if (location.hash === next) return;
+  try {
+    history.replaceState(null, "", next);
+  } catch (_) {
+    location.hash = name;
+  }
 }
 
 // ---- file drop zones -------------------------------------------------------
@@ -399,6 +425,12 @@ function recall(key, def = "") { try { return localStorage.getItem(key) ?? def; 
 // ---- tabs -----------------------------------------------------------------
 
 function showTab(name) {
+  if (!TAB_LABELS[name]) name = "home";
+  // Advanced-only tabs are unreachable in Simple mode.
+  const tabBtn = document.querySelector(`.tab[data-tab="${name}"]`);
+  if (tabBtn?.hasAttribute("data-adv-only") && document.body.dataset.level === "simple") {
+    name = "home";
+  }
   document.querySelectorAll(".tab").forEach((b) => {
     const on = b.dataset.tab === name;
     b.classList.toggle("active", on);
@@ -408,7 +440,15 @@ function showTab(name) {
   document.querySelectorAll(".panel").forEach((p) => p.classList.toggle("active", p.id === name));
   document.querySelector(".app").classList.remove("menu-open");  // close mobile drawer
   $("menu-toggle")?.setAttribute("aria-expanded", "false");
+  $("menu-toggle")?.setAttribute("aria-label", "Open navigation");
   updatePanelContext(name);
+  remember("last-tab", name);
+  syncHash(name);
+  const activeTab = document.querySelector(`.tab[data-tab="${name}"]`);
+  activeTab?.scrollIntoView({ block: "nearest" });
+  const main = $("main");
+  if (main) main.scrollTop = 0;
+  window.scrollTo({ top: 0, behavior: "smooth" });
   const heading = $(name)?.querySelector("h1, h2");
   if (heading) {
     heading.setAttribute("tabindex", "-1");
@@ -430,6 +470,14 @@ document.querySelectorAll(".tab").forEach((btn) =>
 document.querySelectorAll("[data-goto]").forEach((b) =>
   b.addEventListener("click", () => showTab(b.dataset.goto))
 );
+document.querySelector(".brand")?.addEventListener("click", () => showTab("home"));
+document.querySelector(".brand")?.addEventListener("keydown", (e) => {
+  if (e.key === "Enter" || e.key === " ") { e.preventDefault(); showTab("home"); }
+});
+window.addEventListener("hashchange", () => {
+  const name = tabFromHash();
+  if (name && !document.getElementById(name)?.classList.contains("active")) showTab(name);
+});
 
 // ---- import sub-switch (documents / notion / browse) ----------------------
 // Scoped to [data-import] so Speech reuse of .seg / .import-switch does not clash.
@@ -539,6 +587,45 @@ async function loadDashboard() {
         gs.classList.toggle("hidden", !show);
       }
     } catch (_) { /* leave empty */ }
+  }
+  await loadHomeContinue();
+}
+
+async function loadHomeContinue() {
+  const wrap = $("home-continue");
+  const body = $("home-continue-body");
+  if (!wrap || !body) return;
+  try {
+    const data = await api("/api/next-up");
+    const actions = (data.actions || []).slice(0, 4);
+    clear(body);
+    if (!actions.length) {
+      wrap.classList.add("hidden");
+      return;
+    }
+    actions.forEach((a) => {
+      body.appendChild(el("div", {
+        class: "nextup-item clickable",
+        role: "button",
+        tabindex: "0",
+        onclick: () => a.goto && showTab(a.goto),
+        onkeydown: (e) => {
+          if ((e.key === "Enter" || e.key === " ") && a.goto) {
+            e.preventDefault();
+            showTab(a.goto);
+          }
+        },
+      }, [
+        el("span", { class: "nextup-kind " + a.kind, text: a.kind }),
+        el("div", {}, [
+          el("div", { class: "nextup-title", text: a.title }),
+          el("div", { class: "muted small", text: a.detail || "" }),
+        ]),
+      ]));
+    });
+    wrap.classList.remove("hidden");
+  } catch (_) {
+    wrap.classList.add("hidden");
   }
 }
 
@@ -3204,8 +3291,9 @@ function restore() {
 
 loadStatus().then(() => {
   restore();                   // now the engine/model selects are populated
-  updatePanelContext("home");
-  loadDashboard();
+  const startTab = tabFromHash() || recall("last-tab", "home") || "home";
+  const safeStart = (TAB_LABELS[startTab] ? startTab : "home");
+  showTab(safeStart);
   initMoodleQuick();
   refreshOllama();             // pre-populate the local-AI panel
   wireDropZone($("notion-drop"), $("notion-file"));
@@ -3220,6 +3308,9 @@ loadStatus().then(() => {
   });
   $("gs-goto-moodle")?.addEventListener("click", () => showTab("moodle-quick"));
   $("shortcuts-help")?.addEventListener("click", showShortcuts);
+  $("palette-launch")?.addEventListener("click", openPalette);
+  const kbd = document.querySelector(".palette-kbd");
+  if (kbd && /Mac|iPhone|iPad/.test(navigator.platform || "")) kbd.textContent = "⌘ K";
 });
 loadCourses();
 
