@@ -12,7 +12,16 @@ A **Python / FastAPI** backend with a plain **HTML + JavaScript** frontend (no
 build step), light/dark themes, and everything under your control on
 `127.0.0.1` — **no lecture audio leaves your machine**.
 
-Current release: **v4.1.0**.
+Current release: **v4.2.0**.
+
+## What's new in v4.2.0
+
+**Navigation clarity and QOL polish.** Sidebar regrouped into Get material →
+Work with it → System. Home leads with Moodle / Speech / Library CTAs, a Continue
+strip from next-up, Speech in the signal path, and a collapsible Environment
+drawer. Wayfinding adds hash routes, last-tab restore, Commands palette launcher,
+and `Course › Section` context. Visual polish keeps Signal & Instrument while
+quieting card chrome and tightening motion / sticky panel heads.
 
 ## What's new in v4.1.0
 

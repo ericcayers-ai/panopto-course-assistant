@@ -50,7 +50,7 @@
   <div class="app">
     <!-- SIDEBAR -->
     <aside class="sidebar" id="sidebar">
-      <div class="brand">
+      <div class="brand" role="button" tabindex="0" title="Go to Home" aria-label="Course Assistant, go to Home">
         <svg class="ico ico-lg" aria-hidden="true"><use href="#i-waveform"/></svg>
         <span>Course Assistant</span>
       </div>
@@ -58,13 +58,17 @@
         <button class="tab active" data-tab="home" aria-current="page">
           <svg class="ico" aria-hidden="true"><use href="#i-home"/></svg> Home
         </button>
+        <div class="nav-group">Get material</div>
         <button class="tab" data-tab="moodle-quick">
           <svg class="ico" aria-hidden="true"><use href="#i-book"/></svg> Moodle
         </button>
-        <div class="nav-group" id="nav-group-course">Your course</div>
         <button class="tab" data-tab="import">
           <svg class="ico" aria-hidden="true"><use href="#i-import"/></svg> Import
         </button>
+        <button class="tab" data-tab="tts">
+          <svg class="ico" aria-hidden="true"><use href="#i-mic"/></svg> Speech
+        </button>
+        <div class="nav-group" id="nav-group-course">Work with it</div>
         <button class="tab" data-tab="library">
           <svg class="ico" aria-hidden="true"><use href="#i-library"/></svg> Library
         </button>
@@ -74,15 +78,11 @@
         <button class="tab" data-tab="study">
           <svg class="ico" aria-hidden="true"><use href="#i-study"/></svg> Study
         </button>
-        <button class="tab" data-tab="semester" data-adv-only>
-          <svg class="ico" aria-hidden="true"><use href="#i-cap"/></svg> Semester
-        </button>
         <button class="tab" data-tab="export">
           <svg class="ico" aria-hidden="true"><use href="#i-export"/></svg> Export
         </button>
-        <div class="nav-group">Tools</div>
-        <button class="tab" data-tab="tts">
-          <svg class="ico" aria-hidden="true"><use href="#i-mic"/></svg> Speech
+        <button class="tab" data-tab="semester" data-adv-only>
+          <svg class="ico" aria-hidden="true"><use href="#i-cap"/></svg> Semester
         </button>
         <div class="nav-group">System</div>
         <button class="tab" data-tab="jobs">
@@ -132,6 +132,12 @@
           <div id="panel-context" class="panel-context" aria-live="polite"></div>
         </div>
         <div class="topbar-right">
+          <button id="palette-launch" class="ghost small palette-launch" type="button"
+                  aria-label="Open command palette" title="Command palette (Ctrl+K)">
+            <svg class="ico" aria-hidden="true"><use href="#i-search"/></svg>
+            <span class="palette-launch-label">Commands</span>
+            <kbd class="palette-kbd" aria-hidden="true">Ctrl K</kbd>
+          </button>
           <button id="shortcuts-help" class="ghost small icon-only" type="button" aria-label="Keyboard shortcuts">
             <svg class="ico" aria-hidden="true"><use href="#i-info"/></svg>
           </button>
@@ -146,27 +152,37 @@
         <!-- HOME -->
         <section id="home" class="panel active" aria-labelledby="home-h">
           <div class="hero">
+            <p class="hero-kicker">Course Assistant</p>
             <h1 id="home-h">Course workspace</h1>
             <p class="lead">Connect Moodle, transcribe lectures in Speech, then study and export from one library.</p>
-          </div>
-
-          <div id="dash-env" class="env-strip" aria-label="Environment"></div>
-          <div id="env-card" class="card env-card" aria-labelledby="env-card-h">
-            <div class="getting-started-head">
-              <h2 id="env-card-h">Environment</h2>
-              <button type="button" id="copy-diagnostics-home" class="ghost small">Copy diagnostics</button>
+            <div class="hero-actions">
+              <button type="button" class="primary" data-goto="moodle-quick">
+                <svg class="ico" aria-hidden="true"><use href="#i-book"/></svg> Import from Moodle
+              </button>
+              <button type="button" class="ghost" data-goto="tts">
+                <svg class="ico" aria-hidden="true"><use href="#i-mic"/></svg> Transcribe in Speech
+              </button>
+              <button type="button" class="ghost" data-goto="library">
+                <svg class="ico" aria-hidden="true"><use href="#i-library"/></svg> Open library
+              </button>
             </div>
-            <p class="hint">Optional packs install into this app’s Python runtime. Speech and Moodle share the same status.</p>
-            <div id="env-packs" class="env-packs"></div>
           </div>
 
-          <div id="getting-started" class="card getting-started hidden" aria-labelledby="gs-h">
+          <div id="home-continue" class="home-continue hidden" aria-labelledby="home-continue-h">
+            <div class="home-continue-head">
+              <h2 id="home-continue-h">Continue</h2>
+              <button type="button" class="ghost small" data-goto="study">Open Study</button>
+            </div>
+            <div id="home-continue-body" class="home-continue-body"></div>
+          </div>
+
+          <div id="getting-started" class="getting-started hidden" aria-labelledby="gs-h">
             <div class="getting-started-head">
               <h2 id="gs-h">Getting started</h2>
               <button id="getting-started-dismiss" class="ghost small" type="button">Dismiss</button>
             </div>
             <ol class="getting-started-steps">
-              <li>Create or pick an <strong>active course</strong> in the top bar (optional paper code).</li>
+              <li>Create or pick an <strong>active course</strong> in the top bar.</li>
               <li><button type="button" class="link-btn" id="gs-goto-moodle">Import a Moodle course</button> for slides, documents, and lecture feeds.</li>
               <li>Open <strong>Speech</strong> to transcribe recordings, then browse everything in <strong>Library</strong>.</li>
               <li>Use <strong>Notes</strong>, <strong>Study</strong>, and <strong>Export</strong> for packs and Anki decks.</li>
@@ -174,8 +190,8 @@
             <p class="hint">Press <kbd>?</kbd> for shortcuts · <kbd>Ctrl</kbd>+<kbd>K</kbd> opens the command palette.</p>
           </div>
 
-          <h2 class="section-title">How material moves through the app</h2>
-          <div class="pipeline">
+          <h2 class="section-title">Signal path</h2>
+          <div class="pipeline" aria-label="How material moves through the app">
             <button class="stage" data-goto="moodle-quick">
               <span class="stage-n">01</span>
               <span class="stage-title">
@@ -183,19 +199,19 @@
               </span>
               <span class="stage-desc">Connect, import the course, load lecture feeds.</span>
             </button>
-            <button class="stage" data-goto="library">
+            <button class="stage" data-goto="tts">
               <span class="stage-n">02</span>
+              <span class="stage-title">
+                <svg class="ico" aria-hidden="true"><use href="#i-mic"/></svg> Speech
+              </span>
+              <span class="stage-desc">Transcribe recordings offline into the library.</span>
+            </button>
+            <button class="stage" data-goto="library">
+              <span class="stage-n">03</span>
               <span class="stage-title">
                 <svg class="ico" aria-hidden="true"><use href="#i-library"/></svg> Library
               </span>
               <span class="stage-desc">One searchable index of everything imported.</span>
-            </button>
-            <button class="stage" data-goto="notes">
-              <span class="stage-n">03</span>
-              <span class="stage-title">
-                <svg class="ico" aria-hidden="true"><use href="#i-notebook"/></svg> Notes
-              </span>
-              <span class="stage-desc">Course notes, folders, and flashcard sets.</span>
             </button>
             <button class="stage" data-goto="study">
               <span class="stage-n">04</span>
@@ -215,6 +231,23 @@
 
           <h2 class="section-title">Course overview</h2>
           <div id="dash-stats" class="stats"></div>
+
+          <details class="env-drawer" id="env-drawer">
+            <summary class="env-drawer-summary">
+              <span>
+                <span class="env-drawer-title" id="env-card-h">Environment</span>
+                <span class="env-drawer-hint">Optional packs and runtime status</span>
+              </span>
+              <span id="dash-env" class="env-strip env-strip-inline" aria-label="Environment"></span>
+            </summary>
+            <div class="env-drawer-body" aria-labelledby="env-card-h">
+              <div class="getting-started-head">
+                <p class="hint">Optional packs install into this app’s Python runtime. Speech and Moodle share the same status.</p>
+                <button type="button" id="copy-diagnostics-home" class="ghost small">Copy diagnostics</button>
+              </div>
+              <div id="env-packs" class="env-packs"></div>
+            </div>
+          </details>
         </section>
 
         <!-- hidden elements kept for JS compat -->
@@ -229,8 +262,8 @@
             <svg class="ico ico-lg" aria-hidden="true"><use href="#i-import"/></svg>
             <h2 id="import-h">Import materials</h2>
           </div>
-          <p class="panel-intro">Documents and Notion exports land in the <strong>Library</strong>. For Moodle
-            course feeds use <strong>Moodle</strong>; for lecture transcription use <strong>Speech</strong>.</p>
+          <p class="panel-intro">Documents and Notion exports land in the <strong>Library</strong>. Moodle
+            course feeds live under <strong>Moodle</strong>; lecture transcription lives under <strong>Speech</strong>.</p>
 
           <div class="import-switch" role="tablist" aria-label="Import source">
             <button class="seg active" data-import="documents" role="tab" aria-selected="true" aria-controls="import-documents">Documents</button>
@@ -238,7 +271,7 @@
             <button class="seg" data-import="browse" role="tab" aria-selected="false" aria-controls="import-browse">Browse files</button>
           </div>
 
-          <p class="hint">This panel is for documents. Moodle pulls course materials and feeds; Speech runs STT.</p>
+          <p class="hint">Use this panel for local documents and Notion exports.</p>
 
           <!-- DOCUMENTS -->
           <div id="import-documents" class="import-pane active" role="tabpanel">
